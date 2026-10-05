@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **This is an unofficial port of Armada to the Lenovo Legion Tab Gen 3 (TB321FU).**
+> Read [TB321FU.md](TB321FU.md) first: supported hardware (BOE panel only), status, known issues and credits.
+> The rest of this README is upstream Armada's and does not apply to this tablet.
+
 <p align="center">
   <a href="https://armadaos.dev/">
     <picture>
