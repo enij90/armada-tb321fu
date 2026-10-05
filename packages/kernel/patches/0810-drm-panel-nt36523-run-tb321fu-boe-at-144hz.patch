@@ -1,0 +1,79 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/panel: nt36523: run the TB321FU BOE panel at 144 Hz
+
+Initialise the Lenovo TB321FU (kirby) BOE panel in its 144 Hz class
+(stock qcom,mdss-dsi-dispparam-pen-144hz-power-on-command: B2=0x80,
+B3=0x12) and expose 144/120/90/60 Hz modes at the 144 Hz link clock,
+lowering the rate by extending VFP as Android's
+dfps_immediate_porch_mode_vfp does. 144 Hz needs ~499 MHz of MDP core
+clock, within the 514 MHz SM8650 limit (165 Hz would need 571 MHz).
+
+--- a/drivers/gpu/drm/panel/panel-novatek-nt36523.c	2026-09-30 07:36:37.942641151 +0200
++++ b/drivers/gpu/drm/panel/panel-novatek-nt36523.c	2026-09-30 07:36:37.943992359 +0200
+@@ -1463,8 +1463,13 @@
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x90, 0x03);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x91, 0x89, 0x28, 0x00, 0x14, 0xc2, 0x00, 0x02, 0x91, 0x02, 0x47, 0x00, 0x0b, 0x05, 0x0e, 0x03, 0x68);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x92, 0x10, 0xe0);
+-	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb2, 0x91);
+-	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb3, 0x01);
++	/*
++	 * Run the panel in its 144 Hz class (stock dispparam-pen-144hz-power-on-command);
++	 * lower rates come from a longer VFP at the same link clock, like Android's
++	 * dfps_immediate_porch_mode_vfp.
++	 */
++	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb2, 0x80);
++	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb3, 0x12);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xbb, 0x13);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x11);
+ 	msleep(105);
+@@ -1472,31 +1477,26 @@
+ 	return 0;
+ }
+ 
++/* htotal 2314; pixel clock 2314 * 2850 * 144 Hz; DPU core clock need ~499 MHz (max 514). */
++#define KIRBY_BOE_144_CLOCK	949666
++#define KIRBY_BOE_MODE(vfp)					\
++	{							\
++		.clock = KIRBY_BOE_144_CLOCK,			\
++		.hdisplay = 1600,				\
++		.hsync_start = 1600 + 566,			\
++		.hsync_end = 1600 + 566 + 40,			\
++		.htotal = 1600 + 566 + 40 + 108,		\
++		.vdisplay = 2560,				\
++		.vsync_start = 2560 + (vfp),			\
++		.vsync_end = 2560 + (vfp) + 2,			\
++		.vtotal = 2560 + (vfp) + 2 + 258,		\
++	}
++
+ static const struct drm_display_mode kirby_boe_modes[] = {
+-	{
+-		/* BOE 120Hz baseline (stock nt36523 boe fhd plus 165Hz CPHY video, 120Hz timing) */
+-		.clock = 791388,
+-		.hdisplay = 1600,
+-		.hsync_start = 1600 + 566,
+-		.hsync_end = 1600 + 566 + 40,
+-		.htotal = 1600 + 566 + 40 + 108,
+-		.vdisplay = 2560,
+-		.vsync_start = 2560 + 30,
+-		.vsync_end = 2560 + 30 + 2,
+-		.vtotal = 2560 + 30 + 2 + 258,
+-	},
+-	{
+-		/* dynamic-FPS porch mode (extended VFP), same link clock */
+-		.clock = 791388,
+-		.hdisplay = 1600,
+-		.hsync_start = 1600 + 566,
+-		.hsync_end = 1600 + 566 + 40,
+-		.htotal = 1600 + 566 + 40 + 108,
+-		.vdisplay = 2560,
+-		.vsync_start = 2560 + 2880,
+-		.vsync_end = 2560 + 2880 + 2,
+-		.vtotal = 2560 + 2880 + 2 + 258,
+-	},
++	KIRBY_BOE_MODE(30),	/* 144 Hz, preferred */
++	KIRBY_BOE_MODE(600),	/* 120 Hz */
++	KIRBY_BOE_MODE(1740),	/*  90 Hz */
++	KIRBY_BOE_MODE(4020),	/*  60 Hz */
+ };
+ 
+ static const struct panel_desc kirby_boe_desc = {

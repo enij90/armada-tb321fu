@@ -98,6 +98,7 @@ CONFIG_TYPEC_TCPM=y
 CONFIG_TYPEC_QCOM_PMIC=y
 CONFIG_TYPEC_MUX_NB7VPQ904M=y
 CONFIG_TYPEC_MUX_FSA4480=y
+CONFIG_TYPEC_MUX_PS5169=m
 
 CONFIG_DRM_AUX_BRIDGE=y
 CONFIG_DRM_DISPLAY_CONNECTOR=y
@@ -384,3 +385,13 @@ CONFIG_CRYPTO_MD5=y
 CONFIG_CRYPTO_SHA1=y
 CONFIG_CRYPTO_SHA256=y
 CONFIG_CRYPTO_SHA512=y
+# ============== TB321FU (Lenovo Legion Tab Gen 3) ==============
+# TB321FU: GUF296 nt36523 driver (patch 0803, BOE + CSOT) replaces the kirby-only driver
+# CONFIG_DRM_PANEL_NOVATEK_NT36523_KIRBY is not set
+CONFIG_DRM_PANEL_NOVATEK_NT36523=y
+CONFIG_BACKLIGHT_KTZ8866=y                # KTZ8866 backlight
+CONFIG_TOUCHSCREEN_NT36523_SPI=m          # Novatek NT36523 SPI touch (TB321FU, patch 0806)
+CONFIG_SND_SOC_AW882XX=m                  # Awinic AW882xx smart PA speakers
+# TB321FU: the kernel Image ships in super separately from the rootfs modules; let
+# modules built against an older vmlinux load without BTF instead of being refused
+CONFIG_MODULE_ALLOW_BTF_MISMATCH=y

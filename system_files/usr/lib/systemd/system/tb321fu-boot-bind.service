@@ -1,0 +1,14 @@
+[Unit]
+Description=Lenovo TB321FU: bind /sysroot/boot on /boot (no separate boot partition)
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+ConditionPathIsMountPoint=!/boot
+After=local-fs.target
+Before=rpm-ostreed.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/mount --bind /sysroot/boot /boot
+
+[Install]
+WantedBy=multi-user.target

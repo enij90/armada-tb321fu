@@ -212,3 +212,16 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0529-ASoC-qdsp6-q6apm-fail-the-graph-open-when-the-DSP-rejects-it.patch
 0530-ASoC-qdsp6-release-AudioReach-graphs-across-system-suspend.patch
 0532-hwmon-pwm-fan-optionally-run-the-fan-while-charging-in-s2idle.patch
+
+# Lenovo Legion Tab Gen 3 (TB321FU / SM8650)
+0800-drm-panel-add-kirby-nt36523-csot-dsc.patch
+0802-ASoC-codecs-add-Awinic-AW882xx-smart-PA-driver.patch
+0803-drm-panel-nt36523-add-lenovo-kirby-csot-boe.patch
+0804-drm-msm-dpu-tb321fu-dsc-width-and-resume-fixes.patch
+0806-input-touchscreen-add-novatek-nt36523-spi-guf296.patch
+0807-usb-typec-mux-add-parade-ps5169-redriver-guf296.patch
+0808-ASoC-qcom-audioreach-secondary-TDM-for-lenovo-tb321fu-speakers.patch
+0810-drm-panel-nt36523-run-tb321fu-boe-at-144hz.patch
+0811-drm-panel-nt36523-run-tb321fu-boe-at-165hz.patch
+0812-drm-msm-dpu-validate-mode-clock-on-the-active-width.patch
+0814-drm-msm-dpu-dont-wedge-the-ctl-when-tearing-down-a-video-encoder.patch

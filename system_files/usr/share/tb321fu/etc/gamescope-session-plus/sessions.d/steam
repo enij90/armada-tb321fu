@@ -1,0 +1,4 @@
+# TB321FU: the DSI panel has no EDID, so gamescope cannot look up its refresh rates;
+# the panel driver exposes 60/90/120/144/165 Hz modes at the 165 Hz link clock.
+CUSTOM_REFRESH_RATES=60,90,120,144,165
+STEAM_DISPLAY_REFRESH_LIMITS=60,165

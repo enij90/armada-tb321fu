@@ -1,0 +1,102 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dpu: don't wedge the CTL when tearing down a video encoder
+
+dpu_encoder_helper_phys_cleanup() ends with a CTL flush plus CTL_START,
+and resets and flushes the merge_3d block of the pingpong unconditionally.
+For a video mode encoder both leave the CTL stuck:
+
+- A video mode CTL is never started (phys_vid has no trigger_start op);
+  its flush latches on the next frame of the timing engine. Cleanup runs
+  after the timing engine has been disabled, and CTL_START makes the CTL
+  process the flush immediately. The INTF and DSC parts of it can never
+  complete without a running timing engine.
+
+- The PP carries its merge_3d for every topology, including the ones that
+  keep it out of the CTL path, such as dual-DSI with DSC merge
+  (2 LM -> 2 DSC -> 2 INTF, mode_3d = NONE). The enable paths (video,
+  writeback) program and flush merge_3d only when mode_3d is set. A flush
+  of a merge_3d that is not active in the CTL never completes either.
+
+The CTL then keeps that flush in progress (on DPU 10 visible at CTL+0x94,
+with the merge_3d/DSC/INTF sub-masks at CTL+0x180..0x18c; CTL_SW_RESET
+does not clear it) and does not take any later flush until the MDSS power
+collapses. A mode change keeps the DPU powered between disable and enable,
+so the first commit on the same CTL is never latched: the SSPP does not
+fetch, the DSC is not started and the panel stays black with the backlight
+on. A DPMS cycle recovers only because the runtime suspend resets the CTL.
+
+Seen on the Lenovo Legion Tab Gen 3 (SM8650, dual-DSI panel with DSC) on
+every refresh rate switch. With the flush left pending instead of started,
+it latches together with the first flush of the next enable.
+
+Skip CTL_START in the cleanup of video mode encoders, and gate the
+merge_3d reset, its flush and intf_cfg.merge_3d on mode_3d, as the enable
+paths do.
+
+---
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -2313,11 +2313,14 @@
+ {
+ 	struct dpu_hw_ctl *ctl = phys_enc->hw_ctl;
+ 	struct dpu_hw_intf_cfg intf_cfg = { 0 };
++	enum dpu_3d_blend_mode mode_3d;
+ 	int i;
+ 	struct dpu_encoder_virt *dpu_enc;
+ 
+ 	dpu_enc = to_dpu_encoder_virt(phys_enc->parent);
+ 
++	mode_3d = dpu_encoder_helper_get_3d_blend_mode(phys_enc);
++
+ 	ctl->ops.reset(ctl);
+ 
+ 	dpu_encoder_helper_reset_mixers(phys_enc);
+@@ -2357,8 +2360,13 @@
+ 	if (dpu_enc->cwb_mask)
+ 		dpu_encoder_helper_phys_setup_cwb(phys_enc, false);
+ 
+-	/* reset the merge 3D HW block */
+-	if (phys_enc->hw_pp && phys_enc->hw_pp->merge_3d) {
++	/*
++	 * Reset the merge 3D HW block only if it was in use, like the enable
++	 * paths. The PP carries its merge_3d also for topologies that leave
++	 * it out of the CTL path (e.g. DSC merge), and a flush of a merge_3d
++	 * that is not active in the CTL never completes.
++	 */
++	if (mode_3d && phys_enc->hw_pp && phys_enc->hw_pp->merge_3d) {
+ 		phys_enc->hw_pp->merge_3d->ops.setup_3d_mode(phys_enc->hw_pp->merge_3d,
+ 				BLEND_3D_NONE);
+ 		if (ctl->ops.update_pending_flush_merge_3d)
+@@ -2381,7 +2389,7 @@
+ 	}
+ 
+ 	intf_cfg.stream_sel = 0; /* Ignored by reset_intf_cfg */
+-	intf_cfg.mode_3d = dpu_encoder_helper_get_3d_blend_mode(phys_enc);
++	intf_cfg.mode_3d = mode_3d;
+ 	intf_cfg.dsc = dpu_encoder_helper_get_dsc(phys_enc);
+ 	intf_cfg.cwb = dpu_enc->cwb_mask;
+ 
+@@ -2390,14 +2398,21 @@
+ 	if (phys_enc->hw_wb)
+ 		intf_cfg.wb = phys_enc->hw_wb->idx;
+ 
+-	if (phys_enc->hw_pp && phys_enc->hw_pp->merge_3d)
++	if (mode_3d && phys_enc->hw_pp && phys_enc->hw_pp->merge_3d)
+ 		intf_cfg.merge_3d = phys_enc->hw_pp->merge_3d->idx;
+ 
+ 	if (ctl->ops.reset_intf_cfg)
+ 		ctl->ops.reset_intf_cfg(ctl, &intf_cfg);
+ 
+ 	ctl->ops.trigger_flush(ctl);
+-	ctl->ops.trigger_start(ctl);
++	/*
++	 * A video mode CTL is never started: its flush latches on the next
++	 * frame of the timing engine, which is off here. CTL_START makes the
++	 * CTL process the flush right away instead, and with the timing
++	 * engine stopped the INTF/DSC parts of it never complete.
++	 */
++	if (phys_enc->intf_mode != INTF_MODE_VIDEO)
++		ctl->ops.trigger_start(ctl);
+ 	ctl->ops.clear_pending_flush(ctl);
+ }
+ 

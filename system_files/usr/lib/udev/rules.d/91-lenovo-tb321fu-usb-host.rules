@@ -1,0 +1,3 @@
+# Re-assert host mode whenever a Type-C partner or the role switch changes (see tb321fu-usb-host).
+SUBSYSTEM=="typec", KERNEL=="port[01]-partner", ACTION=="add|remove", TAG+="systemd", ENV{SYSTEMD_WANTS}+="tb321fu-usb-host.service"
+SUBSYSTEM=="usb_role", ACTION=="change", TAG+="systemd", ENV{SYSTEMD_WANTS}+="tb321fu-usb-host.service"

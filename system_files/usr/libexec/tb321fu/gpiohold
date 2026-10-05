@@ -1,0 +1,16 @@
+#!/usr/bin/python3
+# Hold a GPIO line as output via the GPIO v2 uAPI: gpiohold.py /dev/gpiochipN LINE VALUE
+import fcntl, os, struct, sys, signal
+chip, line, val = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+FLAG_OUTPUT = 1 << 3
+ATTR_OUTPUT_VALUES = 2
+offsets = [line] + [0] * 63
+attrs = struct.pack('<IIQQ', ATTR_OUTPUT_VALUES, 0, val & 1, 1) + b'\0' * (24 * 9)
+config = struct.pack('<QI20x', FLAG_OUTPUT, 1) + attrs
+req = struct.pack('<64I', *offsets) + b'tb321fu-c2-select'.ljust(32, b'\0') + config + struct.pack('<II20xi', 1, 0, 0)
+assert len(req) == 592, len(req)
+buf = bytearray(req)
+fd = os.open(chip, os.O_RDWR)
+fcntl.ioctl(fd, (3 << 30) | (592 << 16) | (0xB4 << 8) | 0x07, buf)
+print("holding", chip, line, "=", val, flush=True)
+signal.pause()

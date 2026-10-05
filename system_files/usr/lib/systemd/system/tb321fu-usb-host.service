@@ -1,0 +1,11 @@
+[Unit]
+Description=Lenovo TB321FU: keep the USB controller in host mode for the short-side port
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+After=tb321fu-usb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/tb321fu/usb-host
+
+[Install]
+WantedBy=multi-user.target

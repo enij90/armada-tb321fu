@@ -1,0 +1,60 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/panel: nt36523: run the TB321FU BOE panel at 165 Hz
+
+Switch the BOE panel to its 165 Hz class (stock
+qcom,mdss-dsi-dispparam-pen-165hz-power-on-command: B2=0x80, B3=0x20) and
+expose 165/144/120/90/60 Hz at the 165 Hz link clock, lowering the rate
+with a longer VFP. The MDP core only has to feed 800 px per layer mixer
+(~395 MHz with the 5 % inefficiency factor), within the 514 MHz limit.
+
+--- a/drivers/gpu/drm/panel/panel-novatek-nt36523.c	2026-09-30 12:17:17.465721173 +0200
++++ b/drivers/gpu/drm/panel/panel-novatek-nt36523.c	2026-09-30 12:17:17.466923357 +0200
+@@ -1464,12 +1464,12 @@
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x91, 0x89, 0x28, 0x00, 0x14, 0xc2, 0x00, 0x02, 0x91, 0x02, 0x47, 0x00, 0x0b, 0x05, 0x0e, 0x03, 0x68);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x92, 0x10, 0xe0);
+ 	/*
+-	 * Run the panel in its 144 Hz class (stock dispparam-pen-144hz-power-on-command);
++	 * Run the panel in its 165 Hz class (stock dispparam-pen-165hz-power-on-command);
+ 	 * lower rates come from a longer VFP at the same link clock, like Android's
+ 	 * dfps_immediate_porch_mode_vfp.
+ 	 */
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb2, 0x80);
+-	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb3, 0x12);
++	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb3, 0x20);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xbb, 0x13);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x11);
+ 	msleep(105);
+@@ -1477,11 +1477,14 @@
+ 	return 0;
+ }
+ 
+-/* htotal 2314; pixel clock 2314 * 2850 * 144 Hz; DPU core clock need ~499 MHz (max 514). */
+-#define KIRBY_BOE_144_CLOCK	949666
++/*
++ * htotal 2314; pixel clock 2314 * 2850 * 165 Hz. Each of the two layer mixers
++ * drives 800 px, so the MDP core needs ~395 MHz (max 514 MHz).
++ */
++#define KIRBY_BOE_165_CLOCK	1088159
+ #define KIRBY_BOE_MODE(vfp)					\
+ 	{							\
+-		.clock = KIRBY_BOE_144_CLOCK,			\
++		.clock = KIRBY_BOE_165_CLOCK,			\
+ 		.hdisplay = 1600,				\
+ 		.hsync_start = 1600 + 566,			\
+ 		.hsync_end = 1600 + 566 + 40,			\
+@@ -1493,10 +1496,11 @@
+ 	}
+ 
+ static const struct drm_display_mode kirby_boe_modes[] = {
+-	KIRBY_BOE_MODE(30),	/* 144 Hz, preferred */
+-	KIRBY_BOE_MODE(600),	/* 120 Hz */
+-	KIRBY_BOE_MODE(1740),	/*  90 Hz */
+-	KIRBY_BOE_MODE(4020),	/*  60 Hz */
++	KIRBY_BOE_MODE(30),	/* 165 Hz, preferred */
++	KIRBY_BOE_MODE(446),	/* 144 Hz */
++	KIRBY_BOE_MODE(1099),	/* 120 Hz */
++	KIRBY_BOE_MODE(2405),	/*  90 Hz */
++	KIRBY_BOE_MODE(5018),	/*  60 Hz */
+ };
+ 
+ static const struct panel_desc kirby_boe_desc = {

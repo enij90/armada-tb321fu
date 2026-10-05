@@ -1,0 +1,1279 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] ASoC: qcom: AudioReach Secondary TDM support (Lenovo TB321FU speakers)
+
+GUF296's TB321FU-7.1.1 changes to sound/soc/qcom (delta against upstream 7.1.1),
+ported onto the Armada 7.2 tree: TDM ports in AudioReach/q6apm-lpass-dais, the
+Secondary TDM bit clocks in q6prm, and 8-slot/32-bit TDM setup in the sc8280xp
+machine driver. Upstream 7.2 has no TDM support at all, so the AW2308 smart PAs on
+SEC_TDM_RX_0 never get a bit clock (no_clks=1, start failed). GUF's TDM startup is
+chained in front of Armada's MI2S/SoundWire BE startup.
+
+diff -ruN a/sound/soc/qcom/qdsp6/audioreach.c b/sound/soc/qcom/qdsp6/audioreach.c
+--- a/sound/soc/qcom/qdsp6/audioreach.c	2026-09-29 22:06:36.098891571 +0200
++++ b/sound/soc/qcom/qdsp6/audioreach.c	2026-09-29 22:06:36.489835331 +0200
+@@ -153,6 +153,20 @@
+ 
+ #define APM_I2S_INTF_CFG_PSIZE ALIGN(sizeof(struct apm_i2s_module_intf_cfg), 8)
+ 
++struct apm_tdm_module_intf_cfg {
++	struct apm_module_param_data param_data;
++	struct param_id_tdm_intf_cfg cfg;
++} __packed;
++
++#define APM_TDM_INTF_CFG_PSIZE ALIGN(sizeof(struct apm_tdm_module_intf_cfg), 8)
++
++struct apm_tdm_module_lane_cfg {
++	struct apm_module_param_data param_data;
++	struct param_id_tdm_lane_cfg cfg;
++} __packed;
++
++#define APM_TDM_LANE_CFG_PSIZE ALIGN(sizeof(struct apm_tdm_module_lane_cfg), 8)
++
+ struct apm_module_hw_ep_mf_cfg {
+ 	struct apm_module_param_data param_data;
+ 	struct param_id_hw_ep_mf mf;
+@@ -169,6 +183,14 @@
+ 
+ #define APM_FS_CFG_PSIZE ALIGN(sizeof(struct apm_module_frame_size_factor_cfg), 8)
+ 
++struct apm_module_hw_intf_clk_cfg {
++	struct apm_module_param_data param_data;
++	struct param_id_hw_intf_clk_cfg cfg;
++} __packed;
++
++#define APM_HW_INTF_CLK_CFG_PSIZE \
++	ALIGN(sizeof(struct apm_module_hw_intf_clk_cfg), 8)
++
+ struct apm_module_hw_ep_power_mode_cfg {
+ 	struct apm_module_param_data param_data;
+ 	struct param_id_hw_ep_power_mode_cfg power_mode;
+@@ -305,6 +327,22 @@
+ 		ch_map[1] =  PCM_CHANNEL_FR;
+ 		ch_map[2] =  PCM_CHANNEL_LS;
+ 		ch_map[3] =  PCM_CHANNEL_RS;
++	} else if (num_channels == 6) {
++		ch_map[0] =  PCM_CHANNEL_FL;
++		ch_map[1] =  PCM_CHANNEL_FR;
++		ch_map[2] =  PCM_CHANNEL_LFE;
++		ch_map[3] =  PCM_CHANNEL_FC;
++		ch_map[4] =  PCM_CHANNEL_LS;
++		ch_map[5] =  PCM_CHANNEL_RS;
++	} else if (num_channels == 8) {
++		ch_map[0] =  PCM_CHANNEL_FL;
++		ch_map[1] =  PCM_CHANNEL_FR;
++		ch_map[2] =  PCM_CHANNEL_LFE;
++		ch_map[3] =  PCM_CHANNEL_FC;
++		ch_map[4] =  PCM_CHANNEL_LS;
++		ch_map[5] =  PCM_CHANNEL_RS;
++		ch_map[6] =  PCM_CHANNEL_LB;
++		ch_map[7] =  PCM_CHANNEL_RB;
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(audioreach_set_default_channel_mapping);
+@@ -853,6 +891,7 @@
+ 	struct apm_module_param_data *param_data;
+ 	struct param_id_mfc_media_format *media_format;
+ 	uint32_t num_channels = cfg->num_channels;
++	uint32_t bit_width = cfg->bit_width;
+ 	int payload_size = APM_MFC_CFG_PSIZE(media_format, num_channels) +
+ 				APM_MODULE_PARAM_DATA_SIZE;
+ 	int i, j;
+@@ -873,8 +912,8 @@
+ 	media_format = p;
+ 
+ 	media_format->sample_rate = cfg->sample_rate;
+-	media_format->bit_width = cfg->bit_width;
+-	media_format->num_channels = cfg->num_channels;
++	media_format->bit_width = bit_width;
++	media_format->num_channels = num_channels;
+ 	/* Convert the physical mapping to a logical mapping of the channels */
+ 	for (i = 0, j = 0; i < AR_PCM_MAX_NUM_CHANNEL && j < cfg->num_channels; i++) {
+ 		if (!cfg->channel_map[i])
+@@ -997,70 +1036,368 @@
+ 					   const struct audioreach_module *module,
+ 					   const struct audioreach_module_config *cfg)
+ {
+-	struct apm_module_frame_size_factor_cfg *fs_cfg;
+-	struct apm_module_param_data *param_data;
+-	struct apm_i2s_module_intf_cfg *intf_cfg;
+-	struct apm_module_hw_ep_mf_cfg *hw_cfg;
+ 	int ic_sz = APM_I2S_INTF_CFG_PSIZE;
+ 	int ep_sz = APM_HW_EP_CFG_PSIZE;
+ 	int fs_sz = APM_FS_CFG_PSIZE;
+-	int size = ic_sz + ep_sz + fs_sz;
++	int clk_sz = APM_HW_INTF_CLK_CFG_PSIZE;
++	u32 frame_size_factor = cfg->frame_size_factor ?:
++				module->frame_size_factor ?: 1;
++	u32 y700_hw_interface_type = module->hw_interface_type;
++	u32 y700_hw_interface_idx = module->hw_interface_idx;
++	u32 y700_sd_line_idx = module->sd_line_idx;
++	u32 y700_ws_src = module->ws_src;
++	u32 y700_intf_ws_src = y700_ws_src;
++	bool y700_graph40_i2s_sink =
++		graph->id == 40 && module->module_id == MODULE_ID_I2S_SINK;
++	int rc;
++
++	/*
++	 * Y700 AW speakers: current graph40 accepts the historical
++	 * lpaif=1, idx=0 addressing. Canonical lpaif=0, idx=1 was tested
++	 * and rejected by DSP with GRAPH_START 1001002.
++	 */
++	if (y700_graph40_i2s_sink) {
++		y700_hw_interface_type = 1;
++		y700_hw_interface_idx = 0;
++		y700_sd_line_idx = I2S_8CHS;
++		y700_intf_ws_src = CONFIG_I2S_WS_SRC_INTERNAL;
++	}
++
++	{
++		struct apm_module_param_data *param_data;
++		struct apm_i2s_module_intf_cfg *intf_cfg;
++		void *p;
++
++		struct gpr_pkt *pkt __free(kfree) =
++			audioreach_alloc_apm_cmd_pkt(ic_sz, APM_CMD_SET_CFG, 0);
++		if (IS_ERR(pkt))
++			return PTR_ERR(pkt);
++
++		p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
++		intf_cfg = p;
++
++		param_data = &intf_cfg->param_data;
++		param_data->module_instance_id = module->instance_id;
++		param_data->error_code = 0;
++		param_data->param_id = PARAM_ID_I2S_INTF_CFG;
++		param_data->param_size = ic_sz - APM_MODULE_PARAM_DATA_SIZE;
++
++		intf_cfg->cfg.lpaif_type = y700_hw_interface_type;
++		intf_cfg->cfg.intf_idx = y700_hw_interface_idx;
++		intf_cfg->cfg.sd_line_idx = y700_sd_line_idx;
++
++		switch (cfg->fmt & SND_SOC_DAIFMT_CLOCK_PROVIDER_MASK) {
++		case SND_SOC_DAIFMT_BP_FP:
++			intf_cfg->cfg.ws_src = CONFIG_I2S_WS_SRC_INTERNAL;
++			break;
++		case SND_SOC_DAIFMT_BC_FC:
++			/* CPU is slave */
++			intf_cfg->cfg.ws_src = CONFIG_I2S_WS_SRC_EXTERNAL;
++			break;
++		default:
++			intf_cfg->cfg.ws_src = y700_ws_src;
++			break;
++		}
++
++			if (y700_graph40_i2s_sink)
++				intf_cfg->cfg.ws_src = y700_intf_ws_src;
++
++			rc = q6apm_send_cmd_sync(graph->apm, pkt, 0);
++			if (rc)
++				return rc;
++	}
++
++	{
++		struct apm_module_hw_ep_mf_cfg *hw_cfg;
++		struct apm_module_param_data *param_data;
++		void *p;
++
++		struct gpr_pkt *pkt __free(kfree) =
++			audioreach_alloc_apm_cmd_pkt(ep_sz, APM_CMD_SET_CFG, 0);
++		if (IS_ERR(pkt))
++			return PTR_ERR(pkt);
++
++		p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
++		hw_cfg = p;
++		param_data = &hw_cfg->param_data;
++		param_data->module_instance_id = module->instance_id;
++		param_data->error_code = 0;
++		param_data->param_id = PARAM_ID_HW_EP_MF_CFG;
++		param_data->param_size = ep_sz - APM_MODULE_PARAM_DATA_SIZE;
++
++			hw_cfg->mf.sample_rate = cfg->sample_rate;
++			hw_cfg->mf.bit_width = cfg->bit_width;
++			hw_cfg->mf.num_channels = cfg->num_channels;
++			hw_cfg->mf.data_format = module->data_format;
++
++			rc = q6apm_send_cmd_sync(graph->apm, pkt, 0);
++			if (rc)
++				return rc;
++	}
++
++	if (1) {
++		struct apm_module_hw_intf_clk_cfg *clk_cfg;
++		struct apm_module_param_data *param_data;
++		u32 slot_width = cfg->bit_width == 24 ? 32 : cfg->bit_width;
++		u32 clock_freq = cfg->sample_rate * cfg->num_channels * slot_width;
++		u32 clock_id;
++		void *p;
++
++		/*
++		 * Y700 AW speakers: effective stream format is stereo S16, but the
++		 * physical secondary 2-data-line frame is 8 x 32-bit at 48 kHz
++		 * (12.288 MHz BCLK). Keep this physical clock independent from the
++		 * media-format channels so graph40 can test Android's group stream
++		 * semantics without dropping the bus clock.
++		 */
++		if (y700_graph40_i2s_sink) {
++			slot_width = 32;
++			clock_freq = 12288000;
++		}
++
++		struct gpr_pkt *pkt __free(kfree) =
++			audioreach_alloc_apm_cmd_pkt(clk_sz, APM_CMD_SET_CFG, 0);
++		if (IS_ERR(pkt))
++			return PTR_ERR(pkt);
++
++		switch (y700_hw_interface_idx) {
++		case I2S_INTF_TYPE_PRIMARY:
++			clock_id = CLOCK_ID_PRI_I2S_IBIT;
++			break;
++		case I2S_INTF_TYPE_SECONDARY:
++			clock_id = CLOCK_ID_SEC_I2S_IBIT;
++			break;
++		case I2S_INTF_TYPE_TERTIARY:
++			clock_id = CLOCK_ID_TER_I2S_IBIT;
++			break;
++		case I2S_INTF_TYPE_QUATERNARY:
++			clock_id = CLOCK_ID_QUAD_I2S_IBIT;
++			break;
++		case I2S_INTF_TYPE_QUINARY:
++			clock_id = CLOCK_ID_QUI_I2S_IBIT;
++			break;
++		default:
++			clock_id = CLOCK_ID_SEC_I2S_IBIT;
++			break;
++		}
++
++		if (y700_graph40_i2s_sink)
++			clock_id = CLOCK_ID_SEC_I2S_IBIT;
++
++		p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
++		clk_cfg = p;
++		param_data = &clk_cfg->param_data;
++		param_data->module_instance_id = module->instance_id;
++		param_data->error_code = 0;
++		param_data->param_id = PARAM_ID_HW_INTF_CLK_CFG;
++		param_data->param_size = clk_sz - APM_MODULE_PARAM_DATA_SIZE;
++
++		clk_cfg->cfg.clock_id = clock_id;
++		clk_cfg->cfg.clock_freq = clock_freq;
++		clk_cfg->cfg.clock_attri = CLOCK_ATTRIBUTE_COUPLE_NO;
++		clk_cfg->cfg.clock_root = CLOCK_ROOT_DEFAULT;
++
++			rc = q6apm_send_cmd_sync(graph->apm, pkt, 0);
++			if (rc)
++				return rc;
++	}
++
++	{
++		struct apm_module_frame_size_factor_cfg *fs_cfg;
++		struct apm_module_param_data *param_data;
++		void *p;
++
++		struct gpr_pkt *pkt __free(kfree) =
++			audioreach_alloc_apm_cmd_pkt(fs_sz, APM_CMD_SET_CFG, 0);
++		if (IS_ERR(pkt))
++			return PTR_ERR(pkt);
++
++		p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
++		fs_cfg = p;
++		param_data = &fs_cfg->param_data;
++		param_data->module_instance_id = module->instance_id;
++		param_data->error_code = 0;
++		param_data->param_id = PARAM_ID_HW_EP_FRAME_SIZE_FACTOR;
++		param_data->param_size = fs_sz - APM_MODULE_PARAM_DATA_SIZE;
++		fs_cfg->frame_size_factor = frame_size_factor;
++
++			return q6apm_send_cmd_sync(graph->apm, pkt, 0);
++		}
++	}
++
++static int audioreach_tdm_send_hw_ep_mf(struct q6apm_graph *graph,
++					const struct audioreach_module *module,
++					const struct audioreach_module_config *cfg)
++{
++	struct apm_module_hw_ep_mf_cfg *hw_cfg;
++	struct apm_module_param_data *param_data;
++	int ep_sz = APM_HW_EP_CFG_PSIZE;
+ 	void *p;
+ 
+-	struct gpr_pkt *pkt __free(kfree) = audioreach_alloc_apm_cmd_pkt(size, APM_CMD_SET_CFG, 0);
++	struct gpr_pkt *pkt __free(kfree) =
++		audioreach_alloc_apm_cmd_pkt(ep_sz, APM_CMD_SET_CFG, 0);
+ 	if (IS_ERR(pkt))
+ 		return PTR_ERR(pkt);
+ 
+ 	p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
+-	intf_cfg = p;
++	hw_cfg = p;
++	param_data = &hw_cfg->param_data;
++	param_data->module_instance_id = module->instance_id;
++	param_data->error_code = 0;
++	param_data->param_id = PARAM_ID_HW_EP_MF_CFG;
++	param_data->param_size = ep_sz - APM_MODULE_PARAM_DATA_SIZE;
++
++	hw_cfg->mf.sample_rate = cfg->sample_rate;
++	hw_cfg->mf.bit_width = cfg->bit_width;
++	hw_cfg->mf.num_channels = cfg->num_channels;
++	hw_cfg->mf.data_format = module->data_format;
+ 
++	return q6apm_send_cmd_sync(graph->apm, pkt, 0);
++}
++
++static int audioreach_tdm_send_intf(struct q6apm_graph *graph,
++				    const struct audioreach_module *module,
++				    const struct audioreach_module_config *cfg)
++{
++	struct apm_tdm_module_intf_cfg *intf_cfg;
++	struct apm_module_param_data *param_data;
++	bool y700_secondary_tdm = module->hw_interface_type == 0 &&
++				  module->hw_interface_idx == I2S_INTF_TYPE_SECONDARY &&
++				  cfg->frame_size_factor == 8;
++	u32 slot_mask = y700_secondary_tdm ? 0x3 : (cfg->sd_line_mask ?: 1);
++	u32 nslots = y700_secondary_tdm ? 8 :
++		     (cfg->num_channels ?: module->frame_size_factor ?: 8);
++	u32 bit_width = y700_secondary_tdm ? 32 : (cfg->bit_width ?: 32);
++	int ic_sz = APM_TDM_INTF_CFG_PSIZE;
++	void *p;
++
++	struct gpr_pkt *pkt __free(kfree) =
++		audioreach_alloc_apm_cmd_pkt(ic_sz, APM_CMD_SET_CFG, 0);
++	if (IS_ERR(pkt))
++		return PTR_ERR(pkt);
++
++	p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
++	intf_cfg = p;
+ 	param_data = &intf_cfg->param_data;
+ 	param_data->module_instance_id = module->instance_id;
+ 	param_data->error_code = 0;
+-	param_data->param_id = PARAM_ID_I2S_INTF_CFG;
++	param_data->param_id = PARAM_ID_TDM_INTF_CFG;
+ 	param_data->param_size = ic_sz - APM_MODULE_PARAM_DATA_SIZE;
+ 
+ 	intf_cfg->cfg.lpaif_type = module->hw_interface_type;
+ 	intf_cfg->cfg.intf_idx = module->hw_interface_idx;
+-	intf_cfg->cfg.sd_line_idx = module->sd_line_idx;
+-
+ 	switch (cfg->fmt & SND_SOC_DAIFMT_CLOCK_PROVIDER_MASK) {
+-	case SND_SOC_DAIFMT_BP_FP:
+-		intf_cfg->cfg.ws_src = CONFIG_I2S_WS_SRC_INTERNAL;
+-		break;
+ 	case SND_SOC_DAIFMT_BC_FC:
+-		/* CPU is slave */
+-		intf_cfg->cfg.ws_src = CONFIG_I2S_WS_SRC_EXTERNAL;
++		intf_cfg->cfg.sync_src = TDM_SYNC_SRC_EXTERNAL;
+ 		break;
++	case SND_SOC_DAIFMT_BP_FP:
+ 	default:
++		intf_cfg->cfg.sync_src = TDM_SYNC_SRC_INTERNAL;
+ 		break;
+ 	}
++	intf_cfg->cfg.ctrl_data_out_enable = TDM_CTRL_DATA_OE_ENABLE;
++	intf_cfg->cfg.slot_mask = slot_mask;
++	intf_cfg->cfg.nslots_per_frame = nslots;
++	intf_cfg->cfg.slot_width = bit_width;
++	intf_cfg->cfg.sync_mode = TDM_SHORT_SYNC_BIT_MODE;
++	intf_cfg->cfg.ctrl_invert_sync_pulse = TDM_SYNC_NORMAL;
++	intf_cfg->cfg.ctrl_sync_data_delay = 0;
+ 
+-	p += ic_sz;
+-	hw_cfg = p;
+-	param_data = &hw_cfg->param_data;
++	return q6apm_send_cmd_sync(graph->apm, pkt, 0);
++}
++
++static int audioreach_tdm_send_lane(struct q6apm_graph *graph,
++				    const struct audioreach_module *module,
++				    const struct audioreach_module_config *cfg)
++{
++	struct apm_tdm_module_lane_cfg *lane_cfg;
++	struct apm_module_param_data *param_data;
++	u32 lane_mask = cfg->sd_line_mask ?: 1;
++	int lane_sz = APM_TDM_LANE_CFG_PSIZE;
++	void *p;
++
++	struct gpr_pkt *pkt __free(kfree) =
++		audioreach_alloc_apm_cmd_pkt(lane_sz, APM_CMD_SET_CFG, 0);
++	if (IS_ERR(pkt))
++		return PTR_ERR(pkt);
++
++	p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
++	lane_cfg = p;
++	param_data = &lane_cfg->param_data;
+ 	param_data->module_instance_id = module->instance_id;
+ 	param_data->error_code = 0;
+-	param_data->param_id = PARAM_ID_HW_EP_MF_CFG;
+-	param_data->param_size = ep_sz - APM_MODULE_PARAM_DATA_SIZE;
++	param_data->param_id = PARAM_ID_TDM_LANE_CFG;
++	param_data->param_size = lane_sz - APM_MODULE_PARAM_DATA_SIZE;
++	lane_cfg->cfg.lane_mask = lane_mask;
+ 
+-	hw_cfg->mf.sample_rate = cfg->sample_rate;
+-	hw_cfg->mf.bit_width = cfg->bit_width;
+-	hw_cfg->mf.num_channels = cfg->num_channels;
+-	hw_cfg->mf.data_format = module->data_format;
++	return q6apm_send_cmd_sync(graph->apm, pkt, 0);
++}
+ 
+-	p += ep_sz;
+-	fs_cfg = p;
+-	param_data = &fs_cfg->param_data;
++static int audioreach_tdm_send_clk(struct q6apm_graph *graph,
++				   const struct audioreach_module *module,
++				   const struct audioreach_module_config *cfg)
++{
++	struct apm_module_hw_intf_clk_cfg *clk_cfg;
++	struct apm_module_param_data *param_data;
++	bool y700_secondary_tdm = module->hw_interface_type == 0 &&
++				  module->hw_interface_idx == I2S_INTF_TYPE_SECONDARY &&
++				  cfg->frame_size_factor == 8;
++	u32 nslots = y700_secondary_tdm ? 8 :
++		     (cfg->num_channels ?: module->frame_size_factor ?: 8);
++	u32 bit_width = y700_secondary_tdm ? 32 : (cfg->bit_width ?: 32);
++	u32 clock_freq = cfg->sample_rate * nslots * bit_width;
++	u32 clock_id = CLOCK_ID_PRI_TDM_IBIT + 2 * module->hw_interface_idx;
++	int clk_sz = APM_HW_INTF_CLK_CFG_PSIZE;
++	void *p;
++
++	struct gpr_pkt *pkt __free(kfree) =
++		audioreach_alloc_apm_cmd_pkt(clk_sz, APM_CMD_SET_CFG, 0);
++	if (IS_ERR(pkt))
++		return PTR_ERR(pkt);
++
++	p = (void *)pkt + GPR_HDR_SIZE + APM_CMD_HDR_SIZE;
++	clk_cfg = p;
++	param_data = &clk_cfg->param_data;
+ 	param_data->module_instance_id = module->instance_id;
+ 	param_data->error_code = 0;
+-	param_data->param_id = PARAM_ID_HW_EP_FRAME_SIZE_FACTOR;
+-	param_data->param_size = fs_sz - APM_MODULE_PARAM_DATA_SIZE;
+-	fs_cfg->frame_size_factor = 1;
++	param_data->param_id = PARAM_ID_HW_INTF_CLK_CFG;
++	param_data->param_size = clk_sz - APM_MODULE_PARAM_DATA_SIZE;
++
++	clk_cfg->cfg.clock_id = clock_id;
++	clk_cfg->cfg.clock_freq = clock_freq;
++	clk_cfg->cfg.clock_attri = CLOCK_ATTRIBUTE_COUPLE_NO;
++	clk_cfg->cfg.clock_root = CLOCK_ROOT_DEFAULT;
+ 
+ 	return q6apm_send_cmd_sync(graph->apm, pkt, 0);
+ }
+ 
++static int audioreach_tdm_set_media_format(struct q6apm_graph *graph,
++					   const struct audioreach_module *module,
++					   const struct audioreach_module_config *cfg)
++{
++	bool y700_secondary_tdm = module->hw_interface_type == TDM_LPAIF_TYPE_LPAIF &&
++				  module->hw_interface_idx == TDM_INTF_TYPE_SECONDARY &&
++				  cfg->frame_size_factor == 8;
++	int ret;
++
++	ret = audioreach_tdm_send_hw_ep_mf(graph, module, cfg);
++	if (ret)
++		return ret;
++
++	ret = audioreach_tdm_send_intf(graph, module, cfg);
++	if (ret)
++		return ret;
++
++	if (y700_secondary_tdm)
++		return 0;
++
++	ret = audioreach_tdm_send_lane(graph, module, cfg);
++	if (ret)
++		return ret;
++
++	return audioreach_tdm_send_clk(graph, module, cfg);
++}
++
+ static int audioreach_logging_set_media_format(struct q6apm_graph *graph,
+ 					       const struct audioreach_module *module)
+ {
+@@ -1413,6 +1750,10 @@
+ 	case MODULE_ID_I2S_SINK:
+ 		rc = audioreach_i2s_set_media_format(graph, module, cfg);
+ 		break;
++	case MODULE_ID_TDM_SOURCE:
++	case MODULE_ID_TDM_SINK:
++		rc = audioreach_tdm_set_media_format(graph, module, cfg);
++		break;
+ 	case MODULE_ID_WR_SHARED_MEM_EP:
+ 	case MODULE_ID_SH_MEM_PULL_MODE:
+ 		rc = audioreach_shmem_set_media_format(graph, module, cfg);
+diff -ruN a/sound/soc/qcom/qdsp6/audioreach.h b/sound/soc/qcom/qdsp6/audioreach.h
+--- a/sound/soc/qcom/qdsp6/audioreach.h	2026-09-14 13:41:11.000000000 +0200
++++ b/sound/soc/qcom/qdsp6/audioreach.h	2026-09-29 22:06:36.490141332 +0200
+@@ -22,6 +22,8 @@
+ #define MODULE_ID_PLACEHOLDER_DECODER	0x07001009
+ #define MODULE_ID_I2S_SINK		0x0700100A
+ #define MODULE_ID_I2S_SOURCE		0x0700100B
++#define MODULE_ID_TDM_SINK		0x0700100E
++#define MODULE_ID_TDM_SOURCE		0x0700100F
+ #define MODULE_ID_SAL			0x07001010
+ #define MODULE_ID_MFC			0x07001015
+ #define MODULE_ID_DATA_LOGGING		0x0700101A
+@@ -539,11 +541,60 @@
+ #define I2S_SD1				2
+ #define I2S_SD2				3
+ #define I2S_SD3				4
++#define I2S_QUAD01			5
++#define I2S_QUAD23			6
++#define I2S_6CHS			7
++#define I2S_8CHS			8
+ 
+ #define PORT_ID_I2S_INPUT		2
+ #define PORT_ID_I2S_OUPUT		1
+ #define I2S_STACK_SIZE			2048
+ 
++#define PARAM_ID_TDM_INTF_CFG			0x0800101B
++#define PARAM_ID_TDM_LANE_CFG			0x0800106A
++
++#define TDM_LPAIF_TYPE_LPAIF			0
++#define TDM_LPAIF_TYPE_RXTX			1
++#define TDM_LPAIF_TYPE_WSA			2
++
++#define TDM_INTF_TYPE_PRIMARY			0
++#define TDM_INTF_TYPE_SECONDARY			1
++#define TDM_INTF_TYPE_TERTIARY			2
++#define TDM_INTF_TYPE_QUATERNARY		3
++#define TDM_INTF_TYPE_QUINARY			4
++
++#define TDM_SYNC_SRC_EXTERNAL			0
++#define TDM_SYNC_SRC_INTERNAL			1
++#define TDM_CTRL_DATA_OE_DISABLE		0
++#define TDM_CTRL_DATA_OE_ENABLE			1
++#define TDM_SHORT_SYNC_BIT_MODE			0
++#define TDM_LONG_SYNC_MODE			1
++#define TDM_SHORT_SYNC_SLOT_MODE		2
++#define TDM_SYNC_NORMAL				0
++#define TDM_SYNC_INVERT				1
++#define TDM_DATA_DELAY_0_BCLK_CYCLE		0
++#define TDM_DATA_DELAY_1_BCLK_CYCLE		1
++#define TDM_DATA_DELAY_2_BCLK_CYCLE		2
++
++struct param_id_tdm_intf_cfg {
++	uint32_t lpaif_type;
++	uint32_t intf_idx;
++	uint16_t sync_src;
++	uint16_t ctrl_data_out_enable;
++	uint32_t slot_mask;
++	uint16_t nslots_per_frame;
++	uint16_t slot_width;
++	uint16_t sync_mode;
++	uint16_t ctrl_invert_sync_pulse;
++	uint16_t ctrl_sync_data_delay;
++	uint16_t reserved;
++} __packed;
++
++struct param_id_tdm_lane_cfg {
++	uint16_t lane_mask;
++	uint16_t reserved;
++} __packed;
++
+ #define PARAM_ID_DISPLAY_PORT_INTF_CFG		0x08001154
+ 
+ struct param_id_display_port_intf_cfg {
+@@ -562,11 +613,29 @@
+ } __packed;
+ 
+ #define PARAM_ID_HW_EP_FRAME_SIZE_FACTOR	0x08001018
++#define PARAM_ID_HW_INTF_CLK_CFG		0x0800113C
+ 
+ struct param_id_fram_size_factor {
+ 	uint32_t frame_size_factor;
+ } __packed;
+ 
++#define CLOCK_ID_PRI_TDM_IBIT			0x200
++#define CLOCK_ID_PRI_I2S_IBIT			0x100
++#define CLOCK_ID_SEC_I2S_IBIT			0x102
++#define CLOCK_ID_TER_I2S_IBIT			0x104
++#define CLOCK_ID_QUAD_I2S_IBIT			0x106
++#define CLOCK_ID_SPEAKER_I2S_IBIT		0x108
++#define CLOCK_ID_QUI_I2S_IBIT			0x10b
++#define CLOCK_ATTRIBUTE_COUPLE_NO		0x1
++#define CLOCK_ROOT_DEFAULT			0x0
++
++struct param_id_hw_intf_clk_cfg {
++	uint32_t clock_id;
++	uint32_t clock_freq;
++	uint32_t clock_attri;
++	uint32_t clock_root;
++} __packed;
++
+ #define APM_CONTAINER_PROP_ID_PARENT_CONTAINER_ID	0x080010CB
+ 
+ struct apm_cont_prop_id_parent_container  {
+@@ -900,6 +969,7 @@
+ 	u32	sample_rate;
+ 	u16	bit_width;
+ 	u16	bits_per_sample;
++	u16	frame_size_factor;
+ 
+ 	u16	data_format;
+ 	u16	num_channels;
+diff -ruN a/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c b/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c
+--- a/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c	2026-09-29 22:06:36.414985324 +0200
++++ b/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c	2026-09-29 22:08:33.956841575 +0200
+@@ -3,6 +3,7 @@
+ 
+ #include <dt-bindings/sound/qcom,q6dsp-lpass-ports.h>
+ #include <linux/err.h>
++#include <linux/clk.h>
+ #include <linux/init.h>
+ #include <linux/module.h>
+ #include <linux/device.h>
+@@ -17,6 +18,7 @@
+ #include "q6apm.h"
+ 
+ #define AUDIOREACH_BE_PCM_BASE	16
++#define Y700_SEC_TDM_BCLK_RATE	12288000
+ 
+ struct q6apm_lpass_dai_data {
+ 	struct q6apm_graph *graph[APM_PORT_MAX];
+@@ -24,8 +26,21 @@
+ 	bool is_prepared[APM_PORT_MAX];
+ 	bool is_restored[APM_PORT_MAX];
+ 	struct audioreach_module_config module_config[APM_PORT_MAX];
++	struct clk *sec_tdm_ibit_clk;
++	struct clk *sec_tdm_ebit_clk;
++	struct clk *sec_mi2s_ibit_clk;
++	struct clk *sec_mi2s_ebit_clk;
++	struct clk *lpass_macro_clk;
++	struct clk *lpass_dcodec_clk;
++	bool sec_tdm_clks_enabled;
+ };
+ 
++static struct clk *q6apm_lpass_y700_sec_ibit_clk(struct q6apm_lpass_dai_data *dai_data,
++						 int dai_id)
++{
++	return dai_data->sec_mi2s_ibit_clk;
++}
++
+ static int q6dma_set_channel_map(struct snd_soc_dai *dai,
+ 				 unsigned int tx_num,
+ 				 const unsigned int *tx_ch_mask,
+@@ -98,6 +113,174 @@
+ 	return 0;
+ }
+ 
++static int q6tdm_set_tdm_slot(struct snd_soc_dai *dai,
++			      unsigned int tx_mask,
++			      unsigned int rx_mask,
++			      int slots, int slot_width)
++{
++	struct q6apm_lpass_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	struct audioreach_module_config *cfg = &dai_data->module_config[dai->id];
++	unsigned int cap_mask;
++
++	if (slot_width != 16 && slot_width != 32) {
++		dev_err(dai->dev, "%s: invalid slot_width %d\n",
++			__func__, slot_width);
++		return -EINVAL;
++	}
++
++	switch (slots) {
++	case 2:
++		cap_mask = 0x03;
++		break;
++	case 4:
++		cap_mask = 0x0f;
++		break;
++	case 8:
++		cap_mask = 0xff;
++		break;
++	case 16:
++		cap_mask = 0xffff;
++		break;
++	default:
++		dev_err(dai->dev, "%s: invalid slots %d\n", __func__, slots);
++		return -EINVAL;
++	}
++
++	if (dai->id < PRIMARY_TDM_RX_0 || dai->id > QUINARY_TDM_TX_7) {
++		dev_err(dai->dev, "%s: invalid dai id 0x%x\n",
++			__func__, dai->id);
++		return -EINVAL;
++	}
++
++	if (dai->id & 0x1)
++		tx_mask &= cap_mask;
++	else
++		rx_mask &= cap_mask;
++
++	if (dai->id == SECONDARY_TDM_RX_0 || dai->id == SECONDARY_MI2S_RX)
++		cfg->frame_size_factor = slots;
++	else
++		cfg->frame_size_factor = slots;
++	cfg->sd_line_mask = (dai->id & 0x1) ? tx_mask : rx_mask;
++
++	return 0;
++}
++
++static int q6i2s_set_tdm_slot(struct snd_soc_dai *dai,
++			      unsigned int tx_mask,
++			      unsigned int rx_mask,
++			      int slots, int slot_width)
++{
++	struct q6apm_lpass_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	struct audioreach_module_config *cfg = &dai_data->module_config[dai->id];
++	unsigned int cap_mask;
++
++	if (dai->id != SECONDARY_MI2S_RX)
++		return -ENOTSUPP;
++
++	if (slot_width != 16 && slot_width != 32) {
++		dev_err(dai->dev, "%s: invalid slot_width %d\n",
++			__func__, slot_width);
++		return -EINVAL;
++	}
++
++	switch (slots) {
++	case 2:
++		cap_mask = 0x03;
++		break;
++	case 4:
++		cap_mask = 0x0f;
++		break;
++	case 8:
++		cap_mask = 0xff;
++		break;
++	case 16:
++		cap_mask = 0xffff;
++		break;
++	default:
++		dev_err(dai->dev, "%s: invalid slots %d\n", __func__, slots);
++		return -EINVAL;
++	}
++
++	cfg->frame_size_factor = 1;
++	cfg->sd_line_mask = rx_mask & cap_mask;
++
++	return 0;
++}
++
++static int q6tdm_set_channel_map(struct snd_soc_dai *dai,
++				 unsigned int tx_num, const unsigned int *tx_slot,
++				 unsigned int rx_num, const unsigned int *rx_slot)
++{
++	struct q6apm_lpass_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	struct audioreach_module_config *cfg = &dai_data->module_config[dai->id];
++	unsigned int num;
++	const unsigned int *slot;
++
++	if (dai->id < PRIMARY_TDM_RX_0 || dai->id > QUINARY_TDM_TX_7) {
++		dev_err(dai->dev, "%s: invalid dai id 0x%x\n",
++			__func__, dai->id);
++		return -EINVAL;
++	}
++
++	if (dai->id & 0x1) {
++		num = tx_num;
++		slot = tx_slot;
++	} else {
++		num = rx_num;
++		slot = rx_slot;
++	}
++
++	if (!slot) {
++		dev_err(dai->dev, "%s: slot map not found\n", __func__);
++		return -EINVAL;
++	}
++
++	if (num > AR_PCM_MAX_NUM_CHANNEL) {
++		dev_err(dai->dev, "%s: invalid channel count %u\n",
++			__func__, num);
++		return -EINVAL;
++	}
++
++	/*
++	 * The TDM slot offsets describe placement on the physical frame, not
++	 * PCM channel identities. Keep the media-format channel map valid for
++	 * modules such as MFC; slot placement is carried separately through the
++	 * TDM endpoint configuration.
++	 */
++	audioreach_set_default_channel_mapping(cfg->channel_map, num);
++
++	cfg->num_channels = num;
++	return 0;
++}
++
++static int q6i2s_set_channel_map(struct snd_soc_dai *dai,
++				 unsigned int tx_num, const unsigned int *tx_slot,
++				 unsigned int rx_num, const unsigned int *rx_slot)
++{
++	struct q6apm_lpass_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	struct audioreach_module_config *cfg = &dai_data->module_config[dai->id];
++	unsigned int i;
++
++	if (dai->id != SECONDARY_MI2S_RX)
++		return q6dma_set_channel_map(dai, tx_num, tx_slot,
++					     rx_num, rx_slot);
++
++	if (rx_num > AR_PCM_MAX_NUM_CHANNEL) {
++		dev_err(dai->dev, "%s: invalid channel count %u\n",
++			__func__, rx_num);
++		return -EINVAL;
++	}
++
++	audioreach_set_default_channel_mapping(cfg->channel_map, rx_num);
++	cfg->num_channels = rx_num;
++
++	for (i = rx_num; i < AR_PCM_MAX_NUM_CHANNEL; i++)
++		cfg->channel_map[i] = 0;
++
++	return 0;
++}
++
+ static int q6hdmi_hw_params(struct snd_pcm_substream *substream,
+ 			    struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
+ {
+@@ -143,6 +326,44 @@
+ 	cfg->num_channels = channels;
+ 	audioreach_set_default_channel_mapping(cfg->channel_map, channels);
+ 
++	if (dai->id == SECONDARY_MI2S_RX) {
++		cfg->bit_width = 32;
++		cfg->num_channels = 8;
++		cfg->sd_line_mask = 0x3;
++		cfg->frame_size_factor = 1;
++		audioreach_set_default_channel_mapping(cfg->channel_map,
++						       cfg->num_channels);
++	}
++
++	return 0;
++}
++
++static int q6tdm_hw_params(struct snd_pcm_substream *substream,
++			   struct snd_pcm_hw_params *params,
++			   struct snd_soc_dai *dai)
++{
++	struct q6apm_lpass_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	struct audioreach_module_config *cfg = &dai_data->module_config[dai->id];
++	int channels = params_channels(params);
++
++	cfg->bit_width = params_width(params);
++	cfg->sample_rate = params_rate(params);
++	cfg->num_channels = channels;
++
++	if (dai->id == SECONDARY_TDM_RX_0) {
++		/*
++		 * Y700 uses a stereo S24 stream on secondary TDM. Android's
++		 * group slot_mask=3 describes slot0/slot1, not two physical SD
++		 * lines. Keep the data line as SD0 here; the TDM endpoint payload
++		 * maps this to slot_mask=3 for the AW2308 pair.
++		 */
++		cfg->bit_width = 24;
++		cfg->num_channels = 2;
++		cfg->sd_line_mask = 0x1;
++		cfg->frame_size_factor = 8;
++		audioreach_set_default_channel_mapping(cfg->channel_map, cfg->num_channels);
++	}
++
+ 	return 0;
+ }
+ 
+@@ -164,6 +385,42 @@
+ 	}
+ 	dai_data->is_prepared[dai->id] = false;
+ 	dai_data->is_restored[dai->id] = false;
++
++	if ((dai->id == SECONDARY_TDM_RX_0 || dai->id == SECONDARY_MI2S_RX) &&
++	    dai_data->sec_tdm_clks_enabled) {
++		if (q6apm_lpass_y700_sec_ibit_clk(dai_data, dai->id))
++			clk_disable_unprepare(q6apm_lpass_y700_sec_ibit_clk(dai_data,
++									     dai->id));
++		dai_data->sec_tdm_clks_enabled = false;
++	}
++}
++
++static int q6apm_lpass_enable_sec_tdm_clks(struct snd_soc_dai *dai)
++{
++	struct q6apm_lpass_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	int ret;
++
++	if (dai_data->sec_tdm_clks_enabled)
++		return 0;
++
++	if (q6apm_lpass_y700_sec_ibit_clk(dai_data, dai->id)) {
++		ret = clk_set_rate(q6apm_lpass_y700_sec_ibit_clk(dai_data,
++								 dai->id),
++				   Y700_SEC_TDM_BCLK_RATE);
++		if (ret)
++			dev_warn(dai->dev,
++				 "Y700 TDM ibit clk_set_rate failed: %d\n",
++				 ret);
++	}
++
++	ret = q6apm_lpass_y700_sec_ibit_clk(dai_data, dai->id) ?
++		clk_prepare_enable(q6apm_lpass_y700_sec_ibit_clk(dai_data,
++								 dai->id)) : 0;
++	if (ret)
++		return ret;
++
++	dai_data->sec_tdm_clks_enabled = true;
++	return 0;
+ }
+ 
+ static int q6apm_lpass_dai_trigger(struct snd_pcm_substream *substream, int cmd,
+@@ -184,7 +441,8 @@
+ 		if (!dai_data->is_port_started[dai->id]) {
+ 			ret = q6apm_graph_start(dai_data->graph[dai->id]);
+ 			if (ret < 0)
+-				dev_err(dai->dev, "Failed to start APM port %d\n", dai->id);
++				dev_err(dai->dev, "Failed to start APM port %d\n",
++					dai->id);
+ 			else
+ 				dai_data->is_port_started[dai->id] = true;
+ 		}
+@@ -245,6 +503,12 @@
+ 	int graph_id = dai->id;
+ 	int rc;
+ 
++	if (dai->id == SECONDARY_TDM_RX_0 || dai->id == SECONDARY_MI2S_RX) {
++		rc = q6apm_lpass_enable_sec_tdm_clks(dai);
++		if (rc)
++			return rc;
++	}
++
+ 	/* Stopping a just-restored port drops BCLK while codecs may be starting */
+ 	if (dai_data->is_restored[dai->id]) {
+ 		dai_data->is_restored[dai->id] = false;
+@@ -292,6 +556,13 @@
+ 	struct q6apm_lpass_dai_data *dai_data = dev_get_drvdata(dai->dev);
+ 	struct q6apm_graph *graph;
+ 	int graph_id = dai->id;
++	int rc;
++
++	if (dai->id == SECONDARY_TDM_RX_0 || dai->id == SECONDARY_MI2S_RX) {
++		rc = q6apm_lpass_enable_sec_tdm_clks(dai);
++		if (rc)
++			return rc;
++	}
+ 
+ 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+ 		graph = q6apm_graph_open(dai->dev, NULL, dai->dev, graph_id, substream->stream);
+@@ -329,12 +600,24 @@
+ 	.prepare	= q6apm_lpass_dai_prepare,
+ 	.startup	= q6apm_lpass_dai_startup,
+ 	.shutdown	= q6apm_lpass_dai_shutdown,
+-	.set_channel_map  = q6dma_set_channel_map,
++	.set_channel_map  = q6i2s_set_channel_map,
++	.set_tdm_slot	= q6i2s_set_tdm_slot,
+ 	.hw_params        = q6dma_hw_params,
+ 	.set_fmt	= q6i2s_set_fmt,
+ 	.trigger	= q6apm_lpass_dai_trigger,
+ };
+ 
++static const struct snd_soc_dai_ops q6tdm_ops = {
++	.prepare	= q6apm_lpass_dai_prepare,
++	.startup	= q6apm_lpass_dai_startup,
++	.shutdown	= q6apm_lpass_dai_shutdown,
++	.set_channel_map = q6tdm_set_channel_map,
++	.set_tdm_slot	= q6tdm_set_tdm_slot,
++	.hw_params	= q6tdm_hw_params,
++	.set_fmt	= q6i2s_set_fmt,
++	.trigger	= q6apm_lpass_dai_trigger,
++};
++
+ static const struct snd_soc_dai_ops q6hdmi_ops = {
+ 	.prepare	= q6apm_lpass_dai_prepare,
+ 	.startup	= q6apm_lpass_dai_startup,
+@@ -418,10 +701,41 @@
+ 	if (!dai_data)
+ 		return -ENOMEM;
+ 
++	dai_data->sec_tdm_ibit_clk = devm_clk_get_optional(dev,
++							   "sec-tdm-ibit");
++	if (IS_ERR(dai_data->sec_tdm_ibit_clk))
++		return PTR_ERR(dai_data->sec_tdm_ibit_clk);
++
++	dai_data->sec_tdm_ebit_clk = devm_clk_get_optional(dev,
++							   "sec-tdm-ebit");
++	if (IS_ERR(dai_data->sec_tdm_ebit_clk))
++		return PTR_ERR(dai_data->sec_tdm_ebit_clk);
++
++	dai_data->sec_mi2s_ibit_clk = devm_clk_get_optional(dev,
++							    "sec-mi2s-ibit");
++	if (IS_ERR(dai_data->sec_mi2s_ibit_clk))
++		return PTR_ERR(dai_data->sec_mi2s_ibit_clk);
++
++	dai_data->sec_mi2s_ebit_clk = devm_clk_get_optional(dev,
++							    "sec-mi2s-ebit");
++	if (IS_ERR(dai_data->sec_mi2s_ebit_clk))
++		return PTR_ERR(dai_data->sec_mi2s_ebit_clk);
++
++	dai_data->lpass_macro_clk = devm_clk_get_optional(dev,
++							  "lpass-macro");
++	if (IS_ERR(dai_data->lpass_macro_clk))
++		return PTR_ERR(dai_data->lpass_macro_clk);
++
++	dai_data->lpass_dcodec_clk = devm_clk_get_optional(dev,
++							   "lpass-dcodec");
++	if (IS_ERR(dai_data->lpass_dcodec_clk))
++		return PTR_ERR(dai_data->lpass_dcodec_clk);
++
+ 	dev_set_drvdata(dev, dai_data);
+ 
+ 	memset(&cfg, 0, sizeof(cfg));
+ 	cfg.q6i2s_ops = &q6i2s_ops;
++	cfg.q6tdm_ops = &q6tdm_ops;
+ 	cfg.q6dma_ops = &q6dma_ops;
+ 	cfg.q6hdmi_ops = &q6hdmi_ops;
+ 	dais = q6dsp_audio_ports_set_config(dev, &cfg, &num_dais);
+diff -ruN a/sound/soc/qcom/qdsp6/q6dsp-lpass-ports.c b/sound/soc/qcom/qdsp6/q6dsp-lpass-ports.c
+--- a/sound/soc/qcom/qdsp6/q6dsp-lpass-ports.c	2026-09-14 13:41:11.000000000 +0200
++++ b/sound/soc/qcom/qdsp6/q6dsp-lpass-ports.c	2026-09-29 22:06:36.490952473 +0200
+@@ -416,7 +416,9 @@
+ 			.stream_name = "Secondary MI2S Playback",
+ 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
+ 				 SNDRV_PCM_RATE_16000,
+-			.formats = SNDRV_PCM_FMTBIT_S16_LE,
++			.formats = SNDRV_PCM_FMTBIT_S16_LE |
++				   SNDRV_PCM_FMTBIT_S24_LE |
++				   SNDRV_PCM_FMTBIT_S32_LE,
+ 			.channels_min = 1,
+ 			.channels_max = 8,
+ 			.rate_min =     8000,
+diff -ruN a/sound/soc/qcom/qdsp6/q6prm-clocks.c b/sound/soc/qcom/qdsp6/q6prm-clocks.c
+--- a/sound/soc/qcom/qdsp6/q6prm-clocks.c	2026-09-14 13:41:11.000000000 +0200
++++ b/sound/soc/qcom/qdsp6/q6prm-clocks.c	2026-09-29 22:06:36.491138300 +0200
+@@ -42,6 +42,17 @@
+ 	Q6PRM_CLK(LPASS_CLK_ID_INT5_MI2S_IBIT),
+ 	Q6PRM_CLK(LPASS_CLK_ID_INT6_MI2S_IBIT),
+ 	Q6PRM_CLK(LPASS_CLK_ID_QUI_MI2S_OSR),
++	Q6PRM_CLK(LPASS_CLK_ID_PRI_TDM_IBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_PRI_TDM_EBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_SEC_TDM_IBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_SEC_TDM_EBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_TER_TDM_IBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_TER_TDM_EBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_QUAD_TDM_IBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_QUAD_TDM_EBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_QUIN_TDM_IBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_QUIN_TDM_EBIT),
++	Q6PRM_CLK(LPASS_CLK_ID_QUIN_TDM_OSR),
+ 	Q6PRM_CLK(LPASS_CLK_ID_WSA_CORE_MCLK),
+ 	Q6PRM_CLK(LPASS_CLK_ID_WSA_CORE_NPL_MCLK),
+ 	Q6PRM_CLK(LPASS_CLK_ID_VA_CORE_MCLK),
+diff -ruN a/sound/soc/qcom/qdsp6/q6prm.h b/sound/soc/qcom/qdsp6/q6prm.h
+--- a/sound/soc/qcom/qdsp6/q6prm.h	2026-09-14 13:41:11.000000000 +0200
++++ b/sound/soc/qcom/qdsp6/q6prm.h	2026-09-29 22:06:36.491381704 +0200
+@@ -52,6 +52,19 @@
+ /* Clock ID for QUINARY MI2S OSR CLK  */
+ #define Q6PRM_LPASS_CLK_ID_QUI_MI2S_OSR                         0x116
+ 
++/* TDM clocks */
++#define Q6PRM_LPASS_CLK_ID_PRI_TDM_IBIT			0x200
++#define Q6PRM_LPASS_CLK_ID_PRI_TDM_EBIT			0x201
++#define Q6PRM_LPASS_CLK_ID_SEC_TDM_IBIT			0x202
++#define Q6PRM_LPASS_CLK_ID_SEC_TDM_EBIT			0x203
++#define Q6PRM_LPASS_CLK_ID_TER_TDM_IBIT			0x204
++#define Q6PRM_LPASS_CLK_ID_TER_TDM_EBIT			0x205
++#define Q6PRM_LPASS_CLK_ID_QUAD_TDM_IBIT			0x206
++#define Q6PRM_LPASS_CLK_ID_QUAD_TDM_EBIT			0x207
++#define Q6PRM_LPASS_CLK_ID_QUIN_TDM_IBIT			0x208
++#define Q6PRM_LPASS_CLK_ID_QUIN_TDM_EBIT			0x209
++#define Q6PRM_LPASS_CLK_ID_QUIN_TDM_OSR			0x20A
++
+ #define Q6PRM_LPASS_CLK_ID_WSA_CORE_MCLK			0x305
+ #define Q6PRM_LPASS_CLK_ID_WSA_CORE_NPL_MCLK			0x306
+ 
+diff -ruN a/sound/soc/qcom/qdsp6/topology.c b/sound/soc/qcom/qdsp6/topology.c
+--- a/sound/soc/qcom/qdsp6/topology.c	2026-09-14 13:41:11.000000000 +0200
++++ b/sound/soc/qcom/qdsp6/topology.c	2026-09-29 22:06:36.491817948 +0200
+@@ -743,6 +743,9 @@
+ 		case AR_TKN_U32_MODULE_WS_SRC:
+ 			mod->ws_src = le32_to_cpu(mod_elem->value);
+ 			break;
++		case AR_TKN_U32_MODULE_FRAME_SZ_FACTOR:
++			mod->frame_size_factor = le32_to_cpu(mod_elem->value);
++			break;
+ 		default:
+ 			break;
+ 		}
+@@ -804,6 +807,8 @@
+ 		break;
+ 	case MODULE_ID_I2S_SINK:
+ 	case MODULE_ID_I2S_SOURCE:
++	case MODULE_ID_TDM_SINK:
++	case MODULE_ID_TDM_SOURCE:
+ 		audioreach_widget_i2s_module_load(mod, mod_array);
+ 		break;
+ 	case MODULE_ID_DISPLAY_PORT_SINK:
+diff -ruN a/sound/soc/qcom/sc8280xp.c b/sound/soc/qcom/sc8280xp.c
+--- a/sound/soc/qcom/sc8280xp.c	2026-09-29 22:06:36.405073210 +0200
++++ b/sound/soc/qcom/sc8280xp.c	2026-09-29 22:06:36.492000489 +0200
+@@ -17,6 +17,11 @@
+ #include "common.h"
+ #include "sdw.h"
+ 
++#define TDM_BCLK_RATE		12288000
++#define NUM_TDM_SLOTS		8
++
++static unsigned int tdm_slot_offset[8] = {0, 4, 8, 12, 16, 20, 24, 28};
++
+ struct sc8280xp_snd_data {
+ 	bool stream_prepared[AFE_PORT_MAX];
+ 	struct snd_soc_card *card;
+@@ -140,6 +145,24 @@
+ 	channels->min = 2;
+ 	channels->max = 2;
+ 	switch (cpu_dai->id) {
++	case SECONDARY_TDM_RX_0:
++		/*
++		 * Android AudioFlinger feeds the speaker path as 48 kHz stereo
++		 * S24, while the AW2308s are configured for an 8-slot/32-bit TDM
++		 * frame and consume slot0/slot1. Keep PCM channels stereo and
++		 * express the physical frame through set_tdm_slot().
++		 */
++		snd_mask_none(fmt);
++		snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S24_LE);
++		channels->min = 2;
++		channels->max = 2;
++		break;
++	case SECONDARY_MI2S_RX:
++		snd_mask_none(fmt);
++		snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S32_LE);
++		channels->min = 8;
++		channels->max = 8;
++		break;
+ 	case TX_CODEC_DMA_TX_0:
+ 	case TX_CODEC_DMA_TX_1:
+ 	case TX_CODEC_DMA_TX_2:
+@@ -179,6 +202,126 @@
+ 					   ayaneo_ps2_channels_mapping);
+ }
+ 
++static int sc8280xp_tdm_snd_hw_params(struct snd_pcm_substream *substream,
++				      struct snd_pcm_hw_params *params)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
++	int channels, ret, slot_width;
++
++	switch (params_format(params)) {
++	case SNDRV_PCM_FORMAT_S16_LE:
++		slot_width = 16;
++		break;
++	case SNDRV_PCM_FORMAT_S24_LE:
++	case SNDRV_PCM_FORMAT_S32_LE:
++		slot_width = 32;
++		break;
++	default:
++		dev_err(rtd->dev, "%s: invalid param format 0x%x\n",
++			__func__, params_format(params));
++		return -EINVAL;
++	}
++
++	channels = params_channels(params);
++	if (cpu_dai->id == SECONDARY_MI2S_RX) {
++		ret = snd_soc_dai_set_tdm_slot(cpu_dai, 0, 0x3,
++					       NUM_TDM_SLOTS, 32);
++		if (ret < 0)
++			return ret;
++
++		return snd_soc_dai_set_channel_map(cpu_dai, 0, NULL,
++						   NUM_TDM_SLOTS,
++						   tdm_slot_offset);
++	}
++
++	if (cpu_dai->id == SECONDARY_TDM_RX_0)
++		slot_width = 32;
++
++	ret = snd_soc_dai_set_tdm_slot(cpu_dai, 0, 0x3,
++				       NUM_TDM_SLOTS, slot_width);
++	if (ret < 0)
++		return ret;
++
++	return snd_soc_dai_set_channel_map(cpu_dai, 0, NULL,
++					   channels, tdm_slot_offset);
++}
++
++static int sc8280xp_snd_hw_params(struct snd_pcm_substream *substream,
++				  struct snd_pcm_hw_params *params)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
++
++	switch (cpu_dai->id) {
++	case SECONDARY_MI2S_RX:
++	case SECONDARY_TDM_RX_0:
++		return sc8280xp_tdm_snd_hw_params(substream, params);
++	default:
++		return 0;
++	}
++}
++
++static int sc8280xp_tdm_snd_startup(struct snd_pcm_substream *substream)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
++	struct snd_soc_dai *codec_dai;
++	int ret, i;
++
++	switch (cpu_dai->id) {
++	case SECONDARY_MI2S_RX:
++	case SECONDARY_TDM_RX_0:
++		ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_BP_FP);
++		if (ret < 0)
++			return ret;
++
++		ret = snd_soc_dai_set_sysclk(cpu_dai,
++					     Q6AFE_LPASS_CLK_ID_SEC_TDM_IBIT,
++					     TDM_BCLK_RATE,
++					     SNDRV_PCM_STREAM_PLAYBACK);
++		if (ret < 0 && ret != -ENOTSUPP)
++			return ret;
++
++		for_each_rtd_codec_dais(rtd, i, codec_dai) {
++			ret = snd_soc_dai_set_fmt(codec_dai,
++						  SND_SOC_DAIFMT_BC_FC |
++						  SND_SOC_DAIFMT_IB_NF |
++						  SND_SOC_DAIFMT_DSP_B);
++			if (ret < 0 && ret != -ENOTSUPP)
++				return ret;
++
++			ret = snd_soc_dai_set_sysclk(codec_dai, 0,
++						     TDM_BCLK_RATE,
++						     SNDRV_PCM_STREAM_PLAYBACK);
++			if (ret < 0 && ret != -ENOTSUPP)
++				return ret;
++
++			ret = snd_soc_dai_set_tdm_slot(codec_dai, 0,
++						       BIT(i),
++						       NUM_TDM_SLOTS, 32);
++			if (ret < 0 && ret != -ENOTSUPP)
++				return ret;
++		}
++		break;
++	default:
++		break;
++	}
++
++	return 0;
++}
++
++static int sc8280xp_be_startup(struct snd_pcm_substream *substream)
++{
++	int ret;
++
++	ret = sc8280xp_tdm_snd_startup(substream);
++	if (ret)
++		return ret;
++
++	return sc8280xp_snd_startup(substream);
++}
++
+ static int sc8280xp_snd_prepare(struct snd_pcm_substream *substream)
+ {
+ 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+@@ -205,8 +348,9 @@
+ }
+ 
+ static const struct snd_soc_ops sc8280xp_be_ops = {
+-	.startup = sc8280xp_snd_startup,
++	.startup = sc8280xp_be_startup,
+ 	.shutdown = sc8280xp_snd_shutdown,
++	.hw_params = sc8280xp_snd_hw_params,
+ 	.hw_free = sc8280xp_snd_hw_free,
+ 	.prepare = sc8280xp_snd_prepare,
+ };

@@ -1,0 +1,10 @@
+[Unit]
+Description=Lenovo TB321FU: route USB data to the short-side port (pmic-glink c2-select-gpios, TLMM 58)
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+
+[Service]
+ExecStart=/usr/libexec/tb321fu/gpiohold /dev/gpiochip8 58 1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

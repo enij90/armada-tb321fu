@@ -1,0 +1,14 @@
+[Unit]
+Description=Lenovo TB321FU: install device configuration into /etc
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-logind.service display-manager.service sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/tb321fu/setup
+
+[Install]
+WantedBy=sysinit.target

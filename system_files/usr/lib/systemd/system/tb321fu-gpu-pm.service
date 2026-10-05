@@ -1,0 +1,12 @@
+[Unit]
+Description=Lenovo TB321FU: keep the Adreno 750 powered (GMU fails to cold-boot on runtime resume)
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for d in 3d00000.gpu 3d6a000.gmu; do echo on > /sys/bus/platform/devices/$d/power/control; done'
+
+[Install]
+WantedBy=multi-user.target

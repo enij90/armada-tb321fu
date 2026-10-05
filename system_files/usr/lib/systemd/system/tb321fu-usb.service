@@ -1,0 +1,12 @@
+[Unit]
+Description=Lenovo TB321FU: re-bind UCSI after the ADSP is up
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/tb321fu/ucsi-rebind
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dpu: validate the mode clock on the active width
+
+dpu_crtc_mode_valid() compares the full pixel clock (including horizontal
+blanking) against the maximum MDP core clock, while
+_dpu_core_perf_calc_clk() - which sets the actual core clock - uses
+vtotal * hdisplay * vrefresh. The mismatch rejects modes the core can
+drive: the Lenovo TB321FU BOE panel at 1600x2560@165 over bonded DSI
+(htotal 2314) is refused as 571 MHz per mixer although it needs ~395 MHz,
+the same figure the downstream SDE driver uses. Validate with the same
+formula the clock calculation uses.
+
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c	2026-09-30 19:32:47.440466904 +0200
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c	2026-09-30 19:32:47.441927899 +0200
+@@ -1796,8 +1796,15 @@
+ 	    mode->hdisplay > dpu_kms->catalog->caps->max_mixer_width)
+ 		return MODE_BAD_HVALUE;
+ 
+-	adjusted_mode_clk = dpu_core_perf_adjusted_mode_clk(mode->clock,
+-							    dpu_kms->perf.perf_cfg);
++	/*
++	 * Match _dpu_core_perf_calc_clk(): the MDP core only processes the
++	 * active width, so horizontal blanking does not count. Using the full
++	 * pixel clock rejects modes the core can drive, e.g. 1600x2560@165 over
++	 * bonded DSI (htotal 2314) needs ~395 MHz per mixer, not 571 MHz.
++	 */
++	adjusted_mode_clk = dpu_core_perf_adjusted_mode_clk(
++		div_u64((u64)mode->vtotal * mode->hdisplay * drm_mode_vrefresh(mode), 1000),
++		dpu_kms->perf.perf_cfg);
+ 
+ 	if (dpu_kms->catalog->caps->has_3d_merge)
+ 		adjusted_mode_clk /= 2;

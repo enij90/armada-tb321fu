@@ -1,0 +1,14 @@
+#!/bin/bash
+# The UCSI PPM is probed while the ADSP is still booting, times out and gives up
+# ("PPM init failed, stop trying"): no Type-C ports, no role/VBUS for the USB-C
+# controller. Re-bind it once the ADSP is running.
+for i in $(seq 1 60); do
+    [ "$(cat /sys/class/remoteproc/remoteproc0/state 2>/dev/null)" = running ] && break
+    sleep 1
+done
+sleep 8
+[ -e /sys/class/typec/port0 ] && exit 0
+D=/sys/bus/auxiliary/drivers/ucsi_glink.pmic_glink_ucsi
+echo pmic_glink.ucsi.0 > $D/unbind 2>/dev/null || true
+sleep 1
+echo pmic_glink.ucsi.0 > $D/bind

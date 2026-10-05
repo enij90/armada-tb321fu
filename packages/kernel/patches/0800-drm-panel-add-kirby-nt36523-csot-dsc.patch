@@ -1,0 +1,416 @@
+diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
+index 3eac4d0..959b60a 100644
+--- a/drivers/gpu/drm/panel/Kconfig
++++ b/drivers/gpu/drm/panel/Kconfig
+@@ -622,6 +622,19 @@ config DRM_PANEL_NOVATEK_NT36523
+ 	  around the Novatek NT36523 display controller, such as some
+ 	  Boe panels used in Xiaomi Mi Pad 5 and 5 Pro tablets.
+
++config DRM_PANEL_NOVATEK_NT36523_KIRBY
++	tristate "Novatek NT36523 DSC panel for Lenovo Legion Tab (kirby)"
++	depends on OF
++	depends on DRM_MIPI_DSI
++	depends on BACKLIGHT_CLASS_DEVICE
++	select DRM_DISPLAY_DP_HELPER
++	select DRM_DISPLAY_HELPER
++	help
++	  Say Y here to enable support for the Novatek NT36523 CSOT DSC
++	  panel found in the Lenovo Legion Tab Gen 3 (TB321FU). This panel
++	  uses dual-DSI C-PHY with DSC 1.1 compression.
++
++
+ config DRM_PANEL_NOVATEK_NT36672A
+ 	tristate "Novatek NT36672A DSI panel"
+ 	depends on GPIOLIB
+diff --git a/drivers/gpu/drm/panel/Makefile b/drivers/gpu/drm/panel/Makefile
+index c2c5cf8..561107d 100644
+--- a/drivers/gpu/drm/panel/Makefile
++++ b/drivers/gpu/drm/panel/Makefile
+@@ -60,6 +60,7 @@ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT35532) += panel-novatek-nt35532.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT35560) += panel-novatek-nt35560.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT35950) += panel-novatek-nt35950.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT36523) += panel-novatek-nt36523.o
++obj-$(CONFIG_DRM_PANEL_NOVATEK_NT36523_KIRBY) += panel-novatek-nt36523-kirby.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT36672A) += panel-novatek-nt36672a.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT36672E) += panel-novatek-nt36672e.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT37700F) += panel-novatek-nt37700f.o
+diff --git a/drivers/gpu/drm/panel/panel-novatek-nt36523-kirby.c b/drivers/gpu/drm/panel/panel-novatek-nt36523-kirby.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/gpu/drm/panel/panel-novatek-nt36523-kirby.c
+@@ -0,0 +1,375 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Novatek NT36523 DSC panel driver for Lenovo Legion Tab Gen 3 (TB321FU / "kirby")
++ *
++ * Dual-DSI C-PHY video mode, DSC 1.1 at 8bpp, 1600x2560 @ 120 Hz.
++ * Panel: CSOT with Novatek NT36523 DDIC.
++ * Backlight: external KTZ8866 (I2C), not DCS.
++ *
++ * Copyright (c) 2026, enij90 / legion-tab-gen3-linux
++ */
++
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/of_graph.h>
++#include <linux/regulator/consumer.h>
++
++#include <video/mipi_display.h>
++
++#include <drm/display/drm_dsc.h>
++#include <drm/display/drm_dsc_helper.h>
++#include <drm/drm_connector.h>
++#include <drm/drm_mipi_dsi.h>
++#include <drm/drm_modes.h>
++#include <drm/drm_panel.h>
++
++struct kirby_panel {
++	struct drm_panel panel;
++	struct mipi_dsi_device *dsi[2];
++	struct drm_dsc_config dsc;
++	enum drm_panel_orientation orientation;
++
++	struct regulator *vddio;
++	struct regulator *enp;
++	struct regulator *enn;
++	struct gpio_desc *reset_gpio;
++};
++
++static inline struct kirby_panel *to_kirby(struct drm_panel *panel)
++{
++	return container_of(panel, struct kirby_panel, panel);
++}
++
++/*
++ * 1600x2560 @ 120 Hz from stock firmware DTS.
++ * Per-link hactive = 800; porches are per-link values.
++ */
++static const struct drm_display_mode kirby_csot_mode = {
++	.clock = (1600 + 283 + 20 + 54) * (2560 + 30 + 4 + 256) * 120 / 1000,
++	.hdisplay = 1600,
++	.hsync_start = 1600 + 283,
++	.hsync_end = 1600 + 283 + 20,
++	.htotal = 1600 + 283 + 20 + 54,
++	.vdisplay = 2560,
++	.vsync_start = 2560 + 30,
++	.vsync_end = 2560 + 30 + 4,
++	.vtotal = 2560 + 30 + 4 + 256,
++	.width_mm = 119,
++	.height_mm = 190,
++};
++
++static void kirby_dsc_config(struct drm_dsc_config *dsc)
++{
++	dsc->dsc_version_major = 1;
++	dsc->dsc_version_minor = 1;
++	dsc->slice_height = 20;
++	dsc->slice_width = 800;
++	dsc->slice_count = 2;
++	dsc->bits_per_component = 8;
++	dsc->bits_per_pixel = 8 << 4;
++	dsc->block_pred_enable = true;
++}
++
++static int kirby_on(struct kirby_panel *ctx)
++{
++	struct mipi_dsi_device *dsi0 = ctx->dsi[0];
++	struct mipi_dsi_device *dsi1 = ctx->dsi[1];
++	struct mipi_dsi_multi_context dsi_ctx = { .dsi = NULL };
++
++	/*
++	 * Minimal init: bootloader hands off an initialized panel.
++	 * Full vendor DCS init to be added for suspend/resume.
++	 */
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xff, 0x10);
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xfb, 0x01);
++
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc0, 0x03);
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc1, 0x89,
++					  0x28, 0x00, 0x14, 0x00, 0xaa,
++					  0x02, 0x0e, 0x00, 0x71, 0x00,
++					  0x07, 0x05, 0x0e, 0x05, 0x16);
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xc2,
++					  0x10, 0xf0);
++
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0xbb, 0x13);
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1, 0x3b,
++					  0x03, 0x1e, 0x36, 0x04, 0x04);
++
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1,
++					  MIPI_DCS_WRITE_CONTROL_DISPLAY, 0x2c);
++	mipi_dsi_dual_dcs_write_seq_multi(&dsi_ctx, dsi0, dsi1,
++					  MIPI_DCS_WRITE_POWER_SAVE, 0x00);
++
++	dsi_ctx.dsi = dsi0;
++	mipi_dsi_dcs_exit_sleep_mode_multi(&dsi_ctx);
++	dsi_ctx.dsi = dsi1;
++	mipi_dsi_dcs_exit_sleep_mode_multi(&dsi_ctx);
++	mipi_dsi_msleep(&dsi_ctx, 120);
++
++	return dsi_ctx.accum_err;
++}
++
++static void kirby_reset(struct kirby_panel *ctx)
++{
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	usleep_range(12000, 13000);
++	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
++	usleep_range(12000, 13000);
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	usleep_range(12000, 13000);
++	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
++	usleep_range(12000, 13000);
++}
++
++static int kirby_prepare(struct drm_panel *panel)
++{
++	struct kirby_panel *ctx = to_kirby(panel);
++	struct drm_dsc_picture_parameter_set pps;
++	int ret;
++
++	ret = regulator_enable(ctx->vddio);
++	if (ret)
++		return ret;
++
++	ret = regulator_enable(ctx->enp);
++	if (ret)
++		goto err_vddio;
++
++	ret = regulator_enable(ctx->enn);
++	if (ret)
++		goto err_enp;
++
++	kirby_reset(ctx);
++
++	ret = kirby_on(ctx);
++	if (ret < 0)
++		goto err_reset;
++
++	drm_dsc_pps_payload_pack(&pps, &ctx->dsc);
++	ret = mipi_dsi_picture_parameter_set(ctx->dsi[0], &pps);
++	if (ret < 0)
++		goto err_reset;
++
++	ret = mipi_dsi_compression_mode(ctx->dsi[0], true);
++	if (ret < 0)
++		goto err_reset;
++
++	return 0;
++
++err_reset:
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	regulator_disable(ctx->enn);
++err_enp:
++	regulator_disable(ctx->enp);
++err_vddio:
++	regulator_disable(ctx->vddio);
++	return ret;
++}
++
++static int kirby_enable(struct drm_panel *panel)
++{
++	struct kirby_panel *ctx = to_kirby(panel);
++	struct mipi_dsi_multi_context dsi_ctx = { .dsi = NULL };
++
++	dsi_ctx.dsi = ctx->dsi[0];
++	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
++	dsi_ctx.dsi = ctx->dsi[1];
++	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
++	mipi_dsi_msleep(&dsi_ctx, 30);
++
++	return dsi_ctx.accum_err;
++}
++
++static int kirby_disable(struct drm_panel *panel)
++{
++	struct kirby_panel *ctx = to_kirby(panel);
++	int i;
++
++	for (i = 0; i < 2; i++) {
++		struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi[i] };
++
++		if (!ctx->dsi[i])
++			continue;
++		mipi_dsi_dcs_set_display_off_multi(&dsi_ctx);
++	}
++
++	for (i = 0; i < 2; i++) {
++		struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi[i] };
++
++		if (!ctx->dsi[i])
++			continue;
++		mipi_dsi_dcs_enter_sleep_mode_multi(&dsi_ctx);
++	}
++
++	msleep(70);
++	return 0;
++}
++
++static int kirby_unprepare(struct drm_panel *panel)
++{
++	struct kirby_panel *ctx = to_kirby(panel);
++
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	regulator_disable(ctx->enn);
++	regulator_disable(ctx->enp);
++	regulator_disable(ctx->vddio);
++
++	return 0;
++}
++
++static int kirby_get_modes(struct drm_panel *panel,
++			   struct drm_connector *connector)
++{
++	struct drm_display_mode *mode;
++
++	mode = drm_mode_duplicate(connector->dev, &kirby_csot_mode);
++	if (!mode)
++		return -ENOMEM;
++
++	drm_mode_set_name(mode);
++	mode->type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED;
++
++	connector->display_info.width_mm = mode->width_mm;
++	connector->display_info.height_mm = mode->height_mm;
++	connector->display_info.bpc = 8;
++
++	drm_mode_probed_add(connector, mode);
++
++	return 1;
++}
++
++static enum drm_panel_orientation kirby_get_orientation(struct drm_panel *panel)
++{
++	struct kirby_panel *ctx = to_kirby(panel);
++
++	return ctx->orientation;
++}
++
++static const struct drm_panel_funcs kirby_panel_funcs = {
++	.prepare = kirby_prepare,
++	.enable = kirby_enable,
++	.disable = kirby_disable,
++	.unprepare = kirby_unprepare,
++	.get_modes = kirby_get_modes,
++	.get_orientation = kirby_get_orientation,
++};
++
++static int kirby_probe(struct mipi_dsi_device *dsi)
++{
++	struct device *dev = &dsi->dev;
++	struct device_node *dsi1;
++	struct mipi_dsi_host *dsi1_host;
++	struct kirby_panel *ctx;
++	struct mipi_dsi_device_info info = { "nt36523-kirby", 0, NULL };
++	int i, ret;
++
++	ctx = devm_drm_panel_alloc(dev, struct kirby_panel, panel,
++				  &kirby_panel_funcs,
++				  DRM_MODE_CONNECTOR_DSI);
++	if (IS_ERR(ctx))
++		return PTR_ERR(ctx);
++
++	ctx->vddio = devm_regulator_get(dev, "vddio");
++	if (IS_ERR(ctx->vddio))
++		return dev_err_probe(dev, PTR_ERR(ctx->vddio),
++				     "failed to get vddio\n");
++
++	ctx->enp = devm_regulator_get(dev, "enp");
++	if (IS_ERR(ctx->enp))
++		return dev_err_probe(dev, PTR_ERR(ctx->enp),
++				     "failed to get enp\n");
++
++	ctx->enn = devm_regulator_get(dev, "enn");
++	if (IS_ERR(ctx->enn))
++		return dev_err_probe(dev, PTR_ERR(ctx->enn),
++				     "failed to get enn\n");
++
++	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(ctx->reset_gpio))
++		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
++				     "failed to get reset gpio\n");
++
++	kirby_dsc_config(&ctx->dsc);
++	drm_dsc_compute_rc_parameters(&ctx->dsc);
++
++	ctx->dsi[0] = dsi;
++	mipi_dsi_set_drvdata(dsi, ctx);
++
++	dsi1 = of_graph_get_remote_node(dsi->dev.of_node, 1, -1);
++	if (!dsi1) {
++		dev_err(dev, "cannot get secondary DSI node\n");
++		return -ENODEV;
++	}
++
++	dsi1_host = of_find_mipi_dsi_host_by_node(dsi1);
++	of_node_put(dsi1);
++	if (!dsi1_host)
++		return dev_err_probe(dev, -EPROBE_DEFER,
++				     "cannot get secondary DSI host\n");
++
++	ctx->dsi[1] = devm_mipi_dsi_device_register_full(dev, dsi1_host, &info);
++	if (IS_ERR(ctx->dsi[1])) {
++		dev_err(dev, "cannot register secondary DSI device\n");
++		return PTR_ERR(ctx->dsi[1]);
++	}
++
++	ret = of_drm_get_panel_orientation(dev->of_node, &ctx->orientation);
++	if (ret < 0) {
++		dev_err(dev, "failed to get orientation: %d\n", ret);
++		return ret;
++	}
++
++	ctx->panel.prepare_prev_first = true;
++
++	ret = drm_panel_of_backlight(&ctx->panel);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to get backlight\n");
++
++	drm_panel_add(&ctx->panel);
++
++	for (i = 0; i < 2; i++) {
++		ctx->dsi[i]->lanes = 3;
++		ctx->dsi[i]->format = MIPI_DSI_FMT_RGB888;
++		ctx->dsi[i]->mode_flags = MIPI_DSI_MODE_VIDEO |
++					  MIPI_DSI_CLOCK_NON_CONTINUOUS |
++					  MIPI_DSI_MODE_LPM;
++		ctx->dsi[i]->dsc = &ctx->dsc;
++
++		ret = devm_mipi_dsi_attach(dev, ctx->dsi[i]);
++		if (ret < 0) {
++			drm_panel_remove(&ctx->panel);
++			return dev_err_probe(dev, ret,
++					     "failed to attach dsi%d\n", i);
++		}
++	}
++
++	return 0;
++}
++
++static void kirby_remove(struct mipi_dsi_device *dsi)
++{
++	struct kirby_panel *ctx = mipi_dsi_get_drvdata(dsi);
++
++	drm_panel_remove(&ctx->panel);
++}
++
++static const struct of_device_id kirby_of_match[] = {
++	{ .compatible = "lenovo,kirby-nt36523-csot-dsc" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, kirby_of_match);
++
++static struct mipi_dsi_driver kirby_panel_driver = {
++	.probe = kirby_probe,
++	.remove = kirby_remove,
++	.driver = {
++		.name = "panel-novatek-nt36523-kirby",
++		.of_match_table = kirby_of_match,
++	},
++};
++module_mipi_dsi_driver(kirby_panel_driver);
++
++MODULE_DESCRIPTION("Novatek NT36523 DSC panel for Lenovo Legion Tab (kirby)");
++MODULE_LICENSE("GPL");

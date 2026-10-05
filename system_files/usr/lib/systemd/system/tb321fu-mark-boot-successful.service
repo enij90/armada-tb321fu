@@ -1,0 +1,11 @@
+[Unit]
+Description=Lenovo TB321FU: mark A/B slot A successful (ABL gives up after 7 unconfirmed boots)
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'd=$(lsblk -no PKNAME /dev/disk/by-partlabel/boot_a); n=$(cat /sys/class/block/$(basename $(readlink -f /dev/disk/by-partlabel/boot_a))/partition); /usr/sbin/sgdisk -A $n:set:54 /dev/$d'
+
+[Install]
+WantedBy=multi-user.target

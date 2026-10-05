@@ -1,0 +1,9 @@
+#!/bin/bash
+# The single DWC3 controller is muxed to the short-side port (c2-select), where the
+# controller dock sits, but UCSI drives its role from connector 0 (long side): with a
+# charger or PC there it switches to device and drops the dock. Force host while
+# something is attached to the short-side port.
+R=/sys/class/usb_role/a600000.usb-role-switch/role
+[ -e /sys/class/typec/port1-partner ] || exit 0
+sleep 2
+[ "$(cat $R)" = host ] || echo host > $R

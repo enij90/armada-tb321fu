@@ -1,0 +1,4 @@
+# The udev LIBINPUT_CALIBRATION_MATRIX rotates the touchscreen for gamescope;
+# KWin already maps touch to the rotated output, so undo it in Plasma.
+[Libinput][0][0][NVTCapacitiveTouchScreen]
+CalibrationMatrix=1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1

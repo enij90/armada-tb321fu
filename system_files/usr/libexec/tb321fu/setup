@@ -1,0 +1,17 @@
+#!/bin/bash
+# Install TB321FU-only configuration into /etc (not expressible as card/device
+# scoped rules under /usr). Existing files are left alone so users can edit them.
+set -u
+S=/usr/share/tb321fu/etc
+
+# Older images installed this to keep logind from suspending (fake suspend era).
+legacy=/etc/systemd/logind.conf.d/90-tb321fu-power-key.conf
+grep -qs "s2idle never resumes" "$legacy" && rm -f "$legacy"
+
+cd "$S" || exit 0
+find . -type f | while read -r f; do
+    t="/etc/${f#./}"
+    [ -e "$t" ] && continue
+    mkdir -p "$(dirname "$t")"
+    cp -a "$f" "$t"
+done
