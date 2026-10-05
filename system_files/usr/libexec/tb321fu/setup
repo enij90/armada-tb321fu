@@ -15,3 +15,8 @@ find . -type f | while read -r f; do
     mkdir -p "$(dirname "$t")"
     cp -a "$f" "$t"
 done
+
+# The install image is smaller than userdata, but the partition already spans the
+# rest of the disk: bootc-generic-growpart then reports NOCHANGE and never grows
+# the filesystem. Grow btrfs to the partition (a no-op once it fills it).
+btrfs filesystem resize max /var >/dev/null 2>&1 || true
