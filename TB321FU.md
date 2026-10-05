@@ -70,12 +70,85 @@ You start from the tablet as it comes from the factory, running Lenovo's Android
 What you will need:
 
 - the tablet, charged, with a **BOE** panel (see the check above);
-- a PC (Windows, Linux or macOS) with Android's `adb`/`fastboot` tools and a USB-C cable;
-- an **unlocked bootloader**;
+- a PC (Windows, Linux or macOS) with Android's
+  [platform-tools](https://developer.android.com/tools/releases/platform-tools) (`adb`, `fastboot`)
+  and a USB-C cable;
+- about 25 GB of free space on the PC;
 - a backup of anything you want to keep: the installation erases the tablet.
 
-🚧 The step-by-step guide is being written and tested on a factory-fresh tablet.
-It will be published here before this repository is announced.
+### 1. Unlock the bootloader
+
+Lenovo tablets are unlocked with a signed unlock file for your serial number:
+
+1. On Android: Settings → About → tap *Build number* 7 times, then in Developer options
+   enable **OEM unlocking** and **USB debugging**.
+2. Get the unlock file (`sn.img`) for your serial number, for example from
+   [lenovobl.neko.ink](https://lenovobl.neko.ink).
+3. Flash it and unlock (**this wipes Android**):
+   ```bash
+   adb reboot bootloader
+   fastboot flash unlock sn.img
+   fastboot oem unlock-go
+   ```
+
+The bootloader stays unlocked even if you later restore stock Android.
+
+### 2. Download and check the images
+
+From the [latest release](https://github.com/enij90/armada-tb321fu/releases) download
+`boot.img`, `super.img`, all the `userdata.simg.part*` files and `SHA256SUMS`, into one folder.
+
+Join the userdata parts into `userdata.simg`:
+
+- Windows (Command Prompt, in the download folder):
+  ```bat
+  copy /b userdata.simg.part1+userdata.simg.part2+userdata.simg.part3+userdata.simg.part4+userdata.simg.part5+userdata.simg.part6 userdata.simg
+  ```
+- Linux / macOS:
+  ```bash
+  cat userdata.simg.part* > userdata.simg
+  ```
+
+Then check the files against `SHA256SUMS`
+(Linux: `sha256sum -c --ignore-missing SHA256SUMS`; Windows: `CertUtil -hashfile userdata.simg SHA256`
+and compare by eye, same for `boot.img` and `super.img`).
+
+### 3. Flash
+
+Put the tablet in fastboot mode (`adb reboot bootloader`, or power off and hold
+Volume down + Power), connect it to the PC and run:
+
+```bash
+fastboot flash boot_a boot.img
+fastboot flash super super.img
+fastboot -S 700M flash userdata userdata.simg
+fastboot reboot
+```
+
+`userdata` is sent in about 17 chunks and takes around 5 minutes.
+
+### 4. First boot
+
+Lenovo logo → GRUB → "Preparing Armada" → Wi-Fi and Steam setup. The first boot takes a
+little longer. Then you are in Steam's Game Mode.
+
+- Desktop user: `armada`, password `armada`. Change it (`passwd` in a terminal in desktop mode).
+- SSH is off by default; you can turn it on in desktop mode → **Armada Tools**.
+- Updates over the air are not available yet: new versions are installed by flashing new images.
+
+### Troubleshooting
+
+- **The tablet stays on the fastboot screen and fastboot stops responding after flashing:**
+  choose *START* with the volume keys and press Power, or hold Power for ~15 seconds.
+  The partitions are already written.
+- **A fastboot command fails halfway:** run `fastboot reboot bootloader`, wait for the tablet
+  to come back, then repeat only the failed command.
+
+### Going back to Android
+
+Use Lenovo's official rescue tool, **LMSA** (Lenovo Rescue and Smart Assistant): Rescue →
+it downloads and flashes the stock ROM. If the tablet does not boot at all, see
+[this XDA unbrick guide](https://xdaforums.com/t/guide-unbrick-lenovo-y700-tablet.4509297/).
 
 ## Building
 
