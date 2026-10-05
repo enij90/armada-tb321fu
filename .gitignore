@@ -5,3 +5,6 @@ cosign.key
 __pycache__/
 *.pyc
 
+
+# Local copy of the TB321FU firmware tarball (proprietary, never commit)
+build_files/firmware-lenovo-tb321fu-*.tar.gz
