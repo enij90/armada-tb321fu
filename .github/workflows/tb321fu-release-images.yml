@@ -42,9 +42,10 @@ jobs:
         env:
           IMAGE: ${{ inputs.image }}
           TEMPLATE_RELEASE: ${{ inputs.template_release }}
+        # sudo drops the environment: pass the values explicitly.
         run: |
           sudo docker run --rm --privileged -v /dev:/dev -v "$PWD:/w" -w /w \
-            -e IMAGE -e TEMPLATE_RELEASE \
+            -e IMAGE="$IMAGE" -e TEMPLATE_RELEASE="$TEMPLATE_RELEASE" \
             registry.fedoraproject.org/fedora:44 bash tb321fu/ci-release-images.sh
 
       - name: Create draft release
