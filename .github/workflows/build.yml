@@ -62,7 +62,10 @@ jobs:
           fi
           branch="${BUILD_REF#refs/heads/}"
           case "${branch}" in
-            main) tag=testing; channel=preview ;;
+            # TB321FU port: installs track :latest of ghcr.io/enij90/armada-tb321fu
+            # (update-lib keeps the booted tag for non-Armada repositories); no
+            # channel, so the R2 disk-image job is skipped.
+            main) tag=latest; channel="" ;;
             staging) tag=staging; channel=staging ;;
             testing|preview|beta|stable|latest)
               echo "::error::Reserved release channel. Build main/staging or use Promote channel."
@@ -286,7 +289,7 @@ jobs:
           fi
 
           if [ "${{ github.event.repository.fork }}" != "true" ]; then
-            cosign verify --key system_files/etc/pki/containers/armada.pub "${IMAGE_REF}"
+            cosign verify --key system_files/etc/pki/containers/armada-tb321fu.pub "${IMAGE_REF}"
             if [ "${IMAGE_FULL}" = "${ARMADA_LEGACY_IMAGE}" ]; then
               cosign verify --check-claims=false \
                 --key system_files/etc/pki/containers/armada.pub \
