@@ -5,11 +5,13 @@
 #   IMAGE             e.g. ghcr.io/enij90/armada-tb321fu:latest
 #   TEMPLATE_RELEASE  release whose boot.img and super.img provide the UEFI
 #                     loader and GRUB (neither is part of the OS image)
+#   COMPARE_RELEASE   optional: also print the size breakdown of that release's
+#                     userdata next to the new one's
 set -euxo pipefail
 : "${IMAGE:?}" "${TEMPLATE_RELEASE:?}"
 
 dnf -y install rpm-ostree ostree skopeo btrfs-progs dosfstools android-tools \
-    util-linux python3 curl coreutils
+    util-linux python3 curl coreutils compsize attr
 df -h /var/tmp /w
 
 repo_url=https://github.com/enij90/armada-tb321fu
@@ -33,8 +35,24 @@ echo "commit ${commit}"
 out=/w/out
 rm -rf "$out"
 OUT="$out" SRC_REPO="$src" TEMPLATE_SUPER="$work/super.img" BOOT_IMG="$work/boot.img" \
-    bash /w/tb321fu/mk-install-images.sh "$commit" "$version"
-rm -rf "$src" "$work"
+    REPORT=${COMPARE_RELEASE:+1} bash /w/tb321fu/mk-install-images.sh "$commit" "$version"
+rm -rf "$src"
+
+if [ -n "${COMPARE_RELEASE:-}" ]; then
+    # Same breakdown for a published release's userdata (parts joined, unsparsed).
+    c=$work/compare
+    mkdir -p "$c/m"
+    curl -fsSL -o "$c/SHA256SUMS" "${repo_url}/releases/download/${COMPARE_RELEASE}/SHA256SUMS"
+    for part in $(awk '{print $2}' "$c/SHA256SUMS" | grep '^userdata.simg.part'); do
+        curl -fsSL "${repo_url}/releases/download/${COMPARE_RELEASE}/${part}" >> "$c/userdata.simg"
+    done
+    simg2img "$c/userdata.simg" "$c/userdata.img"
+    rm "$c/userdata.simg"
+    mount -o ro,subvol=root "$c/userdata.img" "$c/m"
+    bash /w/tb321fu/fs-report.sh "release ${COMPARE_RELEASE}" "$c/m"
+    umount "$c/m"
+fi
+rm -rf "$work"
 df -h /w
 
 # GitHub release assets are limited to 2 GiB: split userdata (join with

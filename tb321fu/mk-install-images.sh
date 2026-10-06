@@ -6,6 +6,7 @@
 #   SRC_REPO        ostree repo holding the commit (default /sysroot/ostree/repo)
 #   TEMPLATE_SUPER  a super.img to take GRUB from (default: the super partition)
 #   BOOT_IMG        the UEFI loader image (default: the boot_a partition)
+#   REPORT=1        print a size breakdown of the root subvolume
 #
 # Output (in $OUT):
 #   userdata.img  btrfs (subvol "root") holding one ostree deployment; grows to
@@ -141,6 +142,8 @@ fsck.fat -n "$OUT/super.img" | tail -1
 log "boot.img (UEFI loader from $BOOT_IMG)"
 dd if="$BOOT_IMG" of="$OUT/boot.img" bs=1M status=none
 
+# REPORT=1: size breakdown of the root subvolume (compare builds).
+[ -n "${REPORT:-}" ] && bash "$(dirname "$0")/fs-report.sh" "built $VERSION" "$T"
 umount "$T"
 btrfs check --readonly "$OUT/userdata.img" >/dev/null 2>&1 && log "btrfs check ok"
 # Windows fastboot dies (bad_alloc) on a 16 GiB raw image: ship it Android-sparse.

@@ -18,6 +18,10 @@ on:
         description: Release tag (empty = v<image version>)
         default: ''
         required: false
+      compare_release:
+        description: Also print the size breakdown of this release's userdata (diagnostics)
+        default: ''
+        required: false
 
 permissions:
   contents: write
@@ -42,10 +46,11 @@ jobs:
         env:
           IMAGE: ${{ inputs.image }}
           TEMPLATE_RELEASE: ${{ inputs.template_release }}
+          COMPARE_RELEASE: ${{ inputs.compare_release }}
         # sudo drops the environment: pass the values explicitly.
         run: |
           sudo docker run --rm --privileged -v /dev:/dev -v "$PWD:/w" -w /w \
-            -e IMAGE="$IMAGE" -e TEMPLATE_RELEASE="$TEMPLATE_RELEASE" \
+            -e IMAGE="$IMAGE" -e TEMPLATE_RELEASE="$TEMPLATE_RELEASE" -e COMPARE_RELEASE="$COMPARE_RELEASE" \
             registry.fedoraproject.org/fedora:44 bash tb321fu/ci-release-images.sh
 
       - name: Create draft release
