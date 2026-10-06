@@ -15,7 +15,7 @@ on:
         default: v20261006.41bc0bd
         required: true
       tag:
-        description: Release tag (empty = v<image version>)
+        description: Release tag (empty = v<image version>, none = build only, no release)
         default: ''
         required: false
       compare_release:
@@ -54,6 +54,7 @@ jobs:
             registry.fedoraproject.org/fedora:44 bash tb321fu/ci-release-images.sh
 
       - name: Create draft release
+        if: inputs.tag != 'none'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
