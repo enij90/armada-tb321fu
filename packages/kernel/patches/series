@@ -225,3 +225,4 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0811-drm-panel-nt36523-run-tb321fu-boe-at-165hz.patch
 0812-drm-msm-dpu-validate-mode-clock-on-the-active-width.patch
 0814-drm-msm-dpu-dont-wedge-the-ctl-when-tearing-down-a-video-encoder.patch
+0816-input-misc-add-aw86937-y700-haptics-guf296.patch

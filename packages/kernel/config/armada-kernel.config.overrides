@@ -392,6 +392,7 @@ CONFIG_DRM_PANEL_NOVATEK_NT36523=y
 CONFIG_BACKLIGHT_KTZ8866=y                # KTZ8866 backlight
 CONFIG_TOUCHSCREEN_NT36523_SPI=m          # Novatek NT36523 SPI touch (TB321FU, patch 0806)
 CONFIG_SND_SOC_AW882XX=m                  # Awinic AW882xx smart PA speakers
+CONFIG_INPUT_AW86937_Y700=m               # AW86937 vibration motors (TB321FU, patch 0816)
 # TB321FU: the kernel Image ships in super separately from the rootfs modules; let
 # modules built against an older vmlinux load without BTF instead of being refused
 CONFIG_MODULE_ALLOW_BTF_MISMATCH=y

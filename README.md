@@ -44,7 +44,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | USB-C charging, Lenovo Legion G9 controller (short-side port) | ✅ |
 | Suspend (real s2idle) | ✅ about 4% battery overnight |
 | Steam Game Mode and KDE Plasma | ✅ |
-| Vibration motors (2× AW86937) | 🚧 driver tested, not integrated yet |
+| Vibration motors (2× AW86937) | ⚠️ driver works, not used by games yet |
 | Sensors (accelerometer, gyroscope, light) | ❌ not yet |
 | Cameras | ❌ |
 | CSOT panel | ❌ |
@@ -128,7 +128,9 @@ little longer. Then you are in Steam's Game Mode.
 
 - Desktop user: `armada`, password `armada`. Change it (`passwd` in a terminal in desktop mode).
 - SSH is off by default; you can turn it on in desktop mode → **Armada Tools**.
-- Updates over the air are not available yet: new versions are installed by flashing new images.
+- System updates come through Steam (Settings → System, software updates). They download in
+  the background and apply at the next restart. If a new version does not start, pick the
+  GRUB entry marked "(previous)".
 
 ### Troubleshooting
 
@@ -145,6 +147,9 @@ it downloads and flashes the stock ROM. If the tablet does not boot at all, see
 [this XDA unbrick guide](https://xdaforums.com/t/guide-unbrick-lenovo-y700-tablet.4509297/).
 
 ## Building
+
+Every push to `main` is built and signed by GitHub Actions and published as
+`ghcr.io/enij90/armada-tb321fu:latest`, which installed tablets update from.
 
 Same as upstream Armada (`just build`). The proprietary firmware is not stored in this
 repository: the build downloads it from

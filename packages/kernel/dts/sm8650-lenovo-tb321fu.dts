@@ -730,16 +730,18 @@
 	status = "okay";
 	clock-frequency = <1000000>;
 
-	haptics-right@5a {
+	/* Sides as the tablet is held in landscape (verified by touch): 0x5a is
+	 * the left motor, 0x5b the right one. */
+	haptics-left@5a {
 		compatible = "lenovo,tb321fu-aw86937", "awinic,aw86937";
 		reg = <0x5a>;
-		label = "aw86937-haptics-right";
+		label = "aw86937-haptics-left";
 	};
 
-	haptics-left@5b {
+	haptics-right@5b {
 		compatible = "lenovo,tb321fu-aw86937", "awinic,aw86937";
 		reg = <0x5b>;
-		label = "aw86937-haptics-left";
+		label = "aw86937-haptics-right";
 	};
 };
 

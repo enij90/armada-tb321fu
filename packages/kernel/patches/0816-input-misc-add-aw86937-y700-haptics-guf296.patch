@@ -1,0 +1,967 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] input: misc: add AW86937 haptics driver (Lenovo TB321FU)
+
+GUF296's force-feedback driver for the two Awinic AW86937 vibration motors
+(i2c7 0x5a/0x5b), as carried in his tb321fu-haptics-debs (baseline-20260614).
+It exposes one FF_RUMBLE/FF_CONSTANT/FF_PERIODIC input device per motor, named
+after the DT "label", and loads haptic_ram.bin / haptic_click.bin. Tested on the
+TB321FU on 2026-10-05 (both chips probe, chip_id 0x9370, rumble felt).
+
+diff -ruN a/drivers/input/misc/Kconfig b/drivers/input/misc/Kconfig
+--- a/drivers/input/misc/Kconfig	2026-10-06 10:08:08.507538769 +0200
++++ b/drivers/input/misc/Kconfig	2026-10-06 10:08:18.577935160 +0200
+@@ -137,6 +137,19 @@
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called aw86927.
+ 
++config INPUT_AW86937_Y700
++	tristate "Lenovo Y700 AW86937 haptics"
++	depends on I2C && INPUT
++	select REGMAP_I2C
++	help
++	  Say Y here to enable the dual AW86937 haptic ICs used by the
++	  Lenovo Y700. The driver exposes standard input force-feedback
++	  FF_RUMBLE devices and intentionally preserves the chip boot-time
++	  boost register value.
++
++	  To compile this driver as a module, choose M here: the module will
++	  be called aw86937-y700.
++
+ config INPUT_BBNSM_PWRKEY
+ 	tristate "NXP BBNSM Power Key Driver"
+ 	depends on ARCH_MXC || COMPILE_TEST
+diff -ruN a/drivers/input/misc/Makefile b/drivers/input/misc/Makefile
+--- a/drivers/input/misc/Makefile	2026-10-06 10:08:08.508375348 +0200
++++ b/drivers/input/misc/Makefile	2026-10-06 10:08:18.578552390 +0200
+@@ -23,6 +23,7 @@
+ obj-$(CONFIG_INPUT_ATLAS_BTNS)		+= atlas_btns.o
+ obj-$(CONFIG_INPUT_ATMEL_CAPTOUCH)	+= atmel_captouch.o
+ obj-$(CONFIG_INPUT_AW86927)		+= aw86927.o
++obj-$(CONFIG_INPUT_AW86937_Y700)	+= aw86937-y700.o
+ obj-$(CONFIG_INPUT_BBNSM_PWRKEY)	+= nxp-bbnsm-pwrkey.o
+ obj-$(CONFIG_INPUT_BMA150)		+= bma150.o
+ obj-$(CONFIG_INPUT_CM109)		+= cm109.o
+diff -ruN a/drivers/input/misc/aw86937-y700.c b/drivers/input/misc/aw86937-y700.c
+--- a/drivers/input/misc/aw86937-y700.c	1970-01-01 01:00:00.000000000 +0100
++++ b/drivers/input/misc/aw86937-y700.c	2026-10-06 10:08:18.568464774 +0200
+@@ -0,0 +1,920 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Lenovo Y700 AW86937 haptics driver.
++ *
++ * This is a minimal Linux-native input force-feedback driver for the dual
++ * AW86937-class haptic ICs used in the Lenovo Y700. It intentionally keeps
++ * the chip's boot-time boost register value untouched; AB005/AB006 proved
++ * playback is safe with the default PLAYCFG1 value, while the AW86937 boost
++ * bit mapping has not yet been independently validated.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/bits.h>
++#include <linux/delay.h>
++#include <linux/device.h>
++#include <linux/firmware.h>
++#include <linux/i2c.h>
++#include <linux/input.h>
++#include <linux/list.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/regmap.h>
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/types.h>
++#include <linux/workqueue.h>
++
++#define AW86937_SYSINT_REG			0x02
++#define AW86937_PLAYCFG1_REG			0x06
++#define AW86937_PLAYCFG2_REG			0x07
++#define AW86937_PLAYCFG3_REG			0x08
++#define AW86937_PLAYCFG3_AUTO_BST_MASK		BIT(4)
++#define AW86937_PLAYCFG3_PLAY_MODE_MASK		GENMASK(1, 0)
++#define AW86937_PLAYCFG3_PLAY_MODE_FULL_MASK	GENMASK(2, 0)
++#define AW86937_PLAYCFG3_PLAY_MODE_RAM		0
++#define AW86937_PLAYCFG3_PLAY_MODE_RTP		0x05
++#define AW86937_PLAYCFG4_REG			0x09
++#define AW86937_PLAYCFG4_STOP			BIT(1)
++#define AW86937_PLAYCFG4_GO			BIT(0)
++#define AW86937_WAVCFG1_REG			0x0a
++#define AW86937_WAVCFG1_WAVSEQ1_MASK		GENMASK(6, 0)
++#define AW86937_WAVCFG2_REG			0x0b
++#define AW86937_WAVCFG2_WAVSEQ2_MASK		GENMASK(6, 0)
++#define AW86937_WAVCFG9_REG			0x12
++#define AW86937_WAVCFG9_SEQ1LOOP_MASK		GENMASK(7, 4)
++#define AW86937_WAVCFG9_SEQ1LOOP_INFINITE	0x0f
++#define AW86937_D2SCFG_REG			0x1c
++#define AW86937_CONTCFG1_REG			0x1d
++#define AW86937_CONTCFG2_REG			0x1e
++#define AW86937_CONTCFG4_REG			0x20
++#define AW86937_BRKCFG2_REG			0x21
++#define AW86937_BASEADDRH_REG			0x2d
++#define AW86937_BASEADDRL_REG			0x2e
++#define AW86937_RTPDATA_REG			0x32
++#define AW86937_GLBRD5_REG			0x3f
++#define AW86937_GLBRD5_STATE_MASK		GENMASK(3, 0)
++#define AW86937_GLBRD5_STATE_STANDBY		0
++#define AW86937_RAMADDRH_REG			0x40
++#define AW86937_RAMADDRL_REG			0x41
++#define AW86937_RAMDATA_REG			0x42
++#define AW86937_SYSCTRL3_REG			0x45
++#define AW86937_SYSCTRL3_EN_RAMINIT_MASK	BIT(2)
++#define AW86937_SYSCTRL4_REG			0x46
++#define AW86937_SYSCTRL4_WAVDAT_MODE_MASK	GENMASK(6, 5)
++#define AW86937_SYSCTRL4_GAIN_BYPASS_MASK	BIT(0)
++#define AW86937_PROTECT_CTRL_REG		0x48
++#define AW86937_PROTECT_CTRL_BIT		BIT(7)
++#define AW86937_PROTCFG1_REG			0x4a
++#define AW86937_PROTCFG2_REG			0x4b
++#define AW86937_DETCFG1_REG			0x4c
++#define AW86937_DETCFG2_REG			0x4d
++#define AW86937_CHIPIDH_REG			0x57
++#define AW86937_CHIPIDL_REG			0x58
++
++#define AW86937_CHIP_ID			0x9370
++#define AW86937_RAM_BASE_ADDR			0x0800
++#define AW86937_BASEADDRH_VAL			0x08
++#define AW86937_BASEADDRL_VAL			0x00
++#define AW86937_RAM_FIRMWARE_NAME		"haptic_ram.bin"
++#define AW86937_CLICK_FIRMWARE_NAME		"haptic_click.bin"
++#define AW86937_CLICK_FIRMWARE_NAME_LEN		64
++#define AW86937_RAM_FIRMWARE_HEADER_SIZE	4
++#define AW86937_RAM_MAX_PAYLOAD_SIZE		8192
++#define AW86937_RAM_WRITE_CHUNK			256
++#define AW86937_RTP_WRITE_CHUNK			64
++#define AW86937_CLICK_RTP_MAX_SIZE		32768
++#define AW86937_CLICK_RTP_MAX_DURATION_MS	30
++#define AW86937_DEFAULT_DURATION_MS		60
++#define AW86937_MIN_DURATION_MS			5
++#define AW86937_MAX_DURATION_MS			10000
++#define AW86937_GAIN_CEILING_MAX		0xff
++#define AW86937_GAIN_CEILING_DEFAULT		0xff
++#define AW86937_PWM_MODE_DEFAULT		0
++
++struct aw86937_y700 {
++	struct device *dev;
++	struct input_dev *input_dev;
++	struct regmap *regmap;
++	struct list_head node;
++	struct mutex io_lock;
++	spinlock_t pending_lock;
++	struct work_struct play_work;
++	u16 chip_id;
++	unsigned int pending_duration_ms;
++	unsigned int pending_gain;
++	unsigned int pending_seq;
++	unsigned int handled_seq;
++	unsigned int play_count;
++	bool ram_ready;
++	bool listed;
++};
++
++struct aw86937_y700_reg_init {
++	u8 reg;
++	u8 mask;
++	u8 val;
++};
++
++static const struct regmap_config aw86937_y700_regmap_config = {
++	.reg_bits = 8,
++	.val_bits = 8,
++	.cache_type = REGCACHE_NONE,
++	.max_register = 0x80,
++};
++
++static LIST_HEAD(aw86937_y700_devices);
++static DEFINE_MUTEX(aw86937_y700_devices_lock);
++
++static const u8 aw86937_y700_waveform[] = {
++	0x00, 0x05, 0x0a, 0x0f, 0x14, 0x1a, 0x1f, 0x23, 0x28, 0x2d, 0x31, 0x35,
++	0x39, 0x3d, 0x41, 0x44, 0x47, 0x4a, 0x4c, 0x4f, 0x51, 0x52, 0x53, 0x54,
++	0x55, 0x55, 0x55, 0x55, 0x55, 0x54, 0x52, 0x51, 0x4f, 0x4d, 0x4a, 0x47,
++	0x44, 0x41, 0x3d, 0x3a, 0x36, 0x31, 0x2d, 0x28, 0x24, 0x1f, 0x1a, 0x15,
++	0x10, 0x0a, 0x05, 0x00, 0xfc, 0xf6, 0xf1, 0xec, 0xe7, 0xe2, 0xdd, 0xd8,
++	0xd4, 0xcf, 0xcb, 0xc7, 0xc3, 0xbf, 0xbc, 0xb9, 0xb6, 0xb4, 0xb1, 0xb0,
++	0xae, 0xad, 0xac, 0xab, 0xab, 0xab, 0xab, 0xab, 0xac, 0xae, 0xaf, 0xb1,
++	0xb3, 0xb6, 0xb8, 0xbc, 0xbf, 0xc2, 0xc6, 0xca, 0xce, 0xd3, 0xd7, 0xdc,
++	0xe1, 0xe6, 0xeb, 0xf0, 0xf5, 0xfb,
++};
++
++struct aw86937_y700_sram_header {
++	u8 version;
++	__be16 start_address;
++	__be16 end_address;
++} __packed;
++
++static const struct aw86937_y700_sram_header aw86937_y700_header = {
++	.version = 0x01,
++	.start_address = cpu_to_be16(AW86937_RAM_BASE_ADDR +
++				     sizeof(struct aw86937_y700_sram_header)),
++	.end_address = cpu_to_be16(AW86937_RAM_BASE_ADDR +
++				   sizeof(struct aw86937_y700_sram_header) +
++				   ARRAY_SIZE(aw86937_y700_waveform) - 1),
++};
++
++static const struct aw86937_y700_reg_init aw86937_y700_android_profile[] = {
++	{ AW86937_SYSCTRL4_REG, AW86937_SYSCTRL4_GAIN_BYPASS_MASK,
++	  AW86937_SYSCTRL4_GAIN_BYPASS_MASK },
++	{ AW86937_D2SCFG_REG, 0x0f, 0x04 },
++	{ AW86937_CONTCFG1_REG, 0x01, 0x00 },
++	{ AW86937_CONTCFG2_REG, 0xff, 0x7f },
++	{ AW86937_CONTCFG4_REG, 0xff, 0xff },
++	{ AW86937_BRKCFG2_REG, 0xff, 0x08 },
++	{ AW86937_PROTECT_CTRL_REG, AW86937_PROTECT_CTRL_BIT, 0x00 },
++	{ AW86937_PROTCFG1_REG, 0xff, 0xbf },
++	{ AW86937_PROTCFG2_REG, 0xff, 0x32 },
++	{ AW86937_DETCFG1_REG, BIT(6), BIT(6) },
++	{ AW86937_DETCFG2_REG, 0x70, 0x30 },
++};
++
++static u16 aw86937_y700_be16(const u8 *buf)
++{
++	return ((u16)buf[0] << 8) | buf[1];
++}
++
++static u16 aw86937_y700_sum16(const u8 *buf, size_t len)
++{
++	u32 sum = 0;
++	size_t i;
++
++	for (i = 0; i < len; i++)
++		sum += buf[i];
++
++	return sum & 0xffff;
++}
++
++static int aw86937_y700_parse_ram_firmware(struct aw86937_y700 *haptics,
++					   const struct firmware *fw,
++					   const u8 **payload,
++					   size_t *payload_len,
++					   u16 *base_addr)
++{
++	u16 expected;
++	u16 actual;
++
++	if (fw->size <= AW86937_RAM_FIRMWARE_HEADER_SIZE ||
++	    fw->size > AW86937_RAM_FIRMWARE_HEADER_SIZE + AW86937_RAM_MAX_PAYLOAD_SIZE)
++		return -EINVAL;
++
++	expected = aw86937_y700_be16(fw->data);
++	actual = aw86937_y700_sum16(fw->data + 2, fw->size - 2);
++	if (expected != actual) {
++		dev_warn(haptics->dev,
++			 "%s checksum mismatch expected=0x%04x actual=0x%04x\n",
++			 AW86937_RAM_FIRMWARE_NAME, expected, actual);
++		return -EINVAL;
++	}
++
++	*base_addr = aw86937_y700_be16(fw->data + 2);
++	*payload = fw->data + AW86937_RAM_FIRMWARE_HEADER_SIZE;
++	*payload_len = fw->size - AW86937_RAM_FIRMWARE_HEADER_SIZE;
++
++	if (*base_addr < AW86937_RAM_BASE_ADDR)
++		return -EINVAL;
++
++	dev_info(haptics->dev, "loaded %s base=0x%04x payload=%zu checksum=0x%04x\n",
++		 AW86937_RAM_FIRMWARE_NAME, *base_addr, *payload_len, expected);
++
++	return 0;
++}
++
++static int aw86937_y700_write_ram_payload(struct aw86937_y700 *haptics,
++					  const u8 *payload, size_t payload_len)
++{
++	size_t pos = 0;
++	int err;
++
++	while (pos < payload_len) {
++		size_t chunk = min_t(size_t, AW86937_RAM_WRITE_CHUNK,
++				     payload_len - pos);
++
++		err = regmap_noinc_write(haptics->regmap, AW86937_RAMDATA_REG,
++					 payload + pos, chunk);
++		if (err)
++			return err;
++
++		pos += chunk;
++	}
++
++	return 0;
++}
++
++static int aw86937_y700_request_click_rtp_locked(struct aw86937_y700 *haptics,
++						 const struct firmware **fw,
++						 const char **name)
++{
++	int err;
++
++	err = request_firmware(fw, AW86937_CLICK_FIRMWARE_NAME, haptics->dev);
++	if (err) {
++		dev_dbg(haptics->dev, "%s unavailable: %d\n",
++			AW86937_CLICK_FIRMWARE_NAME, err);
++		return err;
++	}
++
++	if (!(*fw)->size || (*fw)->size > AW86937_CLICK_RTP_MAX_SIZE) {
++		dev_warn(haptics->dev, "%s has invalid size %zu\n",
++			 AW86937_CLICK_FIRMWARE_NAME, (*fw)->size);
++		release_firmware(*fw);
++		*fw = NULL;
++		return -EINVAL;
++	}
++
++	*name = AW86937_CLICK_FIRMWARE_NAME;
++	dev_dbg(haptics->dev, "using %s payload=%zu\n",
++		AW86937_CLICK_FIRMWARE_NAME, (*fw)->size);
++	return 0;
++}
++
++static int aw86937_y700_write_rtp_payload(struct aw86937_y700 *haptics,
++					  const u8 *payload, size_t payload_len)
++{
++	size_t pos = 0;
++	int err;
++
++	while (pos < payload_len) {
++		size_t chunk = min_t(size_t, AW86937_RTP_WRITE_CHUNK,
++				     payload_len - pos);
++
++		err = regmap_noinc_write(haptics->regmap, AW86937_RTPDATA_REG,
++					 payload + pos, chunk);
++		if (err)
++			return err;
++
++		pos += chunk;
++	}
++
++	return 0;
++}
++
++static int aw86937_y700_pwm_value(unsigned int mode, unsigned int *value)
++{
++	switch (mode) {
++	case 0:
++		*value = 0x20;
++		return 0;
++	case 1:
++		*value = 0x00;
++		return 0;
++	case 2:
++		*value = 0x40;
++		return 0;
++	case 3:
++		*value = 0x60;
++		return 0;
++	default:
++		return -EINVAL;
++	}
++}
++
++static int aw86937_y700_apply_pwm_locked(struct aw86937_y700 *haptics)
++{
++	unsigned int value;
++	int err;
++
++	err = aw86937_y700_pwm_value(AW86937_PWM_MODE_DEFAULT, &value);
++	if (err) {
++		dev_warn(haptics->dev, "invalid built-in PWM mode\n");
++		return err;
++	}
++
++	return regmap_update_bits(haptics->regmap, AW86937_SYSCTRL4_REG,
++				  AW86937_SYSCTRL4_WAVDAT_MODE_MASK, value);
++}
++
++static int aw86937_y700_apply_android_profile_locked(struct aw86937_y700 *haptics)
++{
++	int err;
++	size_t i;
++
++	for (i = 0; i < ARRAY_SIZE(aw86937_y700_android_profile); i++) {
++		const struct aw86937_y700_reg_init *init =
++			&aw86937_y700_android_profile[i];
++
++		if (init->mask == 0xff)
++			err = regmap_write(haptics->regmap, init->reg, init->val);
++		else
++			err = regmap_update_bits(haptics->regmap, init->reg,
++						 init->mask, init->val);
++		if (err)
++			return err;
++	}
++
++	return 0;
++}
++
++static int aw86937_y700_wait_standby(struct aw86937_y700 *haptics)
++{
++	unsigned int reg_val;
++
++	return regmap_read_poll_timeout(haptics->regmap, AW86937_GLBRD5_REG,
++					reg_val,
++					FIELD_GET(AW86937_GLBRD5_STATE_MASK, reg_val) ==
++						AW86937_GLBRD5_STATE_STANDBY,
++					2500, 250000);
++}
++
++static int aw86937_y700_stop_locked(struct aw86937_y700 *haptics)
++{
++	int err;
++
++	err = regmap_write(haptics->regmap, AW86937_PLAYCFG4_REG,
++			   AW86937_PLAYCFG4_STOP);
++	if (err)
++		return err;
++
++	err = aw86937_y700_wait_standby(haptics);
++	if (err)
++		dev_warn(haptics->dev, "standby poll after stop failed: %d\n", err);
++
++	return err;
++}
++
++static int aw86937_y700_ram_init_locked(struct aw86937_y700 *haptics)
++{
++	const struct firmware *fw = NULL;
++	const u8 *fw_payload = NULL;
++	size_t fw_payload_len = 0;
++	u16 ram_base_addr = AW86937_RAM_BASE_ADDR;
++	bool use_fw = false;
++	int err;
++
++	if (haptics->ram_ready)
++		return 0;
++
++	err = request_firmware(&fw, AW86937_RAM_FIRMWARE_NAME, haptics->dev);
++	if (!err) {
++		err = aw86937_y700_parse_ram_firmware(haptics, fw, &fw_payload,
++						     &fw_payload_len,
++						     &ram_base_addr);
++		if (!err)
++			use_fw = true;
++		else
++			dev_warn(haptics->dev,
++				 "ignoring invalid %s, using internal waveform\n",
++				 AW86937_RAM_FIRMWARE_NAME);
++	} else {
++		dev_dbg(haptics->dev, "%s unavailable, using internal waveform: %d\n",
++			AW86937_RAM_FIRMWARE_NAME, err);
++	}
++
++	err = aw86937_y700_stop_locked(haptics);
++	if (err)
++		goto release_fw;
++
++	err = aw86937_y700_apply_android_profile_locked(haptics);
++	if (err)
++		goto release_fw;
++
++	err = aw86937_y700_apply_pwm_locked(haptics);
++	if (err)
++		goto release_fw;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_SYSCTRL4_REG,
++				 AW86937_SYSCTRL4_GAIN_BYPASS_MASK,
++				 AW86937_SYSCTRL4_GAIN_BYPASS_MASK);
++	if (err)
++		goto release_fw;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_SYSCTRL3_REG,
++				 AW86937_SYSCTRL3_EN_RAMINIT_MASK,
++				 AW86937_SYSCTRL3_EN_RAMINIT_MASK);
++	if (err)
++		goto release_fw;
++
++	usleep_range(1000, 1500);
++
++	err = regmap_write(haptics->regmap, AW86937_BASEADDRH_REG,
++			   ram_base_addr >> 8);
++	if (err)
++		goto disable_raminit;
++
++	err = regmap_write(haptics->regmap, AW86937_BASEADDRL_REG,
++			   ram_base_addr & 0xff);
++	if (err)
++		goto disable_raminit;
++
++	err = regmap_write(haptics->regmap, AW86937_RAMADDRH_REG,
++			   ram_base_addr >> 8);
++	if (err)
++		goto disable_raminit;
++
++	err = regmap_write(haptics->regmap, AW86937_RAMADDRL_REG,
++			   ram_base_addr & 0xff);
++	if (err)
++		goto disable_raminit;
++
++	if (use_fw) {
++		err = aw86937_y700_write_ram_payload(haptics, fw_payload,
++						     fw_payload_len);
++		if (err)
++			goto disable_raminit;
++	} else {
++		err = regmap_noinc_write(haptics->regmap, AW86937_RAMDATA_REG,
++					 &aw86937_y700_header,
++					 sizeof(aw86937_y700_header));
++		if (err)
++			goto disable_raminit;
++
++		err = regmap_noinc_write(haptics->regmap, AW86937_RAMDATA_REG,
++					 aw86937_y700_waveform,
++					 ARRAY_SIZE(aw86937_y700_waveform));
++		if (err)
++			goto disable_raminit;
++	}
++
++disable_raminit:
++	if (regmap_update_bits(haptics->regmap, AW86937_SYSCTRL3_REG,
++			       AW86937_SYSCTRL3_EN_RAMINIT_MASK, 0))
++		dev_warn(haptics->dev, "failed disabling RAMINIT\n");
++
++release_fw:
++	if (fw)
++		release_firmware(fw);
++
++	if (err)
++		return err;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_WAVCFG1_REG,
++				 AW86937_WAVCFG1_WAVSEQ1_MASK,
++				 FIELD_PREP(AW86937_WAVCFG1_WAVSEQ1_MASK, 1));
++	if (err)
++		return err;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_WAVCFG2_REG,
++				 AW86937_WAVCFG2_WAVSEQ2_MASK,
++				 FIELD_PREP(AW86937_WAVCFG2_WAVSEQ2_MASK, 0));
++	if (err)
++		return err;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_WAVCFG9_REG,
++				 AW86937_WAVCFG9_SEQ1LOOP_MASK,
++				 FIELD_PREP(AW86937_WAVCFG9_SEQ1LOOP_MASK,
++					    AW86937_WAVCFG9_SEQ1LOOP_INFINITE));
++	if (err)
++		return err;
++
++	haptics->ram_ready = true;
++
++	return 0;
++}
++
++static int aw86937_y700_play_locked(struct aw86937_y700 *haptics,
++				    unsigned int duration_ms,
++				    unsigned int gain)
++{
++	int err;
++
++	duration_ms = clamp(duration_ms, AW86937_MIN_DURATION_MS,
++			    AW86937_MAX_DURATION_MS);
++	gain = clamp(gain, 1U, (unsigned int)AW86937_GAIN_CEILING_MAX);
++
++	err = aw86937_y700_ram_init_locked(haptics);
++	if (err)
++		return err;
++
++	err = aw86937_y700_stop_locked(haptics);
++	if (err)
++		return err;
++
++	err = aw86937_y700_apply_android_profile_locked(haptics);
++	if (err)
++		return err;
++
++	err = aw86937_y700_apply_pwm_locked(haptics);
++	if (err)
++		return err;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_PLAYCFG3_REG,
++				 AW86937_PLAYCFG3_PLAY_MODE_FULL_MASK,
++				 AW86937_PLAYCFG3_PLAY_MODE_RAM);
++	if (err)
++		return err;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_PLAYCFG3_REG,
++				 AW86937_PLAYCFG3_AUTO_BST_MASK,
++				 AW86937_PLAYCFG3_AUTO_BST_MASK);
++	if (err)
++		return err;
++
++	err = regmap_write(haptics->regmap, AW86937_PLAYCFG2_REG, gain);
++	if (err)
++		return err;
++
++	err = regmap_write(haptics->regmap, AW86937_PLAYCFG4_REG,
++			   AW86937_PLAYCFG4_GO);
++	if (err)
++		return err;
++
++	msleep(duration_ms);
++
++	err = aw86937_y700_stop_locked(haptics);
++	if (!err)
++		haptics->play_count++;
++
++	return err;
++}
++
++static int aw86937_y700_play_rtp_click_locked(struct aw86937_y700 *haptics,
++					      unsigned int duration_ms,
++					      unsigned int gain)
++{
++	const struct firmware *fw = NULL;
++	const char *fw_name;
++	unsigned int play_ms;
++	int play_err = 0;
++	int err;
++
++	duration_ms = clamp(duration_ms, AW86937_MIN_DURATION_MS,
++			    AW86937_CLICK_RTP_MAX_DURATION_MS);
++	gain = clamp(gain, 1U, (unsigned int)AW86937_GAIN_CEILING_MAX);
++
++	err = aw86937_y700_request_click_rtp_locked(haptics, &fw, &fw_name);
++	if (err)
++		return err;
++
++	err = aw86937_y700_stop_locked(haptics);
++	if (err)
++		goto release_fw;
++
++	err = aw86937_y700_apply_android_profile_locked(haptics);
++	if (err)
++		goto release_fw;
++
++	err = aw86937_y700_apply_pwm_locked(haptics);
++	if (err)
++		goto release_fw;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_PLAYCFG3_REG,
++				 AW86937_PLAYCFG3_PLAY_MODE_FULL_MASK,
++				 AW86937_PLAYCFG3_PLAY_MODE_RTP);
++	if (err)
++		goto release_fw;
++
++	err = regmap_update_bits(haptics->regmap, AW86937_PLAYCFG3_REG,
++				 AW86937_PLAYCFG3_AUTO_BST_MASK,
++				 AW86937_PLAYCFG3_AUTO_BST_MASK);
++	if (err)
++		goto release_fw;
++
++	err = regmap_write(haptics->regmap, AW86937_PLAYCFG2_REG, gain);
++	if (err)
++		goto release_fw;
++
++	err = regmap_write(haptics->regmap, AW86937_PLAYCFG4_REG,
++			   AW86937_PLAYCFG4_GO);
++	if (err)
++		goto release_fw;
++
++	usleep_range(2000, 2500);
++
++	err = aw86937_y700_write_rtp_payload(haptics, fw->data, fw->size);
++	if (err) {
++		play_err = err;
++		goto stop;
++	}
++
++	play_ms = max(duration_ms,
++		      (unsigned int)((fw->size + 23) / 24 + 2));
++	msleep(play_ms);
++
++stop:
++	err = aw86937_y700_stop_locked(haptics);
++	if (!err && !play_err)
++		haptics->play_count++;
++
++release_fw:
++	release_firmware(fw);
++	return play_err ?: err;
++}
++
++static void aw86937_y700_play_work(struct work_struct *work)
++{
++	struct aw86937_y700 *haptics =
++		container_of(work, struct aw86937_y700, play_work);
++	unsigned int duration_ms, gain, seq;
++	unsigned long flags;
++	int err;
++
++	for (;;) {
++		spin_lock_irqsave(&haptics->pending_lock, flags);
++		seq = haptics->pending_seq;
++		duration_ms = haptics->pending_duration_ms;
++		gain = haptics->pending_gain;
++		spin_unlock_irqrestore(&haptics->pending_lock, flags);
++
++		mutex_lock(&haptics->io_lock);
++		if (gain) {
++			if (duration_ms && duration_ms <= AW86937_CLICK_RTP_MAX_DURATION_MS) {
++				err = aw86937_y700_play_rtp_click_locked(haptics,
++									duration_ms,
++									gain);
++				if (err) {
++					dev_warn(haptics->dev,
++						 "RTP click failed (%d), falling back to RAM\n",
++						 err);
++					err = aw86937_y700_play_locked(haptics,
++								       duration_ms,
++								       gain);
++				}
++			} else {
++				err = aw86937_y700_play_locked(haptics, duration_ms, gain);
++			}
++		} else {
++			err = aw86937_y700_stop_locked(haptics);
++		}
++		mutex_unlock(&haptics->io_lock);
++
++		if (err)
++			dev_warn(haptics->dev, "playback command failed: %d\n", err);
++
++		spin_lock_irqsave(&haptics->pending_lock, flags);
++		haptics->handled_seq = seq;
++		if (haptics->pending_seq == seq) {
++			spin_unlock_irqrestore(&haptics->pending_lock, flags);
++			break;
++		}
++		spin_unlock_irqrestore(&haptics->pending_lock, flags);
++	}
++}
++
++static int aw86937_y700_ff_upload(struct input_dev *input,
++				  struct ff_effect *effect,
++				  struct ff_effect *old)
++{
++	if (effect->type != FF_RUMBLE &&
++	    effect->type != FF_PERIODIC &&
++	    effect->type != FF_CONSTANT)
++		return -EINVAL;
++
++	if (effect->type == FF_PERIODIC && effect->u.periodic.waveform != FF_SINE)
++		return -EINVAL;
++
++	return 0;
++}
++
++static int aw86937_y700_ff_erase(struct input_dev *input, int effect_id)
++{
++	return 0;
++}
++
++static int aw86937_y700_ff_playback(struct input_dev *input, int effect_id,
++				    int value)
++{
++	struct aw86937_y700 *haptics = input_get_drvdata(input);
++	struct ff_effect *effect;
++	unsigned int duration_ms = 0;
++	unsigned int gain = 0;
++	unsigned int level;
++	unsigned long flags;
++
++	if (effect_id < 0 || effect_id >= input->ff->max_effects)
++		return -EINVAL;
++
++	if (value) {
++		effect = &input->ff->effects[effect_id];
++		if (effect->type == FF_PERIODIC) {
++			int magnitude = effect->u.periodic.magnitude;
++
++			if (magnitude < 0)
++				magnitude = -magnitude;
++			magnitude = min(magnitude, 0x7fff);
++			level = magnitude * 0xffffU / 0x7fffU;
++		} else if (effect->type == FF_CONSTANT) {
++			int constant = effect->u.constant.level;
++
++			if (constant < 0)
++				constant = -constant;
++			constant = min(constant, 0x7fff);
++			level = constant * 0xffffU / 0x7fffU;
++		} else {
++			level = max(effect->u.rumble.strong_magnitude,
++				    effect->u.rumble.weak_magnitude);
++		}
++		if (level) {
++			gain = level * AW86937_GAIN_CEILING_DEFAULT / 0xffffU;
++			if (!gain)
++				gain = 1;
++
++			duration_ms = effect->replay.length;
++			if (!duration_ms)
++				duration_ms = AW86937_DEFAULT_DURATION_MS;
++		}
++	}
++
++	spin_lock_irqsave(&haptics->pending_lock, flags);
++	haptics->pending_gain = clamp(gain, 0U, (unsigned int)AW86937_GAIN_CEILING_MAX);
++	haptics->pending_duration_ms = clamp(duration_ms, 0U,
++					     AW86937_MAX_DURATION_MS);
++	haptics->pending_seq++;
++	spin_unlock_irqrestore(&haptics->pending_lock, flags);
++
++	schedule_work(&haptics->play_work);
++
++	return 0;
++}
++
++static void aw86937_y700_close(struct input_dev *input)
++{
++	struct aw86937_y700 *haptics = input_get_drvdata(input);
++
++	cancel_work_sync(&haptics->play_work);
++
++	mutex_lock(&haptics->io_lock);
++	aw86937_y700_stop_locked(haptics);
++	mutex_unlock(&haptics->io_lock);
++}
++
++static const char *aw86937_y700_name(struct device *dev, unsigned short addr)
++{
++	const char *label;
++
++	if (!device_property_read_string(dev, "label", &label))
++		return label;
++
++	if (addr == 0x5a)
++		return "aw86937-haptics-right";
++	if (addr == 0x5b)
++		return "aw86937-haptics-left";
++
++	return "aw86937-haptics";
++}
++
++static int aw86937_y700_probe(struct i2c_client *client)
++{
++	struct aw86937_y700 *haptics;
++	unsigned int hi, lo, playcfg1;
++	int err;
++
++	haptics = devm_kzalloc(&client->dev, sizeof(*haptics), GFP_KERNEL);
++	if (!haptics)
++		return -ENOMEM;
++
++	haptics->dev = &client->dev;
++	mutex_init(&haptics->io_lock);
++	spin_lock_init(&haptics->pending_lock);
++	INIT_WORK(&haptics->play_work, aw86937_y700_play_work);
++
++	haptics->regmap = devm_regmap_init_i2c(client,
++					       &aw86937_y700_regmap_config);
++	if (IS_ERR(haptics->regmap))
++		return dev_err_probe(&client->dev, PTR_ERR(haptics->regmap),
++				     "failed to allocate regmap\n");
++
++	err = regmap_read(haptics->regmap, AW86937_CHIPIDH_REG, &hi);
++	if (err)
++		return dev_err_probe(&client->dev, err,
++				     "failed reading chip ID high register\n");
++
++	err = regmap_read(haptics->regmap, AW86937_CHIPIDL_REG, &lo);
++	if (err)
++		return dev_err_probe(&client->dev, err,
++				     "failed reading chip ID low register\n");
++
++	haptics->chip_id = ((hi & 0xff) << 8) | (lo & 0xff);
++	if (haptics->chip_id != AW86937_CHIP_ID)
++		return dev_err_probe(&client->dev, -ENODEV,
++				     "unexpected chip ID 0x%04x\n",
++				     haptics->chip_id);
++
++	i2c_set_clientdata(client, haptics);
++
++	mutex_lock(&haptics->io_lock);
++	err = aw86937_y700_apply_android_profile_locked(haptics);
++	mutex_unlock(&haptics->io_lock);
++	if (err)
++		dev_warn(&client->dev, "Android static haptic profile failed: %d\n",
++			 err);
++
++	haptics->input_dev = devm_input_allocate_device(&client->dev);
++	if (!haptics->input_dev)
++		return -ENOMEM;
++
++	haptics->input_dev->name = aw86937_y700_name(&client->dev, client->addr);
++	haptics->input_dev->close = aw86937_y700_close;
++	input_set_drvdata(haptics->input_dev, haptics);
++	input_set_capability(haptics->input_dev, EV_FF, FF_RUMBLE);
++	input_set_capability(haptics->input_dev, EV_FF, FF_CONSTANT);
++	input_set_capability(haptics->input_dev, EV_FF, FF_PERIODIC);
++	input_set_capability(haptics->input_dev, EV_FF, FF_SINE);
++
++	err = input_ff_create(haptics->input_dev, 4);
++	if (err)
++		return dev_err_probe(&client->dev, err,
++				     "failed to create FF device\n");
++
++	haptics->input_dev->ff->upload = aw86937_y700_ff_upload;
++	haptics->input_dev->ff->erase = aw86937_y700_ff_erase;
++	haptics->input_dev->ff->playback = aw86937_y700_ff_playback;
++
++	err = input_register_device(haptics->input_dev);
++	if (err)
++		return dev_err_probe(&client->dev, err,
++				     "failed to register input device\n");
++
++	mutex_lock(&aw86937_y700_devices_lock);
++	list_add_tail(&haptics->node, &aw86937_y700_devices);
++	mutex_unlock(&aw86937_y700_devices_lock);
++
++	regmap_read(haptics->regmap, AW86937_PLAYCFG1_REG, &playcfg1);
++	dev_info(&client->dev,
++		 "AW86937 haptics ready chip_id=0x%04x playcfg1=0x%02x pwm_mode=%u gain_ceiling=0x%02x input=%s\n",
++		 haptics->chip_id, playcfg1, AW86937_PWM_MODE_DEFAULT,
++		 AW86937_GAIN_CEILING_DEFAULT, haptics->input_dev->name);
++
++	return 0;
++}
++
++static void aw86937_y700_remove(struct i2c_client *client)
++{
++	struct aw86937_y700 *haptics = i2c_get_clientdata(client);
++
++	if (!haptics)
++		return;
++
++	mutex_lock(&aw86937_y700_devices_lock);
++	list_del(&haptics->node);
++	mutex_unlock(&aw86937_y700_devices_lock);
++
++	cancel_work_sync(&haptics->play_work);
++
++	mutex_lock(&haptics->io_lock);
++	aw86937_y700_stop_locked(haptics);
++	mutex_unlock(&haptics->io_lock);
++
++	dev_info(&client->dev, "AW86937 haptics removed plays=%u\n",
++		 haptics->play_count);
++}
++
++static const struct of_device_id aw86937_y700_of_id[] = {
++	{ .compatible = "awinic,aw86937" },
++	{ .compatible = "awinic,haptic_hv_r" },
++	{ .compatible = "awinic,haptic_hv_l" },
++	{ .compatible = "lenovo,y700-aw86937" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, aw86937_y700_of_id);
++
++static const struct i2c_device_id aw86937_y700_i2c_ids[] = {
++	{ "aw86937_y700" },
++	{ "aw86937" },
++	{ "haptic_hv" },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, aw86937_y700_i2c_ids);
++
++static struct i2c_driver aw86937_y700_driver = {
++	.driver = {
++		.name = "aw86937-y700",
++		.of_match_table = aw86937_y700_of_id,
++	},
++	.probe = aw86937_y700_probe,
++	.remove = aw86937_y700_remove,
++	.id_table = aw86937_y700_i2c_ids,
++};
++module_i2c_driver(aw86937_y700_driver);
++
++MODULE_DESCRIPTION("Lenovo Y700 AW86937 input force-feedback haptics driver");
++MODULE_AUTHOR("Lenovo Y700 mainline port");
++MODULE_LICENSE("GPL");
