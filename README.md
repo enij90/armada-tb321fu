@@ -90,7 +90,7 @@ Join the userdata parts into `userdata.simg`:
 
 - Windows (Command Prompt, in the download folder):
   ```bat
-  copy /b userdata.simg.part1+userdata.simg.part2+userdata.simg.part3+userdata.simg.part4+userdata.simg.part5+userdata.simg.part6 userdata.simg
+  copy /b userdata.simg.part* userdata.simg
   ```
 - Linux / macOS:
   ```bash
