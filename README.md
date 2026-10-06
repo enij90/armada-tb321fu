@@ -1,111 +1,179 @@
-> [!IMPORTANT]
-> **This is an unofficial port of Armada to the Lenovo Legion Tab Gen 3 (TB321FU).**
-> Read [TB321FU.md](TB321FU.md) first: supported hardware (BOE panel only), status, known issues and credits.
-> The rest of this README is upstream Armada's and does not apply to this tablet.
+# Armada on the Lenovo Legion Tab Gen 3 (TB321FU) — experimental
 
-<p align="center">
-  <a href="https://armadaos.dev/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/armada-mark-white.svg">
-      <img src=".github/assets/armada-mark-black.svg" alt="Armada" width="112">
-    </picture>
-  </a>
-</p>
-
-<h1 align="center">Armada</h1>
-
-<p align="center"><strong>SteamOS-like Linux for ARM handhelds</strong></p>
-
-<p align="center">
-  Armada brings Steam, FEX, Proton, and a full Linux desktop to supported ARM64 gaming handhelds.
-</p>
-
-<p align="center">
-  <a href="https://github.com/armada-os/armada/actions/workflows/build.yml"><img alt="Build status" src="https://github.com/armada-os/armada/actions/workflows/build.yml/badge.svg?branch=main"></a>
-  <a href="https://armadaos.dev/"><img alt="Documentation" src="https://img.shields.io/badge/docs-armadaos.dev-18181a?style=flat"></a>
-  <a href="LICENSE.md"><img alt="GPL-2.0-or-later license" src="https://img.shields.io/badge/license-GPL--2.0--or--later-18181a?style=flat"></a>
-  <a href="https://discord.gg/HdmdSxTD5S"><img alt="Discord community" src="https://img.shields.io/badge/chat-Discord-5865F2?style=flat&amp;logo=discord&amp;logoColor=white"></a>
-</p>
-
-<p align="center">
-  <a href="https://armadaos.dev/getting-started/flashing-to-an-sd-card/"><strong>Install Armada</strong></a>
-  ·
-  <a href="https://armadaos.dev/devices/supported-devices/">Supported devices</a>
-  ·
-  <a href="https://armadaos.dev/">Documentation</a>
-  ·
-  <a href="https://armadaos.dev/troubleshooting/known-issues/">Known issues</a>
-</p>
+This is an **unofficial, experimental** port of [Armada](https://github.com/armada-os/armada)
+to the **Lenovo Legion Tab Gen 3 / Legion Y700 (2025), model TB321FU** (Qualcomm Snapdragon 8 Gen 3, SM8650).
+It is not supported by the Armada project: please report problems here, not upstream.
 
 > [!WARNING]
-> Armada is prototype software under active development. Installation requires
-> bootloader changes that can brick a device, corrupt partitions, or cause data
-> loss. Check the current [supported-device list](https://armadaos.dev/devices/supported-devices/),
-> back up your data, and read the complete [installation guide](https://armadaos.dev/getting-started/flashing-to-an-sd-card/)
-> before proceeding.
+> **This guide replaces Android with Armada.** Installing erases all data on the tablet
+> and requires an unlocked bootloader. Back up everything first. (Keeping Android
+> alongside Armada may be possible, but it is not covered here.)
+> You can always go back to stock Android with Lenovo's official rescue tool (LMSA).
 
-## About Armada
+## Supported hardware: BOE panel only
 
-Armada is a gaming-focused Linux distribution built on
-[Fedora bootc](https://github.com/bootc-dev/bootc) with device support derived
-from [ROCKNIX](https://github.com/ROCKNIX). It combines a console-first Steam
-experience with a full KDE Plasma desktop while remaining an open, image-based
-operating system.
+The TB321FU ships with two different display panels: **BOE** and **CSOT**. Only **BOE** is
+supported for now. On a CSOT tablet the screen stays black.
 
-Highlights include:
+Check your panel **before doing anything**, from stock Android, with USB debugging enabled
+(no root needed):
 
-- ARM64 Steam with FEX translation and Proton compatibility
-- Gaming Mode and a full KDE Plasma Desktop Mode
-- Over-the-air operating system updates
-- SD-card boot with optional internal-storage installation
-- Handheld-focused power, fan, controller, and calibration controls
-- Per-game compatibility settings through Armada Control
-
-## Documentation
-
-The [Armada documentation](https://armadaos.dev/) is the source of truth for
-device support, installation, updates, current limitations, and recovery. Use
-the guides there rather than instructions copied from older releases or posts.
-
-| I want to… | Guide |
-|---|---|
-| Install Armada | [Flash to an SD card](https://armadaos.dev/getting-started/flashing-to-an-sd-card/) |
-| Check my handheld | [Supported devices](https://armadaos.dev/devices/supported-devices/) |
-| Learn the interface | [Using Armada](https://armadaos.dev/using-armada/) |
-| Update an installation | [Updating](https://armadaos.dev/getting-started/updating/) |
-| Find help | [FAQ](https://armadaos.dev/troubleshooting/frequently-asked-questions/) · [Known issues](https://armadaos.dev/troubleshooting/known-issues/) |
-| Report a bug | [Github Issues](https://github.com/armada-os/armada/issues)
-
-## Development
-
-This repository assembles the Armada bootc image and its flashable disk images,
-along with the upstream-derived packages it ships (see
-[`packages/`](packages/README.md)). The development recipes require
-[just](https://just.systems/) and [Podman](https://podman.io/):
-
-```console
-$ just check     # Run the test suite and check recipe formatting
-$ just packages  # Build the packages the image consumes (slow from cold)
-$ just build     # Build the local bootc container image
-$ just --list    # Show disk-image, VM, and other development recipes
+```bash
+adb shell getprop ro.vendor.display.paneltype
 ```
 
-Each package builds as a stage in `packages/Containerfile` and is published
-under a tag derived from its own sources, so an unchanged package is never
-rebuilt. `just build` uses a locally built package when you have one and the
-published image otherwise, so you only build what you are changing.
+- `1` → **BOE**: supported.
+- anything else, or empty → **not supported** (probably CSOT): stop here.
 
-Issues and pull requests are welcome. For installation or device support, check
-the [troubleshooting documentation](https://armadaos.dev/troubleshooting/frequently-asked-questions/)
-or ask in the [Armada Discord community](https://discord.gg/HdmdSxTD5S).
+CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
+
+## Status
+
+| Feature | Status |
+| --- | --- |
+| Boot from internal storage | ✅ |
+| Display, 1600×2560 BOE, 60/90/120/144/165 Hz, landscape | ✅ |
+| Refresh-rate changes without black screen | ✅ |
+| Touchscreen | ✅ |
+| GPU (Adreno 750, Turnip/Freedreno) | ✅ |
+| Hardware video decoding (iris) | ✅ |
+| Speakers (2× AW882xx) | ✅ |
+| Internal microphones | ⚠️ works, but must be re-enabled after each boot (see known issues) |
+| Wi-Fi (WCN7850) | ✅ |
+| Bluetooth | ✅ |
+| USB-C charging, Lenovo Legion G9 controller (short-side port) | ✅ |
+| Suspend (real s2idle) | ✅ about 4% battery overnight |
+| Steam Game Mode and KDE Plasma | ✅ |
+| Vibration motors (2× AW86937) | 🚧 driver tested, not integrated yet |
+| Sensors (accelerometer, gyroscope, light) | ❌ not yet |
+| Cameras | ❌ |
+| CSOT panel | ❌ |
+
+## Known issues
+
+- **Turn off Steam's performance overlay when you don't need it.** On this tablet
+  (2560×1600 at 165 Hz) even the FPS counter makes the compositor redraw every frame on
+  the GPU: in the Steam menu the tablet draws about 4.5 W with the overlay on and about
+  2.2 W with it off. (Quick Access → Performance → Performance overlay level: Off.)
+- **Microphone silent after boot.** A mixer switch (`ADC1 Switch`) stays off after boot.
+  Workaround: switch the sound card profile off and back on (e.g. in KDE audio settings).
+
+## Installation
+
+You start from the tablet as it comes from the factory, running Lenovo's Android (ZUI).
+
+What you will need:
+
+- the tablet, charged, with a **BOE** panel (see the check above);
+- a PC (Windows, Linux or macOS) with Android's
+  [platform-tools](https://developer.android.com/tools/releases/platform-tools) (`adb`, `fastboot`)
+  and a USB-C cable;
+- a backup of anything you want to keep: the installation erases the tablet.
+
+### 1. Unlock the bootloader
+
+Lenovo tablets are unlocked with a signed unlock file for your serial number:
+
+1. On Android: Settings → About → tap *Build number* 7 times, then in Developer options
+   enable **OEM unlocking** and **USB debugging**.
+2. Get the unlock file (`sn.img`) for your serial number, for example from
+   [lenovobl.neko.ink](https://lenovobl.neko.ink).
+3. Flash it and unlock (**this wipes Android**):
+   ```bash
+   adb reboot bootloader
+   fastboot flash unlock sn.img
+   fastboot oem unlock-go
+   ```
+
+The bootloader stays unlocked even if you later restore stock Android.
+
+### 2. Download and check the images
+
+From the [latest release](https://github.com/enij90/armada-tb321fu/releases) download
+`boot.img`, `super.img`, all the `userdata.simg.part*` files and `SHA256SUMS`, into one folder.
+
+Join the userdata parts into `userdata.simg`:
+
+- Windows (Command Prompt, in the download folder):
+  ```bat
+  copy /b userdata.simg.part1+userdata.simg.part2+userdata.simg.part3+userdata.simg.part4+userdata.simg.part5+userdata.simg.part6 userdata.simg
+  ```
+- Linux / macOS:
+  ```bash
+  cat userdata.simg.part* > userdata.simg
+  ```
+
+Then check the files against `SHA256SUMS`
+(Linux: `sha256sum -c --ignore-missing SHA256SUMS`; Windows: `CertUtil -hashfile userdata.simg SHA256`
+and compare by eye, same for `boot.img` and `super.img`).
+
+### 3. Flash
+
+Put the tablet in fastboot mode (`adb reboot bootloader`, or power off and hold
+Volume down + Power), connect it to the PC and run:
+
+```bash
+fastboot flash boot_a boot.img
+fastboot flash super super.img
+fastboot -S 700M flash userdata userdata.simg
+fastboot reboot
+```
+
+`userdata` is sent in about 17 chunks and takes around 5 minutes.
+
+### 4. First boot
+
+Lenovo logo → GRUB → "Preparing Armada" → Wi-Fi and Steam setup. The first boot takes a
+little longer. Then you are in Steam's Game Mode.
+
+- Desktop user: `armada`, password `armada`. Change it (`passwd` in a terminal in desktop mode).
+- SSH is off by default; you can turn it on in desktop mode → **Armada Tools**.
+- Updates over the air are not available yet: new versions are installed by flashing new images.
+
+### Troubleshooting
+
+- **The tablet stays on the fastboot screen and fastboot stops responding after flashing:**
+  choose *START* with the volume keys and press Power, or hold Power for ~15 seconds.
+  The partitions are already written.
+- **A fastboot command fails halfway:** run `fastboot reboot bootloader`, wait for the tablet
+  to come back, then repeat only the failed command.
+
+### Going back to Android
+
+Use Lenovo's official rescue tool, **LMSA** (Lenovo Rescue and Smart Assistant): Rescue →
+it downloads and flashes the stock ROM. If the tablet does not boot at all, see
+[this XDA unbrick guide](https://xdaforums.com/t/guide-unbrick-lenovo-y700-tablet.4509297/).
+
+## Building
+
+Same as upstream Armada (`just build`). The proprietary firmware is not stored in this
+repository: the build downloads it from
+[firmware-lenovo-tb321fu](https://github.com/enij90/firmware-lenovo-tb321fu)
+and checks its SHA-256 (`build_files/tb321fu-firmware.env`). For offline builds, drop
+`firmware-lenovo-tb321fu-<version>.tar.gz` into `build_files/`.
+
+Device-specific parts:
+
+- kernel patches `packages/kernel/patches/08xx-*` and DTS `packages/kernel/dts/sm8650-lenovo-tb321fu.dts`;
+- device profile `system_files/usr/lib/armada/devices/lenovo-legion-tab.conf`;
+- `tb321fu-*` services, UCM and WirePlumber configuration under `system_files/`;
+- gamescope patch `0027` (EDID pixel clock above 655.35 MHz, needed for 165 Hz).
 
 ## Credits
 
-See the [project credits](https://armadaos.dev/project/credits/) for the upstream
-projects and contributors that make Armada possible. The Armada logo was
-created by [Rax](https://github.com/Raxcoms).
+- **[GUF296](https://github.com/GUF296)**: the first Linux port for this tablet (Kubuntu).
+  His kernel and device tree are the starting point of this work. From his tree come:
+  - the Novatek NT36523 touch driver;
+  - the Parade PS5169 redriver;
+  - AudioReach secondary-TDM speaker support;
+  - the CSOT panel driver;
+  - the UEFI/GRUB boot chain;
+  - the AW86937 haptics driver;
+  - most of the firmware.
+- **[Armada](https://github.com/armada-os/armada)**: the OS this is based on (its original README: [README-armada.md](README-armada.md)).
+- **[ROCKNIX](https://github.com/ROCKNIX/distribution)**: SM8650 platform work and inline-rotation support for the display controller.
 
 ## License
 
-Armada's own code is licensed under **GPL-2.0-or-later**. Bundled components
-retain their upstream licenses. See [LICENSE.md](LICENSE.md).
+Same as Armada (GPL-2.0-or-later); kernel patches follow the Linux kernel license.
+The firmware in the separate repository is proprietary (see its README).
