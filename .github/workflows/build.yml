@@ -175,6 +175,10 @@ jobs:
           buildah info --storage-opt=overlay.mount_program= |
             jq -e '.store.GraphStatus["Native Overlay Diff"] == "true"'
 
+      - name: Log in to GHCR for package images
+        # The port's package images under ghcr.io/<owner>/armada/pkg are private.
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | buildah login -u "${{ github.actor }}" --password-stdin ghcr.io
+
       - name: Build container image
         id: build_image
         uses: redhat-actions/buildah-build@719e3c40d8af9790c23eca13f7daa339f2867034 # v3.1.0
