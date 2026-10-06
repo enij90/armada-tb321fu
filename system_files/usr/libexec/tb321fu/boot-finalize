@@ -1,0 +1,22 @@
+#!/bin/bash
+# After OSTree finalizes a staged deployment, make it bootable: on the TB321FU
+# sync the GRUB FAT, elsewhere keep Armada's /KERNEL hook. On failure roll the
+# deployment back, as armada-bootimg-finalize does.
+set -uo pipefail
+
+if ! grep -qz '^lenovo,tb321fu$' /proc/device-tree/compatible 2>/dev/null; then
+    exec /usr/libexec/armada/armada-bootimg-finalize
+fi
+
+if /usr/libexec/tb321fu/grub-sync; then
+    exit 0
+else
+    status=$?
+fi
+echo "tb321fu-boot-finalize: GRUB sync failed (${status}); rolling back deployment" >&2
+if /usr/bin/bootc rollback; then
+    /usr/libexec/tb321fu/grub-sync || echo "tb321fu-boot-finalize: GRUB sync after rollback failed" >&2
+else
+    echo "tb321fu-boot-finalize: deployment rollback failed" >&2
+fi
+exit "${status}"

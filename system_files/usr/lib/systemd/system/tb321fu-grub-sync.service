@@ -1,0 +1,24 @@
+[Unit]
+Description=Lenovo TB321FU: sync the GRUB FAT with the OSTree boot entries
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+ConditionPathExists=/run/ostree-booted
+DefaultDependencies=no
+Requires=tb321fu-boot-bind.service
+After=tb321fu-boot-bind.service local-fs.target systemd-journal-flush.service
+# Reverse stop order: ExecStop runs after ostree-finalize-staged, so it sees the
+# finalized entries. Staged updates are synced (with rollback on failure) by
+# boot-finalize; this covers bootc rollback and other non-staged changes.
+Before=ostree-finalize-staged.service final.target
+Conflicts=final.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStopSec=180
+# At boot: complete a sync interrupted at the last shutdown, migrate the
+# install-image layout. '-': a failure must not skip ExecStop.
+ExecStart=-/usr/libexec/tb321fu/grub-sync
+ExecStop=/usr/libexec/tb321fu/grub-sync
+
+[Install]
+WantedBy=multi-user.target

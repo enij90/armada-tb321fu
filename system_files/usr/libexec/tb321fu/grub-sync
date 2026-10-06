@@ -1,0 +1,151 @@
+#!/bin/bash
+# Lenovo TB321FU: keep the GRUB FAT at the start of "super" in sync with the
+# OSTree BLS entries. The ABL boots GUF296's UEFI, which runs GRUB from that FAT;
+# GRUB has no blscfg, so kernel, initramfs and DTB are copied into the FAT and
+# grub.cfg is rewritten. This is the TB321FU counterpart of armada-bootimg-update.
+#
+# The FAT holds two slots (a, b): the next-boot deployment and the rollback
+# deployment, so GRUB always offers a previous version. A slot is written only
+# while grub.cfg points at the other one, so an interrupted run stays bootable.
+set -euo pipefail
+
+BOOTROOT="${BOOTROOT:-/boot}"
+SUPER="${SUPER:-/dev/disk/by-partlabel/super}"
+MNT="${MNT:-/run/tb321fu-super}"
+ARGS_FILE="${ARGS_FILE:-/usr/lib/armada/bootimg-args}"
+DTB_NAME=sm8650-lenovo-tb321fu.dtb
+# Device kernel arguments added to the deployment's own (BLS options).
+# enforcing=0: SELinux permissive, as on the install images (to revisit).
+EXTRA_KARGS="${EXTRA_KARGS:-efi=novamap console=tty1 fbcon=map:0 enforcing=0}"
+
+log() { echo "tb321fu-grub-sync: $*"; }
+fail() { echo "tb321fu-grub-sync: $*" >&2; exit 1; }
+
+. "${ARGS_FILE}"
+
+exec 9>/run/tb321fu-grub-sync.lock
+flock -w 30 9 || fail "timed out waiting for another sync"
+
+# BLS entries sorted by version, highest first: [0] next boot, [1] rollback.
+mapfile -t entries < <(
+    for f in "${BOOTROOT}"/loader/entries/*.conf; do
+        [ -f "$f" ] || continue
+        printf '%s\t%s\n' "$(sed -n 's/^version //p' "$f" | head -1)" "$f"
+    done | sort -rn | cut -f2
+)
+[ "${#entries[@]}" -gt 0 ] || fail "no BLS entry in ${BOOTROOT}/loader/entries"
+[ "${entries[0]}" = "$(armada_default_bls_entry "${BOOTROOT}")" ] ||
+    fail "BLS ordering disagrees with armada_default_bls_entry"
+
+field() { sed -n "s/^$1 //p" "$2" | head -1; }
+# Files of an entry: kernel, initramfs, DTB (BLS paths carry a /boot prefix).
+entry_files() {
+    local linux initrd fdtdir
+    linux=$(field linux "$1"); initrd=$(field initrd "$1"); fdtdir=$(field fdtdir "$1")
+    printf '%s\n' "${BOOTROOT}${linux#/boot}" "${BOOTROOT}${initrd#/boot}" \
+        "${BOOTROOT}${fdtdir#/boot}/qcom/${DTB_NAME}"
+}
+files_id() { sha256sum "$@" | awk '{print $1}' | sha256sum | cut -c1-64; }
+entry_id() {
+    local f; mapfile -t f < <(entry_files "$1")
+    for x in "${f[@]}"; do [ -f "$x" ] || fail "missing ${x}"; done
+    files_id "${f[@]}"
+}
+
+next="${entries[0]}"; prev="${entries[1]:-}"
+next_id=$(entry_id "$next")
+prev_id=""; [ -n "$prev" ] && prev_id=$(entry_id "$prev")
+
+mkdir -p "$MNT"
+mounted=0
+if ! findmnt -rn "$MNT" >/dev/null; then
+    mount -t vfat -o rw,noatime "$SUPER" "$MNT" || fail "cannot mount ${SUPER}"
+    mounted=1
+fi
+cleanup() { sync; [ "$mounted" = 1 ] && umount "$MNT" 2>/dev/null || true; }
+trap cleanup EXIT
+
+slot_id() { cat "${MNT}/.slot-$1.id" 2>/dev/null || true; }
+
+# One-time migration from the install-image layout (Image, initramfs.img,
+# dtb/<name>) to slot b. No copy: the files are renamed and fingerprinted.
+if [ -f "${MNT}/Image" ] && [ ! -f "${MNT}/.slot-b.id" ]; then
+    log "migrating the install-image layout to slot b"
+    id=$(files_id "${MNT}/Image" "${MNT}/initramfs.img" "${MNT}/dtb/${DTB_NAME}")
+    mv -f "${MNT}/Image" "${MNT}/Image-b"
+    mv -f "${MNT}/initramfs.img" "${MNT}/initrd-b.img"
+    mv -f "${MNT}/dtb/${DTB_NAME}" "${MNT}/dtb-b.dtb"
+    printf '%s' "$id" > "${MNT}/.slot-b.id"
+    # Until grub.cfg is rewritten below the old paths are gone: write it now.
+    pending_legacy=1
+fi
+
+title() { field title "$1" | sed 's/ *(ostree:[0-9]*)$//'; }
+menuentry() { # slot entry label-suffix
+    local options
+    options="$(field options "$2") ${EXTRA_KARGS}"
+    printf 'menuentry "%s%s" {\n    devicetree /dtb-%s.dtb\n    linux /Image-%s %s\n    initrd /initrd-%s.img\n}\n\n' \
+        "$(title "$2")" "$3" "$1" "$1" "$options" "$1"
+}
+write_cfg() { # default-slot default-entry [other-slot other-entry]
+    local cfg="${MNT}/boot/grub/grub.cfg"
+    {
+        printf 'set timeout=3\nset default=0\nset gfxpayload=keep\n\n'
+        printf '# Written by tb321fu-grub-sync from the OSTree BLS entries.\n'
+        printf '# GRUB sets $root to this FAT; no "search" (it would probe the btrfs userdata).\n\n'
+        menuentry "$1" "$2" ""
+        [ -n "${3:-}" ] && menuentry "$3" "$4" " (previous)"
+        printf 'menuentry "Power off" {\n    halt\n}\n'
+    } > "${cfg}.new"
+    sync "${cfg}.new"
+    if ! cmp -s "${cfg}.new" "$cfg"; then
+        mv -f "${cfg}.new" "$cfg"
+        sync
+        log "grub.cfg: default $(title "$2") (slot $1)${3:+, previous slot $3}"
+    else
+        rm -f "${cfg}.new"
+    fi
+}
+other() { [ "$1" = a ] && echo b || echo a; }
+
+# Slot for each deployment: reuse a slot that already holds it.
+slot_of() { local s; for s in a b; do [ -n "$1" ] && [ "$(slot_id "$s")" = "$1" ] && { echo "$s"; return 0; }; done; return 0; }
+next_slot=$(slot_of "$next_id")
+prev_slot=$(slot_of "$prev_id")
+
+if [ -z "$next_slot" ]; then
+    # Overwrite the slot that does not hold the rollback deployment.
+    next_slot=$(other "${prev_slot:-b}")
+    keep=$(other "$next_slot")
+    # Point GRUB at the slot we keep before touching the other one.
+    if [ -n "$(slot_id "$keep")" ]; then
+        if [ "$keep" = "${prev_slot:-}" ]; then
+            write_cfg "$keep" "$prev"
+        elif [ "${pending_legacy:-0}" = 1 ]; then
+            # Legacy files belong to no current BLS entry: boot them as-is.
+            write_cfg "$keep" "$next"
+        fi
+    fi
+    pending_legacy=0
+    log "writing $(title "$next") to slot ${next_slot}"
+    rm -f "${MNT}/.slot-${next_slot}.id"
+    mapfile -t src < <(entry_files "$next")
+    for pair in "0:Image-${next_slot}" "1:initrd-${next_slot}.img" "2:dtb-${next_slot}.dtb"; do
+        i=${pair%%:*}; dst=${pair#*:}
+        rm -f "${MNT}/${dst}"
+        cp -f "${src[$i]}" "${MNT}/${dst}.new"
+        sync "${MNT}/${dst}.new"
+        mv -f "${MNT}/${dst}.new" "${MNT}/${dst}"
+    done
+    sync
+    printf '%s' "$next_id" > "${MNT}/.slot-${next_slot}.id"
+    sync
+fi
+
+if [ -n "$prev_slot" ] && [ "$prev_slot" != "$next_slot" ]; then
+    write_cfg "$next_slot" "$next" "$prev_slot" "$prev"
+else
+    write_cfg "$next_slot" "$next"
+fi
+rm -rf "${MNT}/dtb" 2>/dev/null || true
+log "in sync"
