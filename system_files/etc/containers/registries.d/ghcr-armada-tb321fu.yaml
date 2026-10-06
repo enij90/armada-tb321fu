@@ -1,0 +1,3 @@
+docker:
+  ghcr.io/enij90/armada-tb321fu:
+    use-sigstore-attachments: true

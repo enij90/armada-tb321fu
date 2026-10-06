@@ -6,6 +6,15 @@
     ],
     "transports": {
         "docker": {
+            "ghcr.io/enij90/armada-tb321fu": [
+                {
+                    "type": "sigstoreSigned",
+                    "keyPaths": ["/etc/pki/containers/armada-tb321fu.pub"],
+                    "signedIdentity": {
+                        "type": "matchRepository"
+                    }
+                }
+            ],
             "ghcr.io/virtudude/armada": [
                 {
                     "type": "sigstoreSigned",
