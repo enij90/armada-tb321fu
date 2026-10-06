@@ -36,7 +36,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | GPU (Adreno 750, Turnip/Freedreno) | ✅ |
 | Hardware video decoding (iris) | ✅ |
 | Speakers (2× AW882xx) | ✅ |
-| Internal microphones | ⚠️ works, but must be re-enabled after each boot (see known issues) |
+| Internal microphones | ✅ |
 | Wi-Fi (WCN7850) | ✅ |
 | Bluetooth | ✅ |
 | USB-C charging, Lenovo Legion G9 controller (short-side port) | ✅ |
@@ -51,8 +51,6 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
   (2560×1600 at 165 Hz) even the FPS counter makes the compositor redraw every frame on
   the GPU: in the Steam menu the tablet draws about 4.5 W with the overlay on and about
   2.2 W with it off. (Quick Access → Performance → Performance overlay level: Off.)
-- **Microphone silent after boot.** A mixer switch (`ADC1 Switch`) stays off after boot.
-  Workaround: switch the sound card profile off and back on (e.g. in KDE audio settings).
 
 ## Installation
 
