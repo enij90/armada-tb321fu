@@ -31,9 +31,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 
 | Feature | Status |
 | --- | --- |
-| Boot from internal storage | ✅ |
 | Display, 1600×2560 BOE, 60/90/120/144/165 Hz, landscape | ✅ |
-| Refresh-rate changes without black screen | ✅ |
 | Touchscreen | ✅ |
 | GPU (Adreno 750, Turnip/Freedreno) | ✅ |
 | Hardware video decoding (iris) | ✅ |
@@ -42,8 +40,6 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Wi-Fi (WCN7850) | ✅ |
 | Bluetooth | ✅ |
 | USB-C charging, Lenovo Legion G9 controller (short-side port) | ✅ |
-| Suspend (real s2idle) | ✅ about 4% battery overnight |
-| Steam Game Mode and KDE Plasma | ✅ |
 | Vibration motors (2× AW86937) | ⚠️ driver works, not used by games yet |
 | Sensors (accelerometer, gyroscope, light) | ❌ not yet |
 | Cameras | ❌ |
