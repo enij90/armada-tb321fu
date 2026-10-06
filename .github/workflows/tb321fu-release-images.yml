@@ -1,0 +1,68 @@
+---
+# TB321FU port: build the flashable install images (boot.img, super.img, split
+# userdata.simg) from a published image and attach them to a DRAFT release, to
+# be reviewed and published by hand.
+name: TB321FU release images
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: OS image to package
+        default: ghcr.io/enij90/armada-tb321fu:latest
+        required: true
+      template_release:
+        description: Release whose boot.img/super.img provide the UEFI loader and GRUB
+        default: v20261006.41bc0bd
+        required: true
+      tag:
+        description: Release tag (empty = v<image version>)
+        default: ''
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  images:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Free disk space
+        # The build needs ~40 GB: the OS commit, the btrfs image and its sparse copy.
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/local/.ghcup || true
+          sudo docker system prune -af >/dev/null || true
+          df -h /
+
+      - name: Build images (Fedora container)
+        env:
+          IMAGE: ${{ inputs.image }}
+          TEMPLATE_RELEASE: ${{ inputs.template_release }}
+        run: |
+          sudo docker run --rm --privileged -v /dev:/dev -v "$PWD:/w" -w /w \
+            -e IMAGE -e TEMPLATE_RELEASE \
+            registry.fedoraproject.org/fedora:44 bash tb321fu/ci-release-images.sh
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(cat out/VERSION)
+          tag="${{ inputs.tag }}"
+          [ -n "$tag" ] || tag="v${version}"
+          gh release create "$tag" --draft --prerelease --target "${GITHUB_SHA}" \
+            --title "Armada TB321FU — ${tag}" \
+            --notes "Images built from \`${{ inputs.image }}\` (${version}). Edit these notes, then publish."
+          gh release upload "$tag" out/boot.img out/super.img out/userdata.simg.part* out/SHA256SUMS
+          {
+            echo "### Draft release ${tag}"
+            echo
+            echo '```'
+            cat out/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
