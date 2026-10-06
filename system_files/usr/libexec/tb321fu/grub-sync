@@ -57,13 +57,21 @@ next_id=$(entry_id "$next")
 prev_id=""; [ -n "$prev" ] && prev_id=$(entry_id "$prev")
 
 mkdir -p "$MNT"
-mounted=0
+mounted=0; loop=""
+cleanup() {
+    sync
+    [ "$mounted" = 1 ] && umount "$MNT" 2>/dev/null
+    [ -n "$loop" ] && losetup -d "$loop" 2>/dev/null
+    true
+}
+trap cleanup EXIT
 if ! findmnt -rn "$MNT" >/dev/null; then
-    mount -t vfat -o rw,noatime "$SUPER" "$MNT" || fail "cannot mount ${SUPER}"
+    # The FAT has 512-byte sectors but UFS exposes 4096-byte logical blocks,
+    # which the kernel refuses for FAT; a loop device presents 512-byte ones.
+    loop=$(losetup -f --show "$SUPER") || fail "cannot set up a loop device on ${SUPER}"
+    mount -t vfat -o rw,noatime "$loop" "$MNT" || fail "cannot mount ${SUPER}"
     mounted=1
 fi
-cleanup() { sync; [ "$mounted" = 1 ] && umount "$MNT" 2>/dev/null || true; }
-trap cleanup EXIT
 
 slot_id() { cat "${MNT}/.slot-$1.id" 2>/dev/null || true; }
 
