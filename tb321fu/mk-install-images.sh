@@ -144,6 +144,9 @@ dd if="$BOOT_IMG" of="$OUT/boot.img" bs=1M status=none
 
 # REPORT=1: size breakdown of the root subvolume (compare builds).
 [ -n "${REPORT:-}" ] && bash "$(dirname "$0")/fs-report.sh" "built $VERSION" "$T"
+# Discard freed blocks: the loop device does not always punch them out of
+# the image file, and img2simg would ship their stale data (~600 MB).
+fstrim -v "$T" || true
 umount "$T"
 btrfs check --readonly "$OUT/userdata.img" >/dev/null 2>&1 && log "btrfs check ok"
 # Windows fastboot dies (bad_alloc) on a 16 GiB raw image: ship it Android-sparse.
