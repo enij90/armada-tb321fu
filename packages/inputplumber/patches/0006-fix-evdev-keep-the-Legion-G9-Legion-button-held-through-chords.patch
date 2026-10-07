@@ -1,0 +1,265 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] fix(evdev): keep the Legion G9's Legion button held through chords
+
+The Lenovo Legion G9 controller (GameSir, 3537:1134) hides its Legion button
+(BTN_MODE) while another button is held with it, and reports it again about
+150 ms after that button is released if Legion is still held. A target such
+as the Steam Deck sees a lone Guide press followed by the other button:
+Steam opens its menu on release and never sees the chord.
+
+Keep Legion held through those gaps for this controller, and release it
+only once it has stayed up for 200 ms (cancelled if it comes back). A lone
+Legion press is delayed by that much on release; a long press still powers
+the controller off.
+
+diff --git a/src/input/source/evdev/gamepad.rs b/src/input/source/evdev/gamepad.rs
+index 321eed9..1c55293 100644
+--- a/src/input/source/evdev/gamepad.rs
++++ b/src/input/source/evdev/gamepad.rs
+@@ -1,6 +1,10 @@
+ use std::fmt::Debug;
+ use std::os::fd::AsFd;
+-use std::{collections::HashMap, error::Error};
++use std::time::{Duration, Instant};
++use std::{
++    collections::{HashMap, HashSet},
++    error::Error,
++};
+ 
+ use evdev::{
+     AbsInfo, AbsoluteAxisCode, AttributeSetRef, Device, EventType, FFEffect, FFEffectData,
+@@ -106,6 +110,81 @@ mod sharing_tests {
+     }
+ }
+ 
++/// The Legion G9 controller (GameSir, 3537:1134) hides its Legion button
++/// (BTN_MODE) while another button is held with it, and reports it again
++/// about 150 ms after that button is released if Legion is still down. Keep
++/// Legion held through those gaps, so a Legion + button chord reaches the
++/// target as one, and release it only once it stayed up for a while.
++const LEGION_G9_ID: (u16, u16) = (0x3537, 0x1134);
++const LEGION_RELEASE_DELAY: Duration = Duration::from_millis(200);
++
++#[derive(Default)]
++struct LegionChordFilter {
++    held: bool,
++    others: HashSet<u16>,
++    release_at: Option<Instant>,
++}
++
++impl LegionChordFilter {
++    fn event(value: i32) -> InputEvent {
++        InputEvent::new(EventType::KEY.0, KeyCode::BTN_MODE.0, value)
++    }
++
++    /// Emit the delayed Legion release once it is due.
++    fn poll(&mut self) -> Option<InputEvent> {
++        let due = self.release_at.is_some_and(|at| Instant::now() >= at);
++        if !due {
++            return None;
++        }
++        self.release_at = None;
++        self.held = false;
++        Some(Self::event(0))
++    }
++
++    fn filter(&mut self, events: Vec<InputEvent>) -> Vec<InputEvent> {
++        let mut out = Vec::with_capacity(events.len());
++        for event in events {
++            if event.event_type() != EventType::KEY {
++                out.push(event);
++                continue;
++            }
++            if event.code() == KeyCode::BTN_MODE.0 {
++                match event.value() {
++                    1 => {
++                        self.release_at = None;
++                        if !self.held {
++                            self.held = true;
++                            out.push(event);
++                        }
++                    }
++                    0 if self.held && self.others.is_empty() => {
++                        self.release_at = Some(Instant::now() + LEGION_RELEASE_DELAY);
++                    }
++                    0 => {}
++                    _ => {}
++                }
++                continue;
++            }
++            match event.value() {
++                1 => {
++                    self.others.insert(event.code());
++                }
++                0 => {
++                    self.others.remove(&event.code());
++                    // Legion went into hiding with this button: if it does
++                    // not come back, it was let go during the chord.
++                    if self.held && self.others.is_empty() && self.release_at.is_none() {
++                        self.release_at = Some(Instant::now() + LEGION_RELEASE_DELAY);
++                    }
++                }
++                _ => {}
++            }
++            out.push(event);
++        }
++        out
++    }
++}
++
+ /// Source device implementation for evdev gamepads
+ pub struct GamepadEventDevice {
+     device: Device,
+@@ -116,6 +195,7 @@ pub struct GamepadEventDevice {
+     ff_effects_deck: Option<i16>,
+     ff_effects_rumble: Option<i16>,
+     hat_state: HashMap<AbsoluteAxisCode, i32>,
++    legion_chords: Option<LegionChordFilter>,
+ }
+ 
+ impl SourceDriver<GamepadEventDevice> {
+@@ -152,6 +232,10 @@ impl GamepadEventDevice {
+         // Create an event translator if a capability map was given
+         let translator = capability_map.map(|map| EventTranslator::new(&map, axes_info.clone()));
+ 
++        let id = device.input_id();
++        let legion_chords = ((id.vendor(), id.product()) == LEGION_G9_ID)
++            .then(LegionChordFilter::default);
++
+         Ok(Self {
+             device,
+             axes_info,
+@@ -161,6 +245,7 @@ impl GamepadEventDevice {
+             ff_effects_deck: None,
+             ff_effects_rumble: None,
+             hat_state: HashMap::new(),
++            legion_chords,
+         })
+     }
+ 
+@@ -523,14 +608,24 @@ impl SourceInputDevice for GamepadEventDevice {
+             native_events.extend(translator.poll());
+         }
+ 
++        // A delayed Legion release that came due since the last poll
++        let mut released = vec![];
++        if let Some(filter) = self.legion_chords.as_mut() {
++            released.extend(filter.poll());
++        }
++
+         // Read events from the device
+         let events = {
+             let result = self.device.fetch_events();
+-            let events = match result {
+-                Ok(events) => events,
++            let events: Vec<InputEvent> = match result {
++                Ok(events) => events.into_iter().collect(),
+                 Err(err) => match err.kind() {
+-                    // Do nothing if this would block
+-                    std::io::ErrorKind::WouldBlock => return Ok(native_events),
++                    // Do nothing if this would block, unless a delayed Legion
++                    // release is due
++                    std::io::ErrorKind::WouldBlock if released.is_empty() => {
++                        return Ok(native_events)
++                    }
++                    std::io::ErrorKind::WouldBlock => Vec::new(),
+                     _ => {
+                         log::trace!("Failed to fetch events: {:?}", err);
+                         let msg = format!("Failed to fetch events: {:?}", err);
+@@ -538,10 +633,16 @@ impl SourceInputDevice for GamepadEventDevice {
+                     }
+                 },
+             };
+-
+-            let events: Vec<InputEvent> = events.into_iter().collect();
+             events
+         };
++        let events: Vec<InputEvent> = match self.legion_chords.as_mut() {
++            Some(filter) => {
++                let mut events = filter.filter(events);
++                events.splice(0..0, released);
++                events
++            }
++            None => events,
++        };
+ 
+         // Convert the events into native events if no translator exists
+         if self.translator.is_none() {
+@@ -830,3 +931,77 @@ impl Debug for GamepadEventDevice {
+ fn normalize_unsigned_value(raw_value: f64, max: f64) -> f64 {
+     raw_value / max
+ }
++
++#[cfg(test)]
++mod legion_chord_tests {
++    use super::*;
++
++    fn key(code: KeyCode, value: i32) -> InputEvent {
++        InputEvent::new(EventType::KEY.0, code.0, value)
++    }
++
++    fn keys(events: &[InputEvent]) -> Vec<(u16, i32)> {
++        events.iter().map(|e| (e.code(), e.value())).collect()
++    }
++
++    fn expire(filter: &mut LegionChordFilter) {
++        if let Some(at) = filter.release_at.as_mut() {
++            *at = Instant::now() - Duration::from_millis(1);
++        }
++    }
++
++    #[test]
++    fn keeps_legion_held_through_a_chord() {
++        let mut filter = LegionChordFilter::default();
++        let mode = KeyCode::BTN_MODE;
++        let a = KeyCode::BTN_SOUTH;
++        // Legion down, then A: the controller drops Legion in the same report.
++        assert_eq!(keys(&filter.filter(vec![key(mode, 1)])), vec![(mode.0, 1)]);
++        assert_eq!(
++            keys(&filter.filter(vec![key(a, 1), key(mode, 0)])),
++            vec![(a.0, 1)]
++        );
++        // A up; Legion comes back ~150 ms later while still held.
++        assert_eq!(keys(&filter.filter(vec![key(a, 0)])), vec![(a.0, 0)]);
++        assert!(filter.poll().is_none());
++        assert!(filter.filter(vec![key(mode, 1)]).is_empty());
++        assert!(filter.release_at.is_none());
++        // Legion up for good: released after the delay.
++        assert!(filter.filter(vec![key(mode, 0)]).is_empty());
++        assert!(filter.poll().is_none());
++        expire(&mut filter);
++        assert_eq!(filter.poll().map(|e| (e.code(), e.value())), Some((mode.0, 0)));
++        assert!(!filter.held);
++    }
++
++    #[test]
++    fn releases_legion_let_go_during_the_chord() {
++        let mut filter = LegionChordFilter::default();
++        let mode = KeyCode::BTN_MODE;
++        let a = KeyCode::BTN_SOUTH;
++        filter.filter(vec![key(mode, 1)]);
++        filter.filter(vec![key(a, 1), key(mode, 0)]);
++        // Legion was let go first: it never comes back after A.
++        filter.filter(vec![key(a, 0)]);
++        expire(&mut filter);
++        assert_eq!(filter.poll().map(|e| (e.code(), e.value())), Some((mode.0, 0)));
++    }
++
++    #[test]
++    fn a_lone_legion_press_is_delayed_only_on_release() {
++        let mut filter = LegionChordFilter::default();
++        let mode = KeyCode::BTN_MODE;
++        assert_eq!(keys(&filter.filter(vec![key(mode, 1)])), vec![(mode.0, 1)]);
++        assert!(filter.filter(vec![key(mode, 0)]).is_empty());
++        expire(&mut filter);
++        assert_eq!(filter.poll().map(|e| (e.code(), e.value())), Some((mode.0, 0)));
++    }
++
++    #[test]
++    fn other_buttons_pass_through() {
++        let mut filter = LegionChordFilter::default();
++        let b = KeyCode::BTN_EAST;
++        assert_eq!(keys(&filter.filter(vec![key(b, 1), key(b, 0)])), vec![(b.0, 1), (b.0, 0)]);
++        assert!(filter.poll().is_none());
++    }
++}

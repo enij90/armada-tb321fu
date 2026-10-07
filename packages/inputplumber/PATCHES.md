@@ -15,3 +15,7 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
   notes: Whitelists the virtual device "TB321FU IMU" (tb321fu-imu-bridge: the Lenovo TB321FU's
   accelerometer and gyroscope from the Qualcomm sensor core, which has no IIO device).
+- `patches/0006-fix-evdev-keep-the-Legion-G9-Legion-button-held-through-chords.patch`
+  source: armada
+  notes: The Legion G9 (3537:1134) hides BTN_MODE while another button is held with it;
+  keep it held through the chord and delay its release by 200 ms.
