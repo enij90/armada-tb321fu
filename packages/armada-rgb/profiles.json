@@ -45,6 +45,15 @@
       }
     },
     {
+      "models": ["Lenovo Legion Y700 (2025) / TB321FU"],
+      "backend": {
+        "type": "gcmhid",
+        "vendor": "3537",
+        "product": "1134",
+        "strips": [1, 2]
+      }
+    },
+    {
       "models": ["AYANEO Pocket MICRO 2"],
       "backend": {
         "type": "serial",

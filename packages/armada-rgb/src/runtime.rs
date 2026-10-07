@@ -1,4 +1,6 @@
-use crate::{ChannelBackend, ColorCorrection, LightingBackend, MulticolorBackend, SerialBackend};
+use crate::{
+    ChannelBackend, ColorCorrection, GcmHidBackend, LightingBackend, MulticolorBackend, SerialBackend,
+};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -8,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 const CONFIG_PATH: &str = "/etc/armada/rgb.json";
 const DEV_ROOT: &str = "/dev";
+const HIDRAW_ROOT: &str = "/sys/class/hidraw";
 const MODEL_PATH: &str = "/sys/firmware/devicetree/base/model";
 const PROFILE_VERSION: u32 = 1;
 const PROFILES_PATH: &str = "/usr/share/armada-rgb/profiles.json";
@@ -32,6 +35,7 @@ struct DeviceProfile {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum BackendProfile {
+    Gcmhid { vendor: String, product: String, strips: Vec<u8> },
     Serial { device: String },
     Channels { targets: Vec<String> },
     Multicolor { targets: Vec<String> },
@@ -53,8 +57,12 @@ pub(crate) fn from_env() -> (PathBuf, LightingBackend) {
     let dev_root: PathBuf = env::var_os("ARMADA_RGB_DEV_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| DEV_ROOT.into());
+    let hidraw_root: PathBuf = env::var_os("ARMADA_RGB_HIDRAW_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| HIDRAW_ROOT.into());
 
-    let backend: LightingBackend = load_backend(&profiles_path, &model_path, sysfs_root, dev_root)
+    let backend: LightingBackend =
+        load_backend(&profiles_path, &model_path, sysfs_root, dev_root, hidraw_root)
         .unwrap_or_else(|error| LightingBackend::Unsupported(format!("{error:#}")));
     (config_path, backend)
 }
@@ -64,6 +72,7 @@ fn load_backend(
     model_path: &Path,
     root: PathBuf,
     dev_root: PathBuf,
+    hidraw_root: PathBuf,
 ) -> Result<LightingBackend> {
     let input: String = fs::read_to_string(profiles_path)
         .with_context(|| format!("read RGB profiles from {}", profiles_path.display()))?;
@@ -88,6 +97,13 @@ fn load_backend(
         .transpose()?;
 
     match profile.backend {
+        BackendProfile::Gcmhid { vendor, product, strips } if !strips.is_empty() => {
+            Ok(LightingBackend::GcmHid(
+                GcmHidBackend::new(hidraw_root, dev_root, &vendor, &product, strips)
+                    .with_correction(profile.correction),
+            ))
+        }
+        BackendProfile::Gcmhid { .. } => bail!("device profile has no RGB strips"),
         BackendProfile::Serial { device } => Ok(LightingBackend::Serial(
             SerialBackend::new(dev_root, device).with_correction(profile.correction),
         )),
