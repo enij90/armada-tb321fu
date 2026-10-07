@@ -1,8 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/ShadowBlip/InputPlumber/main/rootfs/usr/share/inputplumber/schema/composite_device_v1.json
 # Lenovo Legion Tab Gen 3 (TB321FU) with its Legion G9 controller attached.
 # With Armada's default controller type the G9 reaches Steam as a Steam Deck
-# controller, so Legion+button shortcuts behave as on a Deck. The tablet's IMU (via SSC) and vibration
-# motors are meant to join this composite device as further sources later.
+# controller, so Legion+button shortcuts behave as on a Deck (InputPlumber
+# patch 0006 keeps Legion held through them). The tablet's IMU (via SSC) is
+# the controller's motion source.
 version: 1
 kind: CompositeDevice
 name: Lenovo Legion Tab Gen 3 + Legion G9
@@ -29,6 +30,14 @@ source_devices:
       name: TB321FU IMU
       handler: event*
     capability_map_id: imu_generic
+  # The G9 firmware's own Legion shortcuts (volume, brightness) arrive as
+  # consumer keys alongside the Steam chords on the same buttons: drop them,
+  # Steam's chords take those buttons.
+  - group: keyboard
+    blocked: true
+    evdev:
+      name: GameSir Legion Gaming Controller G9 Consumer Control
+      handler: event*
 options:
   auto_manage: true
 # Armada's controller-type service switches the target to the selected type
