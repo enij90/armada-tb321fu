@@ -1628,7 +1628,7 @@ diff -ruN a/drivers/input/touchscreen/nt36523/nt36xxx.c b/drivers/input/touchscr
 +	NVT_LOG("NVT_TOUCH_ESD_PROTECT is %d\n", NVT_TOUCH_ESD_PROTECT);
 +#if NVT_TOUCH_ESD_PROTECT
 +	INIT_DELAYED_WORK(&nvt_esd_check_work, nvt_esd_check_func);
-+	nvt_esd_check_wq = alloc_workqueue("nvt_esd_check_wq", WQ_MEM_RECLAIM, 1);
++	nvt_esd_check_wq = alloc_workqueue("nvt_esd_check_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
 +	if (!nvt_esd_check_wq) {
 +		NVT_ERR("nvt_esd_check_wq create workqueue failed\n");
 +		ret = -ENOMEM;
