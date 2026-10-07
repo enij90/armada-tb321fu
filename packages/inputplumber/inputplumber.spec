@@ -19,6 +19,7 @@ Patch1:         0001-fix-gamepad-share-raw-input.patch
 Patch2:         0002-fix-force-feedback-reset-effects-when-replacing-targets.patch
 Patch3:         0003-feat-Hardware-Support-Add-AYANEO-Pocket-DS.patch
 Patch4:         0004-feat-Hardware-Support-Add-AYN-Thor-Lite.patch
+Patch5:         0005-feat-Hardware-Support-accept-the-TB321FU-IMU-bridge.patch
 
 BuildRequires:  cargo
 BuildRequires:  rust

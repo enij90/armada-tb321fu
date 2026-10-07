@@ -11,3 +11,7 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
 - `patches/0004-feat-Hardware-Support-Add-AYN-Thor-Lite.patch`
   source: armada
   notes: Matches the Thor Lite device-tree compatible and its Retroid-protocol MCU gamepad, reusing the existing Retroid Type 1 capability map.
+- `patches/0005-feat-Hardware-Support-accept-the-TB321FU-IMU-bridge.patch`
+  source: armada
+  notes: Whitelists the virtual device "TB321FU IMU" (tb321fu-imu-bridge: the Lenovo TB321FU's
+  accelerometer and gyroscope from the Qualcomm sensor core, which has no IIO device).

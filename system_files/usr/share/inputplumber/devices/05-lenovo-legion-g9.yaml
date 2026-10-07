@@ -22,11 +22,11 @@ source_devices:
       handler: event*
     capability_map_id: lenovo_legion_g9
   # The tablet's accelerometer + gyroscope (tb321fu-imu-bridge, from the SSC).
-  - group: imu
+  # A uinput device: InputPlumber accepts it through patch 0005; like the
+  # PS4 motion sensors it is a gamepad-group source mapped by imu_generic.
+  - group: gamepad
     evdev:
       name: TB321FU IMU
-      vendor_id: "17ef"
-      product_id: "321f"
       handler: event*
     capability_map_id: imu_generic
 options:

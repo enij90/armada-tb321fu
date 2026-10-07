@@ -1,0 +1,20 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] feat(Hardware Support): accept the Lenovo TB321FU IMU bridge
+
+The TB321FU's accelerometer and gyroscope sit behind the Qualcomm sensor
+core, with no IIO device; tb321fu-imu-bridge reports them as the uinput
+device "TB321FU IMU" (accel ABS_X/Y/Z, gyro ABS_RX/RY/RZ, imu_generic).
+Virtual devices are skipped unless whitelisted, so add it.
+
+--- a/src/input/manager.rs
++++ b/src/input/manager.rs
+@@ -65,6 +65,9 @@
+     "Sunshine gamepad (virtual) motion sensors",
+     "Sunshine Nintendo (virtual) pad",
+     "MSI WMI hotkeys",
++    // Lenovo TB321FU: accelerometer + gyroscope from the sensor core (SSC),
++    // reported through uinput by tb321fu-imu-bridge.
++    "TB321FU IMU",
+ ];
+ 
+ #[derive(Error, Debug)]
