@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ShadowBlip/InputPlumber/main/rootfs/usr/share/inputplumber/schema/composite_device_v1.json
+# Lenovo Legion Tab Gen 3 (TB321FU) with its Legion G9 controller attached.
+# With Armada's default controller type the G9 reaches Steam as a Steam Deck
+# controller, so Legion+button shortcuts behave as on a Deck. The tablet's IMU (via SSC) and vibration
+# motors are meant to join this composite device as further sources later.
+version: 1
+kind: CompositeDevice
+name: Lenovo Legion Tab Gen 3 + Legion G9
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: Lenovo Legion Y700 (2025) / TB321FU
+single_source: false
+source_devices:
+  - group: gamepad
+    evdev:
+      name: GameSir Legion Gaming Controller G9
+      vendor_id: "3537"
+      product_id: "1134"
+      handler: event*
+    capability_map_id: lenovo_legion_g9
+options:
+  auto_manage: true
+# Armada's controller-type service switches the target to the selected type
+# (deck-uhid by default) at boot and when the G9 is attached.
+target_devices:
+  - xb360
+  - keyboard

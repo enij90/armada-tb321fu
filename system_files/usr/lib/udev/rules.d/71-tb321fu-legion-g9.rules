@@ -1,0 +1,4 @@
+# Lenovo Legion G9 (3537:1134) attached after boot: InputPlumber creates its
+# composite device with the profile's default target, so re-apply the selected
+# controller type (controller-type retries until the device exists).
+ACTION=="add", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="3537", ATTRS{id/product}=="1134", TAG+="systemd", ENV{SYSTEMD_WANTS}+="armada-controller-type.service"
