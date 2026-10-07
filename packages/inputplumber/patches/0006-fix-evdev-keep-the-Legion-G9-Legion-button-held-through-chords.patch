@@ -13,7 +13,7 @@ Legion press is delayed by that much on release; a long press still powers
 the controller off.
 
 diff --git a/src/input/source/evdev/gamepad.rs b/src/input/source/evdev/gamepad.rs
-index 321eed9..1c55293 100644
+index 321eed9..64c53dc 100644
 --- a/src/input/source/evdev/gamepad.rs
 +++ b/src/input/source/evdev/gamepad.rs
 @@ -1,6 +1,10 @@
@@ -28,7 +28,7 @@ index 321eed9..1c55293 100644
  
  use evdev::{
      AbsInfo, AbsoluteAxisCode, AttributeSetRef, Device, EventType, FFEffect, FFEffectData,
-@@ -106,6 +110,81 @@ mod sharing_tests {
+@@ -106,6 +110,99 @@ mod sharing_tests {
      }
  }
  
@@ -39,6 +39,8 @@ index 321eed9..1c55293 100644
 +/// target as one, and release it only once it stayed up for a while.
 +const LEGION_G9_ID: (u16, u16) = (0x3537, 0x1134);
 +const LEGION_RELEASE_DELAY: Duration = Duration::from_millis(200);
++// Hat axes share the held set with key codes, offset out of the key range.
++const HAT_ID_BASE: u16 = 0x1000;
 +
 +#[derive(Default)]
 +struct LegionChordFilter {
@@ -50,6 +52,15 @@ index 321eed9..1c55293 100644
 +impl LegionChordFilter {
 +    fn event(value: i32) -> InputEvent {
 +        InputEvent::new(EventType::KEY.0, KeyCode::BTN_MODE.0, value)
++    }
++
++    fn release_other(&mut self, id: u16) {
++        self.others.remove(&id);
++        // Legion went into hiding with this button: if it does not come
++        // back, it was let go during the chord.
++        if self.held && self.others.is_empty() && self.release_at.is_none() {
++            self.release_at = Some(Instant::now() + LEGION_RELEASE_DELAY);
++        }
 +    }
 +
 +    /// Emit the delayed Legion release once it is due.
@@ -66,6 +77,20 @@ index 321eed9..1c55293 100644
 +    fn filter(&mut self, events: Vec<InputEvent>) -> Vec<InputEvent> {
 +        let mut out = Vec::with_capacity(events.len());
 +        for event in events {
++            // The d-pad is a hat: a pushed hat holds Legion like a button.
++            let hat = event.event_type() == EventType::ABSOLUTE
++                && (event.code() == AbsoluteAxisCode::ABS_HAT0X.0
++                    || event.code() == AbsoluteAxisCode::ABS_HAT0Y.0);
++            if hat {
++                let id = HAT_ID_BASE + event.code();
++                if event.value() != 0 {
++                    self.others.insert(id);
++                } else {
++                    self.release_other(id);
++                }
++                out.push(event);
++                continue;
++            }
 +            if event.event_type() != EventType::KEY {
 +                out.push(event);
 +                continue;
@@ -91,14 +116,7 @@ index 321eed9..1c55293 100644
 +                1 => {
 +                    self.others.insert(event.code());
 +                }
-+                0 => {
-+                    self.others.remove(&event.code());
-+                    // Legion went into hiding with this button: if it does
-+                    // not come back, it was let go during the chord.
-+                    if self.held && self.others.is_empty() && self.release_at.is_none() {
-+                        self.release_at = Some(Instant::now() + LEGION_RELEASE_DELAY);
-+                    }
-+                }
++                0 => self.release_other(event.code()),
 +                _ => {}
 +            }
 +            out.push(event);
@@ -110,7 +128,7 @@ index 321eed9..1c55293 100644
  /// Source device implementation for evdev gamepads
  pub struct GamepadEventDevice {
      device: Device,
-@@ -116,6 +195,7 @@ pub struct GamepadEventDevice {
+@@ -116,6 +213,7 @@ pub struct GamepadEventDevice {
      ff_effects_deck: Option<i16>,
      ff_effects_rumble: Option<i16>,
      hat_state: HashMap<AbsoluteAxisCode, i32>,
@@ -118,7 +136,7 @@ index 321eed9..1c55293 100644
  }
  
  impl SourceDriver<GamepadEventDevice> {
-@@ -152,6 +232,10 @@ impl GamepadEventDevice {
+@@ -152,6 +250,10 @@ impl GamepadEventDevice {
          // Create an event translator if a capability map was given
          let translator = capability_map.map(|map| EventTranslator::new(&map, axes_info.clone()));
  
@@ -129,7 +147,7 @@ index 321eed9..1c55293 100644
          Ok(Self {
              device,
              axes_info,
-@@ -161,6 +245,7 @@ impl GamepadEventDevice {
+@@ -161,6 +263,7 @@ impl GamepadEventDevice {
              ff_effects_deck: None,
              ff_effects_rumble: None,
              hat_state: HashMap::new(),
@@ -137,7 +155,7 @@ index 321eed9..1c55293 100644
          })
      }
  
-@@ -523,14 +608,24 @@ impl SourceInputDevice for GamepadEventDevice {
+@@ -523,14 +626,24 @@ impl SourceInputDevice for GamepadEventDevice {
              native_events.extend(translator.poll());
          }
  
@@ -166,7 +184,7 @@ index 321eed9..1c55293 100644
                      _ => {
                          log::trace!("Failed to fetch events: {:?}", err);
                          let msg = format!("Failed to fetch events: {:?}", err);
-@@ -538,10 +633,16 @@ impl SourceInputDevice for GamepadEventDevice {
+@@ -538,10 +651,16 @@ impl SourceInputDevice for GamepadEventDevice {
                      }
                  },
              };
@@ -185,7 +203,7 @@ index 321eed9..1c55293 100644
  
          // Convert the events into native events if no translator exists
          if self.translator.is_none() {
-@@ -830,3 +931,77 @@ impl Debug for GamepadEventDevice {
+@@ -830,3 +949,91 @@ impl Debug for GamepadEventDevice {
  fn normalize_unsigned_value(raw_value: f64, max: f64) -> f64 {
      raw_value / max
  }
@@ -253,6 +271,20 @@ index 321eed9..1c55293 100644
 +        assert!(filter.filter(vec![key(mode, 0)]).is_empty());
 +        expire(&mut filter);
 +        assert_eq!(filter.poll().map(|e| (e.code(), e.value())), Some((mode.0, 0)));
++    }
++
++    #[test]
++    fn a_pushed_dpad_holds_legion() {
++        let mut filter = LegionChordFilter::default();
++        let mode = KeyCode::BTN_MODE;
++        let hat = |value| InputEvent::new(EventType::ABSOLUTE.0, AbsoluteAxisCode::ABS_HAT0Y.0, value);
++        filter.filter(vec![key(mode, 1)]);
++        filter.filter(vec![hat(-1), key(mode, 0)]);
++        assert!(filter.release_at.is_none());
++        filter.filter(vec![hat(0)]);
++        assert!(filter.release_at.is_some());
++        assert!(filter.filter(vec![key(mode, 1)]).is_empty());
++        assert!(filter.release_at.is_none());
 +    }
 +
 +    #[test]
