@@ -99,9 +99,11 @@ systemctl enable armada-powerd.service
 systemctl enable armada-control.service
 # Lenovo TB321FU proprietary firmware (separate repo, see tb321fu-firmware.env)
 /ctx/build_files/tb321fu-firmware.sh
+# Lenovo TB321FU sensor stack (separate repo, see tb321fu-sensors.env)
+/ctx/build_files/tb321fu-sensors.sh
 
 # Lenovo TB321FU (units are ConditionFirmware-gated to that DT)
-systemctl enable tb321fu-setup.service tb321fu-gpu-pm.service tb321fu-usb.service tb321fu-c2select.service tb321fu-mark-boot-successful.service tb321fu-usb-host.service tb321fu-boot-bind.service tb321fu-grub-sync.service
+systemctl enable tb321fu-setup.service tb321fu-gpu-pm.service tb321fu-usb.service tb321fu-c2select.service tb321fu-mark-boot-successful.service tb321fu-usb-host.service tb321fu-boot-bind.service tb321fu-grub-sync.service tb321fu-sns-init.service tb321fu-imu-bridge.service
 systemctl enable steamos-manager.service
 systemctl --global enable steamos-manager.service
 systemctl --global enable steamos-manager-session-cleanup.service

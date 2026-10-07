@@ -1,0 +1,45 @@
+#!/bin/bash
+# Lenovo TB321FU: bring up the Qualcomm sensor core (SSC in the ADSP sensor PD).
+# hexagonrpcd serves the DSP the vendor sensor configuration (firmware repo,
+# /usr/share/qcom/sm8650/Lenovo/tb321fu) and the sensor registry. The registry
+# holds this tablet's factory calibrations: on first boot it is seeded from
+# the tablet's own persist partition, which Armada never touches.
+# Based on GUF296's qcom-sns-init (tb321fu-sensor-debs).
+set -euo pipefail
+
+ROOT=${ROOT:-/usr/share/qcom/sm8650/Lenovo/tb321fu}
+HEXAGONRPCD=${HEXAGONRPCD:-/usr/bin/hexagonrpcd}
+STATE=/var/lib/qcom-sns
+REGISTRY=$STATE/persist/sensors/registry
+PERSIST_DEV=/dev/disk/by-partlabel/persist
+log() { echo "tb321fu-sns-init: $*"; }
+
+[ -d "$ROOT/sensors/config" ] || { log "no sensor configuration in $ROOT"; exit 1; }
+
+if [ ! -e "$REGISTRY/sns_reg_version" ] && [ -e "$PERSIST_DEV" ]; then
+    m=$(mktemp -d /run/tb321fu-persist.XXXXXX)
+    if mount -o ro,noload "$PERSIST_DEV" "$m"; then
+        if [ -d "$m/sensors/registry/registry" ]; then
+            mkdir -p "$REGISTRY"
+            cp -a "$m/sensors/registry/." "$REGISTRY/"
+            log "seeded the registry from persist ($(find "$REGISTRY" -type f | wc -l) files)"
+        else
+            log "persist has no sensors/registry; the DSP will build a default one"
+        fi
+        umount "$m"
+    else
+        log "cannot mount persist; the DSP will build a default registry"
+    fi
+    rmdir "$m"
+fi
+mkdir -p "$REGISTRY/registry"
+
+waited=0
+while [ ! -e /dev/fastrpc-adsp ] && [ "$waited" -lt 60 ]; do
+    sleep 1; waited=$((waited + 1))
+done
+[ -e /dev/fastrpc-adsp ] || { log "no /dev/fastrpc-adsp after ${waited}s"; exit 1; }
+
+# hexagonrpcd stays in the foreground: it is this unit's main process, the
+# DSP keeps using it for registry writes.
+exec "$HEXAGONRPCD" -f /dev/fastrpc-adsp -d adsp -s -R "$ROOT"

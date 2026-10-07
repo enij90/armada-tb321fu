@@ -21,6 +21,14 @@ source_devices:
       product_id: "1134"
       handler: event*
     capability_map_id: lenovo_legion_g9
+  # The tablet's accelerometer + gyroscope (tb321fu-imu-bridge, from the SSC).
+  - group: imu
+    evdev:
+      name: TB321FU IMU
+      vendor_id: "17ef"
+      product_id: "321f"
+      handler: event*
+    capability_map_id: imu_generic
 options:
   auto_manage: true
 # Armada's controller-type service switches the target to the selected type
