@@ -146,9 +146,12 @@ jobs:
           set -euxo pipefail
           owner="${{ github.repository_owner }}"
           REF="ghcr.io/${owner,,}/armada/pkg/${PACKAGE}:${HASH}"
+          containerfile=packages/Containerfile
+          [ -f "packages/${PACKAGE}/stage.Containerfile" ] &&
+            containerfile="packages/${PACKAGE}/stage.Containerfile"
 
           buildah build \
-            -f packages/Containerfile \
+            -f "${containerfile}" \
             --target "out-${PACKAGE}" \
             --layers \
             --cache-from "${CACHE_REPO}" \

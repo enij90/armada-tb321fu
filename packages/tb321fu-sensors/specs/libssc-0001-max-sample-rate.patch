@@ -1,0 +1,47 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] sensor: LIBSSC_MAX_SAMPLE_RATE selects a higher advertised sample rate
+
+The first advertised rate (25 Hz on the TB321FU IMU) is too slow for
+gyro aiming. Default behaviour is unchanged.
+
+--- a/src/libssc-sensor.c
++++ b/src/libssc-sensor.c
+@@ -551,16 +551,33 @@
+ 					if (attr_msg->attr[i]->value_array->n_v == 1 && attr_msg->attr[i]->value_array->v[0]->has_b)
+ 						priv->available = attr_msg->attr[i]->value_array->v[0]->b;
+ 					break;
+-				case SSC_ATTRIBUTE_SAMPLE_RATE:
+-					/* Only a single sample rate is supported for now. */
++				case SSC_ATTRIBUTE_SAMPLE_RATE: {
++					/*
++					 * One sample rate is used. By default the first one the
++					 * sensor advertises (its lowest); LIBSSC_MAX_SAMPLE_RATE
++					 * picks the highest advertised rate up to that value,
++					 * e.g. for motion controls that need a few hundred Hz.
++					 */
++					const gchar *max_env = g_getenv ("LIBSSC_MAX_SAMPLE_RATE");
++					gdouble max_rate = max_env ? g_ascii_strtod (max_env, NULL) : 0.0;
++
+ 					for (gsize j = 0; j < attr_msg->attr[i]->value_array->n_v; j++) {
+-						if (attr_msg->attr[i]->value_array->v[j]->has_f
+-						 && attr_msg->attr[i]->value_array->v[j]->f > 0) {
+-							priv->sample_rate = attr_msg->attr[i]->value_array->v[j]->f;
++						gfloat rate;
++
++						if (!attr_msg->attr[i]->value_array->v[j]->has_f
++						 || attr_msg->attr[i]->value_array->v[j]->f <= 0)
++							continue;
++						rate = attr_msg->attr[i]->value_array->v[j]->f;
++						g_debug ("  available sample-rate: %f Hz", rate);
++						if (max_rate <= 0.0) {
++							priv->sample_rate = rate;
+ 							break;
+ 						}
++						if (rate <= max_rate && rate > priv->sample_rate)
++							priv->sample_rate = rate;
+ 					}
+ 					break;
++				}
+ 				case SSC_ATTRIBUTE_STREAM_TYPE:
+ 					if (attr_msg->attr[i]->value_array->n_v == 1 && attr_msg->attr[i]->value_array->v[0]->has_i)
+ 						priv->stream_type = attr_msg->attr[i]->value_array->v[0]->i;

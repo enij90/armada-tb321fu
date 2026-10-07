@@ -143,8 +143,11 @@ jobs:
         run: |
           set -euxo pipefail
           # --cache-from only. Nothing here may write to the registry.
+          containerfile=packages/Containerfile
+          [ -f "packages/${PACKAGE}/stage.Containerfile" ] &&
+            containerfile="packages/${PACKAGE}/stage.Containerfile"
           buildah build \
-            -f packages/Containerfile \
+            -f "${containerfile}" \
             --target "out-${PACKAGE}" \
             --layers \
             --cache-from "${UPSTREAM_CACHE}/${PACKAGE}" \
@@ -256,8 +259,11 @@ jobs:
           source packages/mesa-x86/BASE.env
           while read -r pkg hash; do
             echo "::group::${pkg}"
+            containerfile=packages/Containerfile
+            [ -f "packages/${pkg}/stage.Containerfile" ] &&
+              containerfile="packages/${pkg}/stage.Containerfile"
             buildah build \
-              -f packages/Containerfile \
+              -f "${containerfile}" \
               --target "out-${pkg}" \
               --layers \
               --cache-from "${UPSTREAM_CACHE}/${pkg}" \

@@ -1,0 +1,18 @@
+[Unit]
+Description=Lenovo TB321FU: accelerometer and gyroscope for InputPlumber
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+# The SSC answers only once hexagonrpcd has served the sensor registry.
+After=tb321fu-sns-init.service
+Wants=tb321fu-sns-init.service
+Before=inputplumber.service
+
+[Service]
+# Highest IMU rate up to 400 Hz for aiming (libssc patch); other libssc users
+# (iio-sensor-proxy, screen rotation) keep the low default rate.
+Environment=LIBSSC_MAX_SAMPLE_RATE=400
+ExecStart=/usr/libexec/tb321fu-imu-bridge
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

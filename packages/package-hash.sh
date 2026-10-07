@@ -8,7 +8,13 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 pkg="${1:?usage: package-hash.sh <package>}"
 [ -d "${pkg}" ] || { echo "unknown package: ${pkg}" >&2; exit 1; }
 
-paths=("${pkg}" toolchain.env Containerfile scrub-scratch.sh)
+# A package with its own stage.Containerfile (in its directory, so hashed
+# with it) does not depend on the shared one.
+if [ -f "${pkg}/stage.Containerfile" ]; then
+    paths=("${pkg}" toolchain.env scrub-scratch.sh)
+else
+    paths=("${pkg}" toolchain.env Containerfile scrub-scratch.sh)
+fi
 case "${pkg}" in
     mesa-x86|mesa-android) paths+=(mesa) ;;
     lepton) paths+=(mesa mesa-android) ;;

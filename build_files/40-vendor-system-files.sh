@@ -99,7 +99,7 @@ systemctl enable armada-powerd.service
 systemctl enable armada-control.service
 # Lenovo TB321FU proprietary firmware (separate repo, see tb321fu-firmware.env)
 /ctx/build_files/tb321fu-firmware.sh
-# Lenovo TB321FU sensor stack (separate repo, see tb321fu-sensors.env)
+# Lenovo TB321FU sensor stack (packages/tb321fu-sensors)
 /ctx/build_files/tb321fu-sensors.sh
 
 # Lenovo TB321FU (units are ConditionFirmware-gated to that DT)
