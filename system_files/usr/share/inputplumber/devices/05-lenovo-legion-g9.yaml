@@ -30,6 +30,16 @@ source_devices:
       name: TB321FU IMU
       handler: event*
     capability_map_id: imu_generic
+  # The tablet's vibration motors (AW86937, left and right): the G9 has no
+  # rumble Linux can drive, so game rumble goes to the tablet.
+  - group: gamepad
+    evdev:
+      name: aw86937-haptics-left
+      handler: event*
+  - group: gamepad
+    evdev:
+      name: aw86937-haptics-right
+      handler: event*
   # The G9 firmware's own Legion shortcuts (volume, brightness) arrive as
   # consumer keys alongside the Steam chords on the same buttons: drop them,
   # Steam's chords take those buttons.
