@@ -1,0 +1,90 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] input: misc: aw86937-y700: stop a RAM effect without waiting it out
+
+A RAM effect started the motor and then slept for the whole effect length
+with io_lock held, so the next command, a stop included, waited behind it.
+Game rumble comes from InputPlumber as one long effect (60 s, clamped to
+10 s here) that is updated and stopped as the game asks: every rumble ran
+for 10 s.
+
+Start the motor and end it from a delayed stop_work instead. A new effect
+or a stop cancels the pending stop and takes over at once; close() and
+remove() cancel it too.
+
+--- a/drivers/input/misc/aw86937-y700.c	2026-10-07 23:22:46.978042919 +0200
++++ b/drivers/input/misc/aw86937-y700.c	2026-10-07 23:22:46.980871443 +0200
+@@ -100,6 +100,7 @@
+ 	struct mutex io_lock;
+ 	spinlock_t pending_lock;
+ 	struct work_struct play_work;
++	struct delayed_work stop_work;
+ 	u16 chip_id;
+ 	unsigned int pending_duration_ms;
+ 	unsigned int pending_gain;
+@@ -547,13 +548,29 @@
+ 	if (err)
+ 		return err;
+ 
+-	msleep(duration_ms);
++	/*
++	 * Let the motor run and stop it from stop_work: a new effect or a
++	 * stop must take over right away, not after the whole duration.
++	 */
++	haptics->play_count++;
++	mod_delayed_work(system_wq, &haptics->stop_work,
++			 msecs_to_jiffies(duration_ms));
+ 
++	return 0;
++}
++
++static void aw86937_y700_stop_work(struct work_struct *work)
++{
++	struct aw86937_y700 *haptics =
++		container_of(to_delayed_work(work), struct aw86937_y700, stop_work);
++	int err;
++
++	mutex_lock(&haptics->io_lock);
+ 	err = aw86937_y700_stop_locked(haptics);
+-	if (!err)
+-		haptics->play_count++;
++	mutex_unlock(&haptics->io_lock);
+ 
+-	return err;
++	if (err)
++		dev_warn(haptics->dev, "stop failed: %d\n", err);
+ }
+ 
+ static int aw86937_y700_play_rtp_click_locked(struct aw86937_y700 *haptics,
+@@ -644,6 +661,8 @@
+ 		gain = haptics->pending_gain;
+ 		spin_unlock_irqrestore(&haptics->pending_lock, flags);
+ 
++		cancel_delayed_work(&haptics->stop_work);
++
+ 		mutex_lock(&haptics->io_lock);
+ 		if (gain) {
+ 			if (duration_ms && duration_ms <= AW86937_CLICK_RTP_MAX_DURATION_MS) {
+@@ -760,6 +779,7 @@
+ 	struct aw86937_y700 *haptics = input_get_drvdata(input);
+ 
+ 	cancel_work_sync(&haptics->play_work);
++	cancel_delayed_work_sync(&haptics->stop_work);
+ 
+ 	mutex_lock(&haptics->io_lock);
+ 	aw86937_y700_stop_locked(haptics);
+@@ -795,6 +815,7 @@
+ 	mutex_init(&haptics->io_lock);
+ 	spin_lock_init(&haptics->pending_lock);
+ 	INIT_WORK(&haptics->play_work, aw86937_y700_play_work);
++	INIT_DELAYED_WORK(&haptics->stop_work, aw86937_y700_stop_work);
+ 
+ 	haptics->regmap = devm_regmap_init_i2c(client,
+ 					       &aw86937_y700_regmap_config);
+@@ -878,6 +899,7 @@
+ 	mutex_unlock(&aw86937_y700_devices_lock);
+ 
+ 	cancel_work_sync(&haptics->play_work);
++	cancel_delayed_work_sync(&haptics->stop_work);
+ 
+ 	mutex_lock(&haptics->io_lock);
+ 	aw86937_y700_stop_locked(haptics);
