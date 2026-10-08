@@ -1,0 +1,11 @@
+[Unit]
+Description=Lenovo TB321FU: charge to full (drop the 70-80% limit left by Android)
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+Before=upower.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/tb321fu/charge-limit
+
+[Install]
+WantedBy=multi-user.target

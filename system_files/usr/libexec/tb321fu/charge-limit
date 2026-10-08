@@ -1,0 +1,22 @@
+#!/bin/bash
+# The battery firmware keeps the charge limit Android last set (70-80% from
+# Lenovo battery care) and puts it back on every boot, some time after the
+# battery shows up. Charge to full instead: keep writing until it holds twice.
+# UPower starts after this, so its charge threshold still applies when on.
+B=/sys/class/power_supply/battery
+held=0
+for _ in $(seq 60); do
+    if [ "$(cat $B/charge_control_end_threshold 2>/dev/null)" = 100 ] &&
+       [ "$(cat $B/charge_control_start_threshold 2>/dev/null)" = 95 ]; then
+        held=$((held + 1))
+        [ $held -ge 2 ] && exit 0
+    else
+        held=0
+        # End first: the firmware rejects a start above the current end.
+        echo 100 > $B/charge_control_end_threshold 2>/dev/null &&
+            echo 95 > $B/charge_control_start_threshold 2>/dev/null
+    fi
+    sleep 2
+done
+echo "charge limit did not hold" >&2
+exit 1
