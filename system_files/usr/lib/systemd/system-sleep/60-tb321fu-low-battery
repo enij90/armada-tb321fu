@@ -1,6 +1,7 @@
 #!/bin/bash
 # Lenovo TB321FU: nobody watches the battery while the tablet sleeps on it, so a
-# low battery drains to 0% in s2idle, browns out and boot-loops on the charger.
+# low battery drains to 0% in s2idle, and the tablet then stays dead on the
+# charger until a forced reset.
 # Before a suspend on battery, arm the PMIC RTC (rtc1: rtc0 is rtc-efi and does
 # not wake) for when the charge could be low, assuming 1%/h (s2idle measures
 # ~0.4%/h). If that alarm ends the sleep: power off at or below the threshold,
