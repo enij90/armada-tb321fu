@@ -1,0 +1,106 @@
+name: TB321FU sync with Armada
+
+# Merges armada-os/armada main into this port and opens a pull request for
+# review. On a conflict nothing is pushed: an issue lists the files to resolve
+# by hand. Runs on demand; uncomment the schedule to run it daily.
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: tb321fu-sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      UPSTREAM: https://github.com/armada-os/armada.git
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge upstream main
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "${UPSTREAM}"
+          git fetch --quiet upstream main
+
+          ahead="$(git rev-list --count HEAD..upstream/main)"
+          echo "ahead=${ahead}" >> "${GITHUB_OUTPUT}"
+          if [ "${ahead}" -eq 0 ]; then
+            echo "Up to date with armada-os/armada main."
+            exit 0
+          fi
+          if gh pr list --state open --search "head:sync/upstream-" --json number --jq '.[0].number' | grep -q .; then
+            echo "A sync pull request is already open; leaving it to review."
+            echo "ahead=0" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          branch="sync/upstream-$(date -u +%Y%m%d)"
+          echo "branch=${branch}" >> "${GITHUB_OUTPUT}"
+          git switch --quiet -c "${branch}"
+          if git merge --no-ff --no-edit -m "Merge armada-os/armada main (${ahead} commits)" upstream/main; then
+            echo "conflict=false" >> "${GITHUB_OUTPUT}"
+          else
+            {
+              echo "conflict=true"
+              echo "files<<EOF"
+              git diff --name-only --diff-filter=U
+              echo "EOF"
+            } >> "${GITHUB_OUTPUT}"
+            git merge --abort
+          fi
+
+      - name: Open the pull request
+        if: steps.merge.outputs.ahead != '0' && steps.merge.outputs.conflict == 'false'
+        env:
+          BRANCH: ${{ steps.merge.outputs.branch }}
+          AHEAD: ${{ steps.merge.outputs.ahead }}
+        run: |
+          set -euo pipefail
+          git push --quiet origin "${BRANCH}"
+          {
+            echo "Merges ${AHEAD} new commits from armada-os/armada main."
+            echo
+            echo '```'
+            git log --oneline --no-merges "origin/main..upstream/main" | head -n 60
+            echo '```'
+            echo
+            echo "Check the package patches still apply before merging: the merge itself"
+            echo "only proves the files merge."
+          } > body.md
+          gh pr create --base main --head "${BRANCH}" \
+            --title "Sync with armada-os/armada main ($(date -u +%Y-%m-%d))" \
+            --body-file body.md
+
+      - name: Report a conflict
+        if: steps.merge.outputs.ahead != '0' && steps.merge.outputs.conflict == 'true'
+        env:
+          FILES: ${{ steps.merge.outputs.files }}
+          AHEAD: ${{ steps.merge.outputs.ahead }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Merging ${AHEAD} new commits from armada-os/armada main conflicts in:"
+            echo
+            printf '%s\n' "${FILES}" | sed 's/^/- `/; s/$/`/'
+            echo
+            echo "Merge \`upstream/main\` by hand and resolve these files."
+          } > body.md
+          gh issue create --title "Sync with armada-os/armada needs a manual merge ($(date -u +%Y-%m-%d))" \
+            --body-file body.md
