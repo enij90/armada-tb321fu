@@ -14,7 +14,7 @@ tr '\0' '\n' </sys/firmware/devicetree/base/compatible 2>/dev/null |
 rtc=/sys/class/rtc/rtc1
 bat=/sys/class/power_supply/battery
 state=/run/tb321fu/low-battery-alarm
-off_pct=8      # power off at or below this when the alarm wakes us
+off_pct=5      # power off at or below this when the alarm wakes us
 target_pct=7   # schedule the wake for when 1%/h would reach this
 
 on_external_power() {

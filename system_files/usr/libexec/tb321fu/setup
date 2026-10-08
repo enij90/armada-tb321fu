@@ -8,6 +8,14 @@ S=/usr/share/tb321fu/etc
 legacy=/etc/systemd/logind.conf.d/90-tb321fu-power-key.conf
 grep -qs "s2idle never resumes" "$legacy" && rm -f "$legacy"
 
+# Files an earlier image installed and the user never changed: drop them so
+# the loop below installs the current version.
+while read -r sum t; do
+    [ -f "$t" ] && echo "$sum  $t" | sha256sum -c --status - && rm -f "$t"
+done <<'END'
+6b5baeb621b3a5a5796c40100efc2bbfb5ebe583cd2b42a7912302c608e50552  /etc/UPower/UPower.conf.d/70-tb321fu-low-battery.conf
+END
+
 cd "$S" || exit 0
 find . -type f | while read -r f; do
     t="/etc/${f#./}"
