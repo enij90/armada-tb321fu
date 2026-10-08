@@ -4,6 +4,11 @@ set -euxo pipefail
 # Patched Turnip includes the Mesa #14656 VM_BIND fix.
 dnf5 -y install --setopt=install_weak_deps=False /packages/mesa/mesa-*.fc44.armada.*.rpm
 
+mkdir -p /usr/share/armada
+cp -a /packages/mesa/turnip /usr/share/armada/turnip
+# A separate rechunk component keeps a driver bump from invalidating unrelated layers.
+python3 -c 'import os,sys; os.setxattr(sys.argv[1],"user.component",b"turnip")' /usr/share/armada/turnip
+
 # Patched mangohud: Adreno GPU load/clock/temp for mainline drm/msm (msm_dpu).
 dnf5 -y install --setopt=install_weak_deps=False /packages/mangohud/mangohud-*.fc44.armada.*.rpm
 
@@ -127,7 +132,7 @@ python3 /ctx/build_files/verify-steam-bootstrap.py \
     "${STEAM_HOME}/package/steam_client_steamdeck_publicbeta_linuxarm64.installed" "${STEAM_HOME}"
 rm -f /etc/steamos-oobe-image
 
-PROTON_VER="11.0-20260703-slr"
+PROTON_VER="11.0-20261005-slr"
 PROTON_ARCHIVE_NAME="proton-cachyos-${PROTON_VER}-arm64"
 # Keep this in sync with armada-fixups when changing Proton major/minor lines.
 PROTON_TOOL_NAME="proton-cachyos-11.0-arm64"

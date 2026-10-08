@@ -15,6 +15,7 @@
 0070-arm64-dts-qcom-dpu-lutdma-reg.patch
 0076-drm-msm-dpu-expose-abgr-xbgr-2101010-on-planes.patch
 0077-drm-msm-dpu-plane-igc-3d-lut-color-pipelines.patch
+0078-drm-msm-dpu-fix-vblank-timestamps-on-command-mode-panels.patch
 0016-rp5-smooth-brightness-adjustment.patch
 0056_Xm-Plus-XM91080G-panel.patch
 0028-drm-panel-Add-panel-driver-for-Chipone-ICNA35XX-base.patch
@@ -80,6 +81,7 @@
 1003-input-haptics-fix-rumble-bridge-atomic-sleep.patch
 1005-input-rsinput-quiesce-the-mcu-across-system-sleep.patch
 1006-tty-serial-qcom-geni-mask-non-console-irq-on-suspend.patch
+0534-serial-qcom-geni-add-force-suspend-resume-to-system-sleep-callbacks.patch
 1007-input-rsinput-drop-the-mcu-supply-across-system-sleep.patch
 1004-input-haptics-stop-zero-amplitude-immediately.patch
 1300-input-rsinput-axis-deadzone.patch
@@ -110,6 +112,9 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 0204-thermal-qcom-tsens-mask-lower-threshold-irqs-across-suspend.patch
 0510-soc-qcom-ice-unwind-clocks-on-resume-failure.patch
 0511-scsi-ufs-qcom-reenable-irq-on-host-reset-failure.patch
+0533-scsi-ufs-ufs-qcom-enable-only-lane-clocks-in-lane-clock-apis.patch
+0535-scsi-ufs-core-fast-abort-unsupported-query-idns.patch
+0536-scsi-ufs-core-dynamically-disable-timestamp-on-unsupported-devices.patch
 0512-PCI-qcom-skip-L23-ready-poll-on-SM8550.patch
 0513-PCI-qcom-honour-an-opp-suspend-opp-as-the-non-s2ram-memory-floor.patch
 0522-PCI-host-common-let-only-endpoints-veto-d3cold.patch
@@ -141,6 +146,7 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 0901-power-supply-qcom-battmgr-fix-charge-unit.patch
 0902-power-supply-qcom-battmgr-expose-charge-now.patch
 0903-power-supply-qcom-battmgr-expose-the-charge-current-limit.patch
+0540-arm64-signal-reapply-the-ssbs-policy-on-sigreturn.patch
 
 # ============== SM8650 (AYANEO Pocket S2, KONKR Pocket FIT) ==============
 0001-pcie-update-sm8650-dtsi.patch
@@ -161,7 +167,9 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0009-qcom-spmi-haptics.patch
 0008-retroid-gamepad.patch
 0013-add-force-feedback.patch
+0008a-input-retroid-keep-trigger-conversion-independent-of-calibration.patch
 0060_Mangmi-Pocket-Max-SPI-joypad.patch
+0060b-input-mangmi-pocket-max-keep-trigger-conversion-independent-of-calibration.patch
 0063_Mangmi-Pocket-Max-HL7139-charge-pump.patch
 0011-qcom-pm8150b-charger.patch
 0005-sm8250-uart.patch

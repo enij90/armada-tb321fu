@@ -8,9 +8,9 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0002-fix-force-feedback-reset-effects-when-replacing-targets.patch`
   source: armada
-- `patches/0004-feat-Hardware-Support-Add-AYN-Thor-Lite.patch`
-  source: armada
-  notes: Matches the Thor Lite device-tree compatible and its Retroid-protocol MCU gamepad, reusing the existing Retroid Type 1 capability map.
+- `patches/0003-feat-Hardware-Support-Add-AYN-Thor-Lite.patch`
+  source: https://github.com/ShadowBlip/InputPlumber/pull/746
+  notes: AYN Thor Lite support
 - `patches/0005-feat-Hardware-Support-accept-the-TB321FU-IMU-bridge.patch`
   source: armada
   notes: Whitelists the virtual device "TB321FU IMU" (tb321fu-imu-bridge: the Lenovo TB321FU's

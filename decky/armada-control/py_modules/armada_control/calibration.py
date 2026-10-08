@@ -58,10 +58,29 @@ CALIBRATION_PARAMS = (
     "trigger_right_deadzone",
     "trigger_right_antideadzone",
 )
+# Driver defaults: 0x610 in rsinput and retroid, MCU_BRAKE_MAX/MCU_GAS_MAX in mangmi.
+TRIGGER_DEFAULT_MAX = {
+    "mangmi": {"trigger_left": 1910, "trigger_right": 1758},
+    "retroid": {"trigger_left": 1552, "trigger_right": 1552},
+    "rsinput": {"trigger_left": 1552, "trigger_right": 1552},
+}
+# Driver defaults as (range, deadzone); rsinput device trees may override them.
+STICK_DEFAULTS = {
+    "mangmi": (1408, 70),
+    "retroid": (1408, 0),
+    "rsinput": (1408, 0),
+}
+STICK_MIN_TRAVEL = 256
+# 2: trigger deadzones are relative to the driver's fixed release reference.
+CALIBRATION_VERSION = 2
+TRIGGER_MIN_TRAVEL = 256
+# The saved extreme is a single peak sample that a normal full push falls just short of.
+OUTER_MARGIN_PERCENT = 3
 _inputplumber_events_cache = {"time": 0, "events": []}
 _calibration_session_token = None
 _session_device = None
 _session_fd = None
+_ranges_stale = False
 
 
 def input_events():
@@ -381,13 +400,35 @@ def read_calibration_params(backend=None):
     return params
 
 
+def device_tree_u32(event, name):
+    node = Path("/sys/class/input") / str(event.get("event", "")) / "device/device/of_node" / name
+    try:
+        data = node.read_bytes()
+    except OSError:
+        return None
+    return int.from_bytes(data[:4], "big") if len(data) >= 4 else None
+
+
+def stick_defaults(event, backend):
+    axis_range, axis_deadzone = STICK_DEFAULTS[backend]
+    if backend == "rsinput":
+        axis_range = device_tree_u32(event, "axis-range") or axis_range
+        axis_deadzone = device_tree_u32(event, "axis-deadzone") or axis_deadzone
+    return axis_range, axis_deadzone
+
+
 def reset_calibration_params():
-    backend = calibration_backend()
+    global _ranges_stale
+    event = calibration_event()
+    backend = calibration_backend(event)
     if backend is None:
         raise RuntimeError("controller calibration is not supported on this device")
     params = {}
-    axis_range = 1408 if backend == "retroid" else 1024
-    axis_deadzone = 0 if backend == "retroid" else 70
+    axis_range, axis_deadzone = stick_defaults(event, backend)
+    trigger_deadzone = {"trigger_left": 0, "trigger_right": 0}
+    if backend == "rsinput":
+        trigger_deadzone["trigger_left"] = device_tree_u32(event, "trigger-left-deadzone") or 0
+        trigger_deadzone["trigger_right"] = device_tree_u32(event, "trigger-right-deadzone") or 0
     for axis in ("axis_leftx", "axis_lefty", "axis_rightx", "axis_righty"):
         params[f"{axis}_min"] = -axis_range
         params[f"{axis}_center"] = 0
@@ -395,33 +436,53 @@ def reset_calibration_params():
         params[f"{axis}_deadzone"] = axis_deadzone
         params[f"{axis}_antideadzone"] = 0
     for trigger in ("trigger_left", "trigger_right"):
-        params[f"{trigger}_max"] = 1552
-        params[f"{trigger}_deadzone"] = 0
+        params[f"{trigger}_max"] = TRIGGER_DEFAULT_MAX[backend][trigger]
+        params[f"{trigger}_deadzone"] = trigger_deadzone[trigger]
         params[f"{trigger}_antideadzone"] = 0
     params["backend"] = backend
+    params["version"] = CALIBRATION_VERSION
     call("write_config", name="calibration", text=json.dumps(params, indent=2, sort_keys=True) + "\n")
+    _ranges_stale = True
     return calibration_status()
 
 
-def calibration_from_capture(capture, current=None):
+def calibration_from_capture(capture, current=None, stick_deadzone=0):
     current = current or {}
 
     def axis_params(prefix, x_key, y_key):
         result = {}
         for suffix, key in (("x", x_key), ("y", y_key)):
             values = capture.get(key) or {}
-            minimum = int(values.get("min", 0))
-            maximum = int(values.get("max", 0))
-            center = int(values.get("center", 0))
-            negative = min(minimum - center, -1)
-            positive = max(maximum - center, 1)
-            inner = max(min(abs(negative), abs(positive)), 1)
-            deadzone = max(int(inner * 0.07), 20)
-            result[f"{prefix}{suffix}_min"] = -inner
-            result[f"{prefix}{suffix}_center"] = int(current.get(f"{prefix}{suffix}_center", 0)) - center
-            result[f"{prefix}{suffix}_max"] = inner
-            result[f"{prefix}{suffix}_deadzone"] = deadzone
-            result[f"{prefix}{suffix}_antideadzone"] = 0
+            axis = f"{prefix}{suffix}"
+            antideadzone = int(current.get(f"{axis}_antideadzone", 0))
+            fuzz = int(values.get("fuzz", 0))
+
+            def unshaped(value):
+                # The driver subtracts the antideadzone; evdev fuzz can hold a released axis off zero.
+                value = int(value)
+                if abs(value) <= fuzz:
+                    return 0
+                return value + antideadzone if value > 0 else value - antideadzone
+
+            minimum = unshaped(values.get("min", 0))
+            maximum = unshaped(values.get("max", 0))
+            center = unshaped(values.get("center", 0))
+            inner = min(center - minimum, maximum - center)
+            if inner < STICK_MIN_TRAVEL:
+                for name in ("min", "center", "max", "deadzone", "antideadzone"):
+                    if f"{axis}_{name}" in current:
+                        result[f"{axis}_{name}"] = int(current[f"{axis}_{name}"])
+                continue
+            inner = inner * (100 - OUTER_MARGIN_PERCENT) // 100
+            result[f"{axis}_min"] = -inner
+            result[f"{axis}_center"] = int(current.get(f"{axis}_center", 0)) - center
+            result[f"{axis}_max"] = inner
+            deadzone = stick_deadzone
+            if center == 0:
+                # The active deadzone may be hiding a resting offset, so never shrink it.
+                deadzone = max(deadzone, int(current.get(f"{axis}_deadzone", 0)))
+            result[f"{axis}_deadzone"] = deadzone
+            result[f"{axis}_antideadzone"] = deadzone
         return result
     params = {}
     params.update(axis_params("axis_left", "left_x", "left_y"))
@@ -430,10 +491,25 @@ def calibration_from_capture(capture, current=None):
         values = capture.get(key) or {}
         minimum = int(values.get("min", 0))
         maximum = int(values.get("max", 0))
-        span = max(maximum - minimum, 1)
-        params[f"{name}_max"] = span
-        params[f"{name}_deadzone"] = max(int(span * 0.03), 4)
-        params[f"{name}_antideadzone"] = 0
+        current_deadzone = int(current.get(f"{name}_deadzone", 0))
+        current_antideadzone = int(current.get(f"{name}_antideadzone", 0))
+        if minimum <= int(values.get("fuzz", 0)):
+            # evdev fuzz filtering can hold a released trigger slightly above zero.
+            minimum = 0
+        if maximum - minimum < TRIGGER_MIN_TRAVEL:
+            for suffix in ("max", "deadzone", "antideadzone"):
+                if f"{name}_{suffix}" in current:
+                    params[f"{name}_{suffix}"] = int(current[f"{name}_{suffix}"])
+            continue
+        # Samples arrive with the active antideadzone already subtracted.
+        full = maximum + current_antideadzone
+        rest = minimum + current_antideadzone if minimum > 0 else 0
+        margin = max(int((full - rest) * 0.03), 4)
+        # A rest reading of 0 may be hidden by the active deadzone, so never shrink it.
+        deadzone = rest + margin if minimum > 0 else max(current_deadzone, margin)
+        params[f"{name}_max"] = full * (100 - OUTER_MARGIN_PERCENT) // 100
+        params[f"{name}_deadzone"] = deadzone
+        params[f"{name}_antideadzone"] = deadzone
     return params
 
 
@@ -445,6 +521,7 @@ def merge_capture_sample(capture, state):
         value = int(control.get("value", 0))
         merged[name]["min"] = min(int(merged[name].get("min", value)), value)
         merged[name]["max"] = max(int(merged[name].get("max", value)), value)
+        merged[name]["fuzz"] = int(control.get("fuzz", 0))
     return merged
 
 
@@ -459,14 +536,22 @@ def calibration_status():
 
 
 def save_calibration(capture):
+    global _ranges_stale
     state = controller_state()
     backend = state.get("backend") if state.get("canApply") else None
     if backend not in CALIBRATION_BACKENDS:
         raise RuntimeError("controller calibration is not supported on this device")
     capture = merge_capture_sample(capture, state)
-    params = calibration_from_capture(capture, read_calibration_params(backend))
+    current = read_calibration_params(backend)
+    if any(name not in current for name in CALIBRATION_PARAMS):
+        # Untouched controls are saved from these; a partial read would drop them at boot.
+        raise RuntimeError("could not read the current controller calibration")
+    _, stick_deadzone = stick_defaults(state.get("event") or {}, backend)
+    params = calibration_from_capture(capture, current, stick_deadzone)
     params["backend"] = backend
+    params["version"] = CALIBRATION_VERSION
     call("write_config", name="calibration", text=json.dumps(params, indent=2, sort_keys=True) + "\n")
+    _ranges_stale = True
     return calibration_status()
 
 
@@ -478,9 +563,14 @@ def begin_session(token=None):
 
 
 def end_session(token=None):
-    global _calibration_session_token
+    global _calibration_session_token, _ranges_stale
     if _calibration_session_token != str(token or "default"):
         return False
     _calibration_session_token = None
     close_session_device()
-    return end_calibration_intercept()
+    ended = end_calibration_intercept()
+    if _ranges_stale:
+        # Restarting InputPlumber any earlier would drop the calibration intercept.
+        call("reload_input_ranges")
+        _ranges_stale = False
+    return ended

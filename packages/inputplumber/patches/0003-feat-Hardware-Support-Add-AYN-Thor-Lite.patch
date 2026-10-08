@@ -1,19 +1,19 @@
-From 5d1b119ab2aa8a9f344857fa441da5cd64fea52f Mon Sep 17 00:00:00 2001
+From ed310a3b18940feea70fabd71a4b4a64974b999e Mon Sep 17 00:00:00 2001
 From: JPyke3 <github@pyk.ee>
-Date: Sun, 13 Sep 2026 08:17:52 +1000
+Date: Tue, 6 Oct 2026 20:02:40 +1000
 Subject: [PATCH] feat(Hardware Support): Add AYN Thor Lite
 
 ---
- .../devices/50-ayn_thor_lite.yaml             | 27 +++++++++++++++++++
- 1 file changed, 27 insertions(+)
+ .../devices/50-ayn_thor_lite.yaml             | 33 +++++++++++++++++++
+ 1 file changed, 33 insertions(+)
  create mode 100644 rootfs/usr/share/inputplumber/devices/50-ayn_thor_lite.yaml
 
 diff --git a/rootfs/usr/share/inputplumber/devices/50-ayn_thor_lite.yaml b/rootfs/usr/share/inputplumber/devices/50-ayn_thor_lite.yaml
 new file mode 100644
-index 0000000..93f45c9
+index 00000000..17fe972c
 --- /dev/null
 +++ b/rootfs/usr/share/inputplumber/devices/50-ayn_thor_lite.yaml
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,33 @@
 +# yaml-language-server: $schema=https://raw.githubusercontent.com/ShadowBlip/InputPlumber/main/rootfs/usr/share/inputplumber/schema/composite_device_v1.json
 +version: 1
 +kind: CompositeDevice
@@ -39,8 +39,11 @@ index 0000000..93f45c9
 +      product_id: "3001"
 +      handler: event*
 +
++  - group: gamepad
++    capability_map_id: ayn2
++    evdev:
++      name: gpio-keys-ayn
++      handler: event*
++
 +target_devices:
 +  - xbox-elite
--- 
-2.55.0
-

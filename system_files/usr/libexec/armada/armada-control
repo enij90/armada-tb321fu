@@ -45,7 +45,7 @@ DESKTOP_SESSION_FOR_MODE = {
 }
 BOTTOM_SCREEN_SERVICE = "armada-bottom-screen.service"
 GAME_MODE_SERVICE = "gamescope-session-plus@steam.service"
-NESTED_DESKTOP_UNITS = "armada-nested-desktop-*.service"
+PLASMA_SESSION = "/usr/libexec/armada/armada-plasma-session"
 BOTTOM_SCREEN_BRIGHTNESS_PATH = Path("/etc/armada/bottom-screen-brightness")
 BOTTOM_SCREEN_BRIGHTNESS_RESTORE_INTERVAL = 2
 BACKLIGHT_ROOT = Path("/sys/class/backlight")
@@ -264,6 +264,13 @@ def steamosctl(*args, timeout=10):
     if result.returncode != 0:
         raise RuntimeError((result.stderr or "steamosctl failed").strip())
     return result.stdout.strip()
+
+
+def start_bottom_screen():
+    subprocess.run(
+        session_user_command(PLASMA_SESSION, "--start-bottom"),
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30,
+    )
 
 
 def bottom_screen_enabled():
@@ -534,15 +541,7 @@ def action_set_bottom_screen_enabled(request):
 
     if enabled:
         session_systemctl("enable", BOTTOM_SCREEN_SERVICE)
-        game_mode = session_systemctl(
-            "is-active", "--quiet", GAME_MODE_SERVICE, check=False, timeout=5,
-        )
-        # The nested desktop starts the bottom screen itself when it exits.
-        nested_desktop = session_systemctl(
-            "is-active", "--quiet", NESTED_DESKTOP_UNITS, check=False, timeout=5,
-        )
-        if game_mode.returncode == 0 and nested_desktop.returncode != 0:
-            session_systemctl("start", BOTTOM_SCREEN_SERVICE)
+        start_bottom_screen()
     else:
         session_systemctl("disable", "--now", BOTTOM_SCREEN_SERVICE)
 
@@ -661,6 +660,19 @@ def action_inputplumber_intercept(request):
     if mode not in INTERCEPT_MODES:
         raise ValueError("invalid intercept mode")
     run(["/usr/libexec/armada/inputplumber-intercept", mode], timeout=5)
+    return {"ok": True}
+
+
+def unit_active(unit):
+    return subprocess.run(["/usr/bin/systemctl", "is-active", "--quiet", unit], check=False, timeout=2).returncode == 0
+
+
+def action_reload_input_ranges(_request):
+    # InputPlumber reads evdev ranges only when it opens the controller.
+    if unit_active("inputplumber.service"):
+        run(["/usr/bin/systemctl", "restart", "inputplumber.service"], timeout=10)
+        # Joins the start job the restart queued, so this returns once the controller type is applied.
+        run(["/usr/bin/systemctl", "start", "armada-controller-type.service"], timeout=15)
     return {"ok": True}
 
 
@@ -880,6 +892,7 @@ ACTIONS = {
     "set_sleep_mode": action_set_sleep_mode,
     "write_config": action_write_config,
     "reapply_perf": action_reapply_perf,
+    "reload_input_ranges": action_reload_input_ranges,
     "restart_game_mode": action_restart_game_mode,
 }
 

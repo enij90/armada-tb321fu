@@ -71,6 +71,7 @@ sys.path.insert(0, LIB)
 
 import armada_perf as ap
 import armada_game_tweaks as gt
+import armada_turnip as at
 
 gt.DEFAULTS_CONFIG = pathlib.Path(TWEAKS_DEFAULTS)
 gt.OVERRIDES_CONFIG = pathlib.Path(WORK) / "missing-game-tweaks.json"
@@ -260,6 +261,158 @@ check("FEX config unaffected by perf keys", plain == with_perf)
 check("FEX config content sane", plain["Config"]["Multiblock"] == "0")
 check("missing profile uses safety fallback",
       launch.resolve_fex_config({}, profiles)["Multiblock"] == "0")
+
+# --- armada-game-launch: Turnip driver selection -----------------------------
+turnip_root = pathlib.Path(WORK) / "turnip"
+good = turnip_root / "devel"
+(good / "aarch64").mkdir(parents=True)
+(good / "aarch64" / at.LIBRARY).write_bytes(b"")
+(good / "icd.aarch64.json").write_text("{}")
+(turnip_root / "no-lib").mkdir()
+(turnip_root / "no-lib" / "icd.aarch64.json").write_text("{}")
+at.SYSTEM_DIR = turnip_root
+vk_keys = ("VK_DRIVER_FILES", "VK_ICD_FILENAMES")
+cache_keys = ("STEAM_COMPAT_SHADER_PATH", "VKD3D_SHADER_CACHE_PATH")
+saved_vk = {key: os.environ.pop(key) for key in vk_keys + cache_keys if key in os.environ}
+saved_home = os.environ["HOME"]
+
+
+def turnip_env(settings, preset=None):
+    for key in vk_keys:
+        os.environ.pop(key, None)
+    os.environ.update(preset or {})
+    launch.apply_turnip(settings)
+    return {key: os.environ.get(key) for key in vk_keys}
+
+
+try:
+    expected = ":".join(str(good / f"icd.{arch}.json") for arch in ("aarch64", "x86_64", "i686"))
+    check("turnip variant sets both loader variables",
+          turnip_env({"turnipDriver": "devel"}) == dict.fromkeys(vk_keys, expected))
+    shader_path = pathlib.Path(WORK) / "shadercache" / "620"
+    os.environ["STEAM_COMPAT_SHADER_PATH"] = str(shader_path)
+    turnip_env({"turnipDriver": "devel"})
+    devel_cache = os.environ.pop("VKD3D_SHADER_CACHE_PATH", "")
+    check("a turnip variant gets its own vkd3d cache directory",
+          pathlib.Path(devel_cache).parent == shader_path and pathlib.Path(devel_cache).is_dir())
+    turnip_env({"turnipDriver": "stable"})
+    check("the stable driver keeps vkd3d's own cache location",
+          "VKD3D_SHADER_CACHE_PATH" not in os.environ)
+    os.environ["VKD3D_SHADER_CACHE_PATH"] = "/custom"
+    turnip_env({"turnipDriver": "devel"})
+    check("an existing vkd3d cache path wins",
+          os.environ.pop("VKD3D_SHADER_CACHE_PATH") == "/custom")
+    os.environ["STEAM_COMPAT_SHADER_PATH"] = "relative/shadercache"
+    turnip_env({"turnipDriver": "devel"})
+    check("a relative shader path gets no vkd3d cache override",
+          "VKD3D_SHADER_CACHE_PATH" not in os.environ)
+    (pathlib.Path(WORK) / "not-a-dir").write_text("")
+    os.environ["STEAM_COMPAT_SHADER_PATH"] = WORK + "/not-a-dir"
+    check("a failed vkd3d cache directory keeps the driver selection",
+          turnip_env({"turnipDriver": "devel"})["VK_DRIVER_FILES"] is not None
+          and "VKD3D_SHADER_CACHE_PATH" not in os.environ)
+    del os.environ["STEAM_COMPAT_SHADER_PATH"]
+    for value in (None, "", "stable", 7):
+        check(f"turnip {value!r} keeps the system driver",
+              turnip_env({"turnipDriver": value}) == dict.fromkeys(vk_keys))
+    for value in ("missing", "no-lib", "../turnip/devel", "default"):
+        check(f"turnip {value!r} falls back to the system driver",
+              turnip_env({"turnipDriver": value}) == dict.fromkeys(vk_keys))
+    for key in vk_keys:
+        result = turnip_env({"turnipDriver": "devel"}, {key: "/custom.json"})
+        check(f"existing {key} wins over the turnip setting",
+              result == {**dict.fromkeys(vk_keys), key: "/custom.json"})
+    home = pathlib.Path(WORK) / "home"
+    user_root = at.user_dir(home)
+    arm64_glibc = (b"\x7fELF\x02\x01\x01".ljust(18, b"\0") + b"\xb7\x00").ljust(64, b"\0") \
+        + b"libc.so.6\0"
+    user_libs = {
+        "Banners.Turnip-1": arm64_glibc,
+        "empty": b"",
+        "android": arm64_glibc.replace(b"libc.so.6", b"libc.so\0\0"),
+        "x86": arm64_glibc.replace(b"\xb7\x00", b"\x3e\x00"),
+        "has space (1)": arm64_glibc,
+        "a:b": arm64_glibc,
+        ".hidden": arm64_glibc,
+    }
+    for folder, content in user_libs.items():
+        (user_root / folder).mkdir(parents=True)
+        (user_root / folder / at.LIBRARY).write_bytes(content)
+    (user_root / "Banners.Turnip-1" / "meta.json").write_text('{"name": "Banners Linux"}')
+    for special in ("fifo-lib", "link-lib", "fifo-meta", "huge-meta", "n" * 101):
+        (user_root / special).mkdir()
+    os.mkfifo(user_root / "fifo-lib" / at.LIBRARY)
+    os.symlink(user_root / "Banners.Turnip-1" / at.LIBRARY, user_root / "link-lib" / at.LIBRARY)
+    for folder in ("fifo-meta", "huge-meta", "n" * 101):
+        (user_root / folder / at.LIBRARY).write_bytes(arm64_glibc)
+    os.mkfifo(user_root / "fifo-meta" / "meta.json")
+    (user_root / "huge-meta" / "meta.json").write_text('{"name": "' + "x" * 70000 + '"}')
+    os.environ["HOME"] = str(home)
+    user_env = turnip_env({"turnipDriver": "user:Banners.Turnip-1"})
+    user_manifest = pathlib.Path(WORK) / "armada-turnip" / "Banners.Turnip-1.json"
+    check("user turnip lists its manifest then the guest defaults",
+          user_env == dict.fromkeys(vk_keys, ":".join(
+              [str(user_manifest), *launch.GUEST_TURNIP_MANIFESTS])))
+    with open(user_manifest) as f:
+        check("user turnip manifest points at the user library",
+              json.load(f)["ICD"]["library_path"]
+              == str(user_root / "Banners.Turnip-1" / at.LIBRARY))
+    for value in ("user:empty", "user:android", "user:x86", "user:a:b", "user:.hidden", "user:missing",
+                  "user:fifo-lib", "user:link-lib", "user:" + "n" * 101,
+                  "user:../turnip/Banners.Turnip-1", "user:"):
+        check(f"turnip {value!r} falls back to the system driver",
+              turnip_env({"turnipDriver": value}) == dict.fromkeys(vk_keys))
+    os.environ["STEAM_COMPAT_SHADER_PATH"] = str(shader_path)
+    vkd3d_dirs = set()
+    for folder in ("has space (1)", "Banners.Turnip-1"):
+        turnip_env({"turnipDriver": "user:" + folder})
+        vkd3d_dirs.add(os.environ.pop("VKD3D_SHADER_CACHE_PATH", None))
+    check("distinct user drivers get distinct vkd3d caches",
+          len(vkd3d_dirs) == 2 and devel_cache not in vkd3d_dirs)
+    del os.environ["STEAM_COMPAT_SHADER_PATH"]
+    for key in vk_keys:
+        os.environ.pop(key, None)
+    launch.apply_perf({"env": {"VK_DRIVER_FILES": "/from-settings.json"}}, None)
+    launch.apply_turnip({"turnipDriver": "devel"})
+    check("a driver override in the env settings wins over the turnip setting",
+          os.environ.get("VK_DRIVER_FILES") == "/from-settings.json"
+          and "VK_ICD_FILENAMES" not in os.environ)
+    os.environ["XDG_CACHE_HOME"] = WORK + "/a:b"
+    check("a cache path that would split the manifest list falls back",
+          turnip_env({"turnipDriver": "user:Banners.Turnip-1"}) == dict.fromkeys(vk_keys))
+    os.environ["XDG_CACHE_HOME"] = WORK
+    check("a user driver name does not resolve as a system variant",
+          turnip_env({"turnipDriver": "Banners.Turnip-1"}) == dict.fromkeys(vk_keys))
+    (good / "variant.json").write_text('{"label": "Devel", "version": "26.3.0-devel"}')
+    (turnip_root / "no-lib" / "variant.json").write_text('{"label": "Broken"}')
+    (turnip_root / "stable").mkdir()
+    (turnip_root / "stable" / "variant.json").write_text('{"label": "Stable", "version": "26.2.3"}')
+    listed = at.list_drivers(home)
+    check("the picker lists exactly the drivers the launcher accepts",
+          listed == [{"id": "stable", "label": "Stable", "version": "26.2.3"},
+                     {"id": "devel", "label": "Devel", "version": "26.3.0-devel"},
+                     {"id": "user:Banners.Turnip-1", "label": "Banners Linux", "version": ""},
+                     {"id": "user:fifo-meta", "label": "fifo-meta", "version": ""},
+                     {"id": "user:has space (1)", "label": "has space (1)", "version": ""},
+                     {"id": "user:huge-meta", "label": "huge-meta", "version": ""}]
+          and all(launch.turnip_manifests(driver["id"]) for driver in listed[1:]))
+    (turnip_root / "stable" / "variant.json").unlink()
+    check("stable is listed even without its version file",
+          at.list_drivers(home)[0] == {"id": "stable", "label": "Stable", "version": ""})
+    turnip_tweaks = {"global": {"turnipDriver": "devel"},
+                     "games": {"620": {"turnipDriver": "stable"}, "730": {"nice": 1},
+                               "840": {"enabled": False, "turnipDriver": "stable"}}}
+    check("game stable overrides a global turnip variant",
+          turnip_env(gt.merged_settings(turnip_tweaks, "620")) == dict.fromkeys(vk_keys))
+    check("game without a turnip key inherits global",
+          turnip_env(gt.merged_settings(turnip_tweaks, "730"))["VK_DRIVER_FILES"] == expected)
+    check("disabled game override inherits global",
+          turnip_env(gt.merged_settings(turnip_tweaks, "840"))["VK_DRIVER_FILES"] == expected)
+finally:
+    for key in vk_keys + cache_keys:
+        os.environ.pop(key, None)
+    os.environ.update(saved_vk)
+    os.environ["HOME"] = saved_home
 
 # --- armada-game-launch: explicit affinity reset ----------------------------
 saved = os.sched_getaffinity(0)

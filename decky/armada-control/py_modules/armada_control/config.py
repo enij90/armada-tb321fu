@@ -18,7 +18,13 @@ from .system import (
     ssh_enabled,
     swipe_gestures_enabled,
 )
-from .tweaks import fex_profile_labels, load_env_presets, load_fex_contract, load_tweaks
+from .tweaks import (
+    fex_profile_labels,
+    load_env_presets,
+    load_fex_contract,
+    load_tweaks,
+    turnip_drivers,
+)
 
 
 def build_config(include_games=True):
@@ -32,6 +38,7 @@ def build_config(include_games=True):
         "tweaks": load_tweaks(),
         "installedGames": installed_games() if include_games else [],
         "fexProfiles": fex_profile_labels(fex_contract),
+        "turnipDrivers": turnip_drivers(),
         "envPresets": load_env_presets(),
         "perf": perf_info(),
         "cpuDeviceClass": env.get("ARMADA_SOC_CLASS", ""),

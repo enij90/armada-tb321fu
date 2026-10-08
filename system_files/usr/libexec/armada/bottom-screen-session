@@ -1,6 +1,0 @@
-#!/bin/bash
-set -euo pipefail
-
-source "${ARMADA_GAMESCOPE_PLASMA_LIB:-/usr/lib/armada/gamescope-plasma-lib}"
-
-armada_gamescope_plasma_exec mobile

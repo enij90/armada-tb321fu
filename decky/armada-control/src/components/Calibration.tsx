@@ -87,6 +87,9 @@ function CalibrationModal({ closeModal }: { closeModal?: () => void }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const sessionToken = useRef(`${Date.now()}-${Math.random()}`);
   const phaseRef = useRef<Phase>("idle");
+  const [busy, setBusy] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const busyRef = useRef(false);
   const canApply = !!state?.canApply;
   useEffect(() => {
     phaseRef.current = phase;
@@ -129,33 +132,51 @@ function CalibrationModal({ closeModal }: { closeModal?: () => void }) {
     };
   }, []);
 
-  const close = () => {
-    closeModal?.();
+  // Save, reset and close each finish before another can start, so Close always sees a saved change.
+  const exclusive = async (work: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await work();
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   };
+  const close = () =>
+    exclusive(async () => {
+      // Ending the session restarts InputPlumber after a change; stay open until the controller is back.
+      setClosing(true);
+      await endCalibrationSession(sessionToken.current).catch(() => {});
+      closeModal?.();
+    });
   const start = () => {
     setCapture(null);
     setPhase("recording");
   };
-  const save = async () => {
-    if (!capture) return;
-    try {
-      const next = await saveCalibration(capture);
-      setState(next);
-      setCapture(null);
-      setPhase("idle");
-    } catch (error) {
-      setState((current) => ({ ...(current || {}), supported: false, reason: String(error) } as CalibrationState));
-      setPhase("idle");
-    }
-  };
-  const reset = async () => {
-    try {
-      const next = await resetCalibration();
-      setState(next);
-    } catch (error) {
-      setState((current) => ({ ...(current || {}), supported: false, reason: String(error) } as CalibrationState));
-    }
-  };
+  const save = () =>
+    exclusive(async () => {
+      if (!capture) return;
+      try {
+        const next = await saveCalibration(capture);
+        setState(next);
+        setCapture(null);
+        setPhase("idle");
+      } catch (error) {
+        setState((current) => ({ ...(current || {}), supported: false, reason: String(error) } as CalibrationState));
+        setPhase("idle");
+      }
+    });
+  const reset = () =>
+    exclusive(async () => {
+      try {
+        const next = await resetCalibration();
+        setState(next);
+      } catch (error) {
+        setState((current) => ({ ...(current || {}), supported: false, reason: String(error) } as CalibrationState));
+      }
+    });
 
   const instructions = !state
     ? t("calibration.checking")
@@ -186,14 +207,18 @@ function CalibrationModal({ closeModal }: { closeModal?: () => void }) {
           </div>
         ) : phase === "recording" ? (
           <div className="armada-cal-footer" style={{ display: "flex", gap: "10px" }}>
-            <DialogButton onClick={save} disabled={!capture}>{t("calibration.save")}</DialogButton>
-            <DialogButton onClick={close}>{t("common.close")}</DialogButton>
+            <DialogButton onClick={save} disabled={!capture || busy}>{t("calibration.save")}</DialogButton>
+            <DialogButton onClick={close} disabled={busy}>
+              {closing ? t("calibration.applying") : t("common.close")}
+            </DialogButton>
           </div>
         ) : (
           <div className="armada-cal-footer" style={{ display: "flex", gap: "10px" }}>
-            <DialogButton onClick={start}>{t("calibration.start")}</DialogButton>
-            <DialogButton onClick={reset}>{t("calibration.resetDefaults")}</DialogButton>
-            <DialogButton onClick={close}>{t("common.close")}</DialogButton>
+            <DialogButton onClick={start} disabled={busy}>{t("calibration.start")}</DialogButton>
+            <DialogButton onClick={reset} disabled={busy}>{t("calibration.resetDefaults")}</DialogButton>
+            <DialogButton onClick={close} disabled={busy}>
+              {closing ? t("calibration.applying") : t("common.close")}
+            </DialogButton>
           </div>
         )}
       </DialogFooter>
