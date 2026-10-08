@@ -1,5 +1,5 @@
 import { definePlugin } from "@decky/api";
-import { getCompatApplied, getConfig, getInstalledGames, saveCompatApplied } from "./backend";
+import { getCompatApplied, getConfig, getInstalledGames, saveCompatApplied, suspendSwipeGestures } from "./backend";
 import { Content } from "./Content";
 import {
   configureCompatPolicy,
@@ -12,8 +12,27 @@ import {
 } from "./lib/steamCompat";
 import { factoryDefaultTransition } from "./lib/protonPolicy";
 
+// Gamescope's edge swipes toggle the Steam menus, so a drag inside an open
+// side menu (a quick access slider moved toward the edge) would close it:
+// keep them off while one is open.
+function watchSideMenus(): () => void {
+  let menuOpen = false;
+  const timer = window.setInterval(() => {
+    const store = (window as any).SteamUIStore?.ActiveWindowInstance?.MenuStore;
+    const open = Number(store?.m_eOpenSideMenu ?? 0) !== 0;
+    if (open === menuOpen) return;
+    menuOpen = open;
+    suspendSwipeGestures(open).catch(() => {});
+  }, 250);
+  return () => {
+    window.clearInterval(timer);
+    if (menuOpen) suspendSwipeGestures(false).catch(() => {});
+  };
+}
+
 export default definePlugin(() => {
   let unregisterDownloadWatcher = () => {};
+  const stopWatchingSideMenus = watchSideMenus();
   const persistHandledGames = () => {
     saveCompatApplied(handledGameAppids()).catch(() => {});
   };
@@ -73,6 +92,7 @@ export default definePlugin(() => {
     onDismount() {
       cancelled = true;
       unregisterDownloadWatcher();
+      stopWatchingSideMenus();
     },
     icon: (
       <svg
