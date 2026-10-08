@@ -16,10 +16,13 @@ import { factoryDefaultTransition } from "./lib/protonPolicy";
 // side menu (a quick access slider moved toward the edge) would close it:
 // keep them off while one is open.
 function watchSideMenus(): () => void {
-  let menuOpen = false;
+  // Unknown until the first poll: a Steam restart with a menu open leaves the
+  // gestures suspended in gamescope, so always send the state once.
+  let menuOpen: boolean | null = null;
   const timer = window.setInterval(() => {
     const store = (window as any).SteamUIStore?.ActiveWindowInstance?.MenuStore;
-    const open = Number(store?.m_eOpenSideMenu ?? 0) !== 0;
+    if (!store) return;
+    const open = Number(store.m_eOpenSideMenu ?? 0) !== 0;
     if (open === menuOpen) return;
     menuOpen = open;
     suspendSwipeGestures(open).catch(() => {});
