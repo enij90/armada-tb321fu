@@ -39,18 +39,34 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Internal microphones | ✅ |
 | Wi-Fi (WCN7850) | ✅ |
 | Bluetooth | ✅ |
-| USB-C charging, Lenovo Legion G9 controller (short-side port) | ✅ |
-| Vibration motors (2× AW86937) | ⚠️ driver works, not used by games yet |
-| Sensors (accelerometer, gyroscope, light) | ❌ not yet |
+| USB-C charging, charges to 100% | ✅ |
+| Lenovo Legion G9 controller (short-side port), see below | ✅ |
+| Vibration motors (2× AW86937), game rumble | ✅ |
+| Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
 | Cameras | ❌ |
 | CSOT panel | ❌ |
 
+### Legion G9 controller
+
+- Shows up in Steam as a Steam Deck controller, with gyro (from the tablet).
+- The **Legion button** is Steam's button, including its shortcuts (hold Legion and press
+  another button). Holding it alone for a few seconds turns the controller off (firmware).
+- The volume shortcuts of the controller's firmware are off: use Steam's.
+- The **light strips** can be set from Armada Control.
+- The four **back buttons** cannot be used as separate buttons: the controller firmware
+  reports each one as one of the other buttons (set in Lenovo's Android app).
+
+### Battery
+
+- The tablet charges to 100%. Android's battery care limit (70–80%), which the battery
+  firmware keeps, is cleared at every boot.
+- At 3% it powers off instead of suspending, also while asleep: a flat battery could leave
+  it unable to start, even on the charger, until a forced reset.
+
 ## Known issues
 
-- **Turn off Steam's performance overlay when you don't need it.** On this tablet
-  (2560×1600 at 165 Hz) even the FPS counter makes the compositor redraw every frame on
-  the GPU: in the Steam menu the tablet draws about 4.5 W with the overlay on and about
-  2.2 W with it off. (Quick Access → Performance → Performance overlay level: Off.)
+- Sometimes, after GRUB, the tablet restarts once or twice before booting. It then
+  starts normally.
 
 ## Installation
 
@@ -156,7 +172,8 @@ Device-specific parts:
 - kernel patches `packages/kernel/patches/08xx-*` and DTS `packages/kernel/dts/sm8650-lenovo-tb321fu.dts`;
 - device profile `system_files/usr/lib/armada/devices/lenovo-legion-tab.conf`;
 - `tb321fu-*` services, UCM and WirePlumber configuration under `system_files/`;
-- gamescope patch `0027` (EDID pixel clock above 655.35 MHz, needed for 165 Hz).
+- gamescope patch `0030` (EDID pixel clock above 655.35 MHz, needed for 165 Hz);
+- InputPlumber profile and patch for the Legion G9, `armada-rgb` backend for its light strips.
 
 ## Credits
 
