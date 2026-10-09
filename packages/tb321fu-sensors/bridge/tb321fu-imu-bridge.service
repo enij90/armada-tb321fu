@@ -7,9 +7,10 @@ Wants=tb321fu-sns-init.service
 Before=inputplumber.service
 
 [Service]
-# Highest IMU rate up to 400 Hz for aiming (libssc patch); other libssc users
-# (iio-sensor-proxy, screen rotation) keep the low default rate.
-Environment=LIBSSC_MAX_SAMPLE_RATE=400
+# 200 Hz IMU for aiming (libssc patch), close to the Steam Deck's ~250 Hz
+# reports: 400 Hz doubled the CPU time for samples Steam never sees. Other
+# libssc users (iio-sensor-proxy, screen rotation) keep the low default rate.
+Environment=LIBSSC_MAX_SAMPLE_RATE=200
 ExecStart=/usr/libexec/tb321fu-imu-bridge
 Restart=always
 RestartSec=5

@@ -12,6 +12,10 @@
  * Axes are rotated from the sensor frame into the landscape game frame (see
  * accel_m/gyro_m); --accel-matrix / --gyro-matrix (row-major "a,b,c;d,e,f;g,h,i")
  * override them.
+ *
+ * Both sensors run at the same rate. The latest accelerometer sample goes out
+ * with each gyroscope sample in one write and one SYN_REPORT, which halves the
+ * reports InputPlumber has to process.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -39,6 +43,7 @@ static int uinput_fd = -1;
 static double accel_m[9] = {0, 1, 0, -1, 0, 0, 0, 0, 1};
 static double gyro_m[9] = {0, 1, 0, -1, 0, 0, 0, 0, 1};
 static gboolean verbose;
+static int accel_v[3];
 
 static gboolean parse_matrix(const char *s, double m[9])
 {
@@ -50,12 +55,6 @@ static gboolean parse_matrix(const char *s, double m[9])
 	return TRUE;
 }
 
-static int emit(int type, int code, int value)
-{
-	struct input_event ev = {.type = type, .code = code, .value = value};
-	return write(uinput_fd, &ev, sizeof(ev)) == sizeof(ev) ? 0 : -1;
-}
-
 static int clamp_axis(double v)
 {
 	if (v > AXIS_MAX)
@@ -65,28 +64,35 @@ static int clamp_axis(double v)
 	return (int)lround(v);
 }
 
-static void report(const double m[9], float x, float y, float z, double scale, int code0)
+static void rotate(const double m[9], float x, float y, float z, double scale, int out[3])
 {
 	double in[3] = {x, y, z};
-	for (int i = 0; i < 3; i++) {
-		double v = m[3 * i] * in[0] + m[3 * i + 1] * in[1] + m[3 * i + 2] * in[2];
-		emit(EV_ABS, code0 + i, clamp_axis(v * scale));
-	}
-	emit(EV_SYN, SYN_REPORT, 0);
+	for (int i = 0; i < 3; i++)
+		out[i] = clamp_axis((m[3 * i] * in[0] + m[3 * i + 1] * in[1] + m[3 * i + 2] * in[2]) * scale);
 }
 
 static void on_accel(SSCSensorAccelerometer *s, gfloat x, gfloat y, gfloat z, gpointer data)
 {
 	if (verbose)
 		g_print("accel %f %f %f\n", x, y, z);
-	report(accel_m, x, y, z, ACCEL_LSB_PER_MS2, ABS_X);
+	rotate(accel_m, x, y, z, ACCEL_LSB_PER_MS2, accel_v);
 }
 
 static void on_gyro(SSCSensorGyroscope *s, gfloat x, gfloat y, gfloat z, gpointer data)
 {
 	if (verbose)
 		g_print("gyro %f %f %f\n", x, y, z);
-	report(gyro_m, x, y, z, GYRO_LSB_PER_RADS, ABS_RX);
+	int gyro_v[3];
+	struct input_event ev[7] = {0};
+
+	rotate(gyro_m, x, y, z, GYRO_LSB_PER_RADS, gyro_v);
+	for (int i = 0; i < 3; i++) {
+		ev[i] = (struct input_event){.type = EV_ABS, .code = ABS_X + i, .value = accel_v[i]};
+		ev[3 + i] = (struct input_event){.type = EV_ABS, .code = ABS_RX + i, .value = gyro_v[i]};
+	}
+	ev[6] = (struct input_event){.type = EV_SYN, .code = SYN_REPORT};
+	if (write(uinput_fd, ev, sizeof(ev)) != sizeof(ev) && verbose)
+		g_printerr("uinput write: %s\n", g_strerror(errno));
 }
 
 static int setup_uinput(void)
