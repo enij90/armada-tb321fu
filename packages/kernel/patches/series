@@ -235,3 +235,4 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0814-drm-msm-dpu-dont-wedge-the-ctl-when-tearing-down-a-video-encoder.patch
 0816-input-misc-add-aw86937-y700-haptics-guf296.patch
 0817-input-misc-aw86937-y700-stop-a-ram-effect-without-waiting.patch
+0818-drm-msm-dpu-preload-seven-pixels-in-qseed4-behind-the-inline-rotator.patch
