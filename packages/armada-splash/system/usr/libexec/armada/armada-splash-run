@@ -49,6 +49,21 @@ if [[ "$MODE" == "x11" && -n "${DISPLAY:-}" && -x "$SPLASH_BIN" ]]; then
     splash_pid=$!
 fi
 
+# A Steam client left over from the desktop session (still running a game, or
+# hung after its compositor went away) owns steam.pid: this Steam would hand
+# its arguments over and exit at once, gamescope would follow, and the session
+# would restart until systemd gives up on a black screen. Stop it first.
+stale="$(cat "${HOME}/.steam/steam.pid" 2>/dev/null)"
+if [[ "$stale" =~ ^[0-9]+$ && "$(cat "/proc/${stale}/comm" 2>/dev/null)" == steam ]]; then
+    say "Closing the desktop Steam"
+    kill -TERM "$stale" 2>/dev/null
+    for _ in $(seq 20); do
+        kill -0 "$stale" 2>/dev/null || break
+        sleep 0.5
+    done
+    kill -KILL "$stale" 2>/dev/null
+fi
+
 # A listener that predates this launch is not this Steam's CEF; trust the
 # port only after it has been observed closed.
 cef_stale=0
