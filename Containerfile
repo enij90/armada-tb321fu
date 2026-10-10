@@ -83,6 +83,9 @@ FROM ${UMTP_RESPONDER_REF} AS umtp-responder
 ARG TB321FU_SENSORS_REF
 FROM ${TB321FU_SENSORS_REF} AS tb321fu-sensors
 
+ARG LIBCAMERA_REF
+FROM ${LIBCAMERA_REF} AS libcamera
+
 FROM docker.io/library/node:22-slim AS decky-build
 WORKDIR /build/armada-control
 COPY decky/armada-control/package.json decky/armada-control/package-lock.json ./
@@ -132,6 +135,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=armada-rgb,source=/rpms,target=/packages/armada-rgb \
     --mount=type=bind,from=umtp-responder,source=/rpms,target=/packages/umtp-responder \
     --mount=type=bind,from=tb321fu-sensors,source=/rpms,target=/packages/tb321fu-sensors \
+    --mount=type=bind,from=libcamera,source=/rpms,target=/packages/libcamera \
     --mount=type=bind,from=decky-build,source=/build/armada-control/dist,target=/packages/decky-dist \
     --mount=type=bind,from=decky-build,source=/build/armada-store/dist,target=/packages/decky-store-dist \
     --mount=type=cache,dst=/var/cache \

@@ -1633,7 +1633,12 @@
 	clock-frequency = <76800000>;
 };
 
-/* Camera sensor0 path: GC13A0 rear main on CCI0 and CSIPHY3. */
+/*
+ * Camera sensor0 path: rear main on CCI0 and CSIPHY3. Units ship either a
+ * GalaxyCore GC13A0 (0x11) or an OmniVision OV13B10 (0x36) in that slot, with
+ * the same supplies, reset, MCLK and lanes; one node describes both and the
+ * driver that finds its chip binds it.
+ */
 &camss {
 	vdd-csiphy01-0p9-supply = <&vreg_l2i_0p88>;
 	vdd-csiphy01-1p2-supply = <&vreg_l3i_1p2>;
@@ -1684,8 +1689,9 @@
 
 &cci0_i2c0 {
 	camera@11 {
-		compatible = "galaxycore,gc13a0";
-		reg = <0x11>;
+		compatible = "galaxycore,gc13a0", "ovti,ov13b10";
+		reg = <0x11>, <0x36>;
+		reg-names = "gc13a0", "ov13b10";
 
 		pinctrl-0 = <&cam0_default>, <&cam0_reset_default>;
 		pinctrl-names = "default";

@@ -1,0 +1,84 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] media: qcom: camss: CSID gen3 Plain16 RDI path for SBGGR10_2X8_PADHI_LE
+
+GUF296's CSID change from his linux tree at 51715124a767: decode RAW10 to an
+LSB-aligned Plain16 RDI output when the format is SBGGR10_2X8_PADHI_LE, as the
+GC13A0 driver can request. Ported to 7.2, where __csid_configure_rdi_stream()
+gained a port argument; MIPI-packed formats are unchanged.
+
+diff --git a/drivers/media/platform/qcom/camss/camss-csid-gen3.c b/drivers/media/platform/qcom/camss/camss-csid-gen3.c
+index 0fdbf75fb..25db4df68 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid-gen3.c
++++ b/drivers/media/platform/qcom/camss/camss-csid-gen3.c
+@@ -97,6 +97,7 @@
+ #define		RDI_CFG1_CROP_H_EN		BIT(7)
+ #define		RDI_CFG1_CROP_V_EN		BIT(8)
+ #define		RDI_CFG1_PIX_STORE		BIT(10)
++#define		RDI_CFG1_PLAIN_FORMAT		12
+ #define		RDI_CFG1_PACKING_FORMAT_MIPI	BIT(15)
+ 
+ #define CSID_RDI_IRQ_SUBSAMPLE_PATTERN(rdi)	(csid_is_lite(csid) && IS_CSID_690(csid) ?\
+@@ -157,15 +158,22 @@ static void __csid_configure_wrapper(struct csid_device *csid)
+ 	writel(val, csid->camss->csid_wrapper_base + CSID_IO_PATH_CFG0(csid->id));
+ }
+ 
++static bool csid_gen3_rdi_plain16_code(u32 code)
++{
++	return code == MEDIA_BUS_FMT_SBGGR10_2X8_PADHI_LE;
++}
++
+ static void __csid_configure_rdi_stream(struct csid_device *csid, u8 enable, u8 port, u8 vc)
+ {
+ 	u32 val;
++	u32 decode_format;
+ 	u8 lane_cnt = csid->phy.lane_cnt;
+ 	/* Source pads matching RDI channels on hardware. Pad 1 -> RDI0, Pad 2 -> RDI1, etc. */
+ 	struct v4l2_mbus_framefmt *input_format = &csid->fmt[MSM_CSID_PAD_FIRST_SRC + port];
+ 	const struct csid_format_info *format = csid_get_fmt_entry(csid->res->formats->formats,
+ 								   csid->res->formats->nformats,
+ 								   input_format->code);
++	bool plain16 = csid_gen3_rdi_plain16_code(input_format->code);
+ 
+ 	if (!lane_cnt)
+ 		lane_cnt = 4;
+@@ -186,15 +194,19 @@ static void __csid_configure_rdi_stream(struct csid_device *csid, u8 enable, u8
+ 
+ 	val = RDI_CFG0_TIMESTAMP_EN;
+ 	val |= RDI_CFG0_TIMESTAMP_STB_SEL;
+-	/* note: for non-RDI path, this should be format->decode_format */
+-	val |= DECODE_FORMAT_PAYLOAD_ONLY << RDI_CFG0_DECODE_FORMAT;
++	decode_format = plain16 ? format->decode_format : DECODE_FORMAT_PAYLOAD_ONLY;
++	val |= decode_format << RDI_CFG0_DECODE_FORMAT;
+ 	val |= vc << RDI_CFG0_VC;
+ 	val |= format->data_type << RDI_CFG0_DT;
+ 	val |= dt_id << RDI_CFG0_DT_ID;
+ 
+ 	writel(val, csid->base + CSID_RDI_CFG0(port));
+ 
+-	val = RDI_CFG1_PACKING_FORMAT_MIPI;
++	val = plain16 ? 0 : RDI_CFG1_PACKING_FORMAT_MIPI;
++	if (plain16) {
++		val |= PLAIN_FORMAT_PLAIN16 << RDI_CFG1_PLAIN_FORMAT;
++		/* Keep bit 11 clear for the validated LSB-aligned Plain16 path. */
++	}
+ 	val |= RDI_CFG1_PIX_STORE;
+ 	val |= RDI_CFG1_DROP_H_EN;
+ 	val |= RDI_CFG1_DROP_V_EN;
+diff --git a/drivers/media/platform/qcom/camss/camss-csid.c b/drivers/media/platform/qcom/camss/camss-csid.c
+index 48459b46a..0042497c0 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid.c
++++ b/drivers/media/platform/qcom/camss/camss-csid.c
+@@ -389,6 +389,13 @@ static const struct csid_format_info formats_gen2[] = {
+ 		10,
+ 		1,
+ 	},
++	{
++		MEDIA_BUS_FMT_SBGGR10_2X8_PADHI_LE,
++		MIPI_CSI2_DT_RAW10,
++		DECODE_FORMAT_UNCOMPRESSED_10_BIT,
++		10,
++		1,
++	},
+ 	{
+ 		MEDIA_BUS_FMT_SGBRG10_1X10,
+ 		MIPI_CSI2_DT_RAW10,

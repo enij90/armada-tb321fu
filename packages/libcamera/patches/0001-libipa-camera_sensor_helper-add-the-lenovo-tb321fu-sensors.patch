@@ -1,0 +1,79 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] libipa: camera_sensor_helper: add the Lenovo TB321FU sensors
+
+Add helpers for the four sensors found in the Lenovo Legion Tab Gen 3
+(TB321FU): GalaxyCore GC13A0 or OmniVision OV13B10 rear main, SmartSens
+SC202CS rear secondary and SC820CS front. Without a helper the simple IPA
+cannot convert gains and its AGC leaves the analogue gain at its minimum.
+
+GC13A0, SC202CS and SC820CS use the drivers GUF296 wrote for this tablet, which
+take a linear gain with 1024 = 1x. OV13B10 uses the upstream driver, whose gain
+register is linear with 0x80 = 1x (as OV13858).
+
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -520,6 +520,17 @@
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("gc08a3", CameraSensorHelperGc08a3)
+ 
++class CameraSensorHelperGc13a0 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperGc13a0()
++	{
++		/* The driver takes a linear gain, 1024 = 1x. */
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 1024 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("gc13a0", CameraSensorHelperGc13a0)
++
+ class CameraSensorHelperHm1246 : public CameraSensorHelper
+ {
+ public:
+@@ -789,6 +800,46 @@
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("ov13858", CameraSensorHelperOv13858)
+ 
++class CameraSensorHelperOv13b10 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperOv13b10()
++	{
++		/* From datasheet: 64 at 10bits. Linear gain, 0x80 = 1x. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 128 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("ov13b10", CameraSensorHelperOv13b10)
++
++class CameraSensorHelperSc202cs : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperSc202cs()
++	{
++		/*
++		 * The driver takes a linear gain, 1024 = 1x, and splits it
++		 * into coarse and fine register steps itself.
++		 */
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 1024 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("sc202cs", CameraSensorHelperSc202cs)
++
++class CameraSensorHelperSc820cs : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperSc820cs()
++	{
++		/*
++		 * The driver takes a linear gain, 1024 = 1x, and splits it
++		 * into coarse and fine register steps itself.
++		 */
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 1024 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("sc820cs", CameraSensorHelperSc820cs)
++
+ class CameraSensorHelperVd55g1 : public CameraSensorHelper
+ {
+ public:

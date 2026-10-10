@@ -1,0 +1,4 @@
+# libcamera's software ISP allocates frame buffers from the system DMA heap;
+# let the seat user open it, as systemd already does for udmabuf. Must sort
+# before 73-seat-late.rules, which applies the uaccess tag.
+SUBSYSTEM=="dma_heap", KERNEL=="system", TAG+="uaccess"

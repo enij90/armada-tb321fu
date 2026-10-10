@@ -1,0 +1,353 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] media: i2c: dw9768: support the Giantec GT9772B VCM (Lenovo TB321FU)
+
+GUF296's changes to dw9768 for the GT9772B focus actuator of the TB321FU rear
+main camera (CCI0 0x0c, "giantec,gt9772b"), from his linux tree at
+51715124a767.
+
+diff --git a/drivers/media/i2c/dw9768.c b/drivers/media/i2c/dw9768.c
+index d037d3009..5c06a000e 100644
+--- a/drivers/media/i2c/dw9768.c
++++ b/drivers/media/i2c/dw9768.c
+@@ -4,6 +4,7 @@
+ #include <linux/delay.h>
+ #include <linux/i2c.h>
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/pm_runtime.h>
+ #include <linux/regulator/consumer.h>
+ #include <media/v4l2-async.h>
+@@ -108,6 +109,7 @@ struct dw9768 {
+ 	u32 aac_timing;
+ 	u32 clock_presc;
+ 	u32 move_delay_us;
++	bool is_gt9772b;
+ };
+ 
+ static inline struct dw9768 *sd_to_dw9768(struct v4l2_subdev *subdev)
+@@ -194,26 +196,117 @@ static inline u32 dw9768_cal_move_delay(u32 aac_mode_param, u32 presc_param,
+ 	return Tvib_us * ot_multi_base100 / 100;
+ }
+ 
++static int dw9768_write_u8(struct dw9768 *dw9768, u8 reg, u8 val,
++			   const char *label)
++{
++	struct i2c_client *client = v4l2_get_subdevdata(&dw9768->sd);
++	int ret;
++
++	ret = i2c_smbus_write_byte_data(client, reg, val);
++	if (ret < 0)
++		dev_err(&client->dev,
++			"%s: write reg 0x%02x=0x%02x failed: %d\n",
++			label, reg, val, ret);
++
++	return ret;
++}
++
+ static int dw9768_mod_reg(struct dw9768 *dw9768, u8 reg, u8 mask, u8 val)
+ {
+ 	struct i2c_client *client = v4l2_get_subdevdata(&dw9768->sd);
+ 	int ret;
+ 
+ 	ret = i2c_smbus_read_byte_data(client, reg);
+-	if (ret < 0)
++	if (ret < 0) {
++		dev_err(&client->dev,
++			"mod reg 0x%02x: read failed: %d\n", reg, ret);
+ 		return ret;
++	}
+ 
+ 	val = ((unsigned char)ret & ~mask) | (val & mask);
+ 
+-	return i2c_smbus_write_byte_data(client, reg, val);
++	ret = i2c_smbus_write_byte_data(client, reg, val);
++	if (ret < 0)
++		dev_err(&client->dev,
++			"mod reg 0x%02x: write 0x%02x failed: %d\n",
++			reg, val, ret);
++
++	return ret;
+ }
+ 
+ static int dw9768_set_dac(struct dw9768 *dw9768, u16 val)
+ {
+ 	struct i2c_client *client = v4l2_get_subdevdata(&dw9768->sd);
++	u8 buf[3];
++	int ret;
++
++	if (dw9768->is_gt9772b) {
++		buf[0] = DW9768_MSB_ADDR;
++		buf[1] = val >> 8;
++		buf[2] = val & 0xff;
++
++		ret = i2c_master_send(client, buf, sizeof(buf));
++		if (ret == sizeof(buf))
++			return 0;
++
++		dev_err(&client->dev,
++			"gt9772b dac write val=%u bytes=%d failed: %d\n",
++			val, ret, ret < 0 ? ret : -EIO);
++		return ret < 0 ? ret : -EIO;
++	}
+ 
+ 	/* Write VCM position to registers */
+-	return i2c_smbus_write_word_swapped(client, DW9768_MSB_ADDR, val);
++	ret = i2c_smbus_write_word_swapped(client, DW9768_MSB_ADDR, val);
++	if (ret < 0)
++		dev_err(&client->dev, "dac write val=%u failed: %d\n",
++			val, ret);
++
++	return ret;
++}
++
++static int gt9772b_sensormodule_init(struct dw9768 *dw9768)
++{
++	struct i2c_client *client = v4l2_get_subdevdata(&dw9768->sd);
++	static const struct {
++		u8 reg;
++		u8 val;
++		u32 delay_us;
++	} init[] = {
++		/*
++		 * Android com.qti.sensormodule.kirby_lce_gc13a0_main.bin
++		 * actuatorDriver gt9772b initSettings:
++		 *   0x0b <- 0x53, delay 0x3e8
++		 *   0x02 <- 0x02
++		 *   0x06 <- 0x00
++		 *   0x07 <- 0x7c
++		 *
++		 * Keep this as a probe-only path until the unlinked VCM node
++		 * ACKs and movement is confirmed. It intentionally does not
++		 * reattach lens-focus to the production GC13A0 graph.
++		 */
++		{ 0x0b, 0x53, 1000 },
++		{ 0x02, 0x02, 0 },
++		{ 0x06, 0x00, 0 },
++		{ 0x07, 0x7c, 0 },
++	};
++	unsigned int i;
++	int ret;
++
++	dev_dbg(&client->dev,
++		 "gt9772b sensormodule-init addr=0x%02x writes=%zu\n",
++		 client->addr, ARRAY_SIZE(init));
++
++	for (i = 0; i < ARRAY_SIZE(init); i++) {
++		ret = dw9768_write_u8(dw9768, init[i].reg, init[i].val,
++				      "gt9772b-sensormodule-init");
++		if (ret < 0)
++			return ret;
++		if (init[i].delay_us)
++			usleep_range(init[i].delay_us, init[i].delay_us + 500);
++	}
++
++	dev_dbg(&client->dev, "gt9772b sensormodule-init complete\n");
++	return 0;
+ }
+ 
+ static int dw9768_init(struct dw9768 *dw9768)
+@@ -221,9 +314,21 @@ static int dw9768_init(struct dw9768 *dw9768)
+ 	struct i2c_client *client = v4l2_get_subdevdata(&dw9768->sd);
+ 	int ret, val;
+ 
++	dev_dbg(&client->dev,
++		 "init addr=0x%02x gt9772b=%d focus=%d move_delay_us=%u\n",
++		 client->addr, dw9768->is_gt9772b, dw9768->focus->val,
++		 dw9768->move_delay_us);
++
++	if (dw9768->is_gt9772b) {
++		ret = gt9772b_sensormodule_init(dw9768);
++		if (ret < 0)
++			return ret;
++		return 0;
++	}
++
+ 	/* Reset DW9768_RING_PD_CONTROL_REG to default status 0x00 */
+-	ret = i2c_smbus_write_byte_data(client, DW9768_RING_PD_CONTROL_REG,
+-					DW9768_PD_MODE_OFF);
++	ret = dw9768_write_u8(dw9768, DW9768_RING_PD_CONTROL_REG,
++			      DW9768_PD_MODE_OFF, "power-down-off");
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -234,33 +339,36 @@ static int dw9768_init(struct dw9768 *dw9768)
+ 	usleep_range(DW9768_T_OPR_US, DW9768_T_OPR_US + 100);
+ 
+ 	/* Set DW9768_RING_PD_CONTROL_REG to DW9768_AAC_MODE_EN(0x01) */
+-	ret = i2c_smbus_write_byte_data(client, DW9768_RING_PD_CONTROL_REG,
+-					DW9768_AAC_MODE_EN);
+-	if (ret < 0)
+-		return ret;
+-
+-	/* Set AAC mode */
+-	ret = dw9768_mod_reg(dw9768, DW9768_AAC_PRESC_REG,
+-			     DW9768_AAC_MODE_SEL_MASK,
+-			     dw9768->aac_mode << 5);
++	ret = dw9768_write_u8(dw9768, DW9768_RING_PD_CONTROL_REG,
++			      DW9768_AAC_MODE_EN, "aac-mode-enable");
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	/* Set clock presc */
+-	if (dw9768->clock_presc != DW9768_CLOCK_PRE_SCALE_DEFAULT) {
++	if (!dw9768->is_gt9772b) {
++		/* Set AAC mode */
+ 		ret = dw9768_mod_reg(dw9768, DW9768_AAC_PRESC_REG,
+-				     DW9768_CLOCK_PRE_SCALE_SEL_MASK,
+-				     dw9768->clock_presc);
++				     DW9768_AAC_MODE_SEL_MASK,
++				     dw9768->aac_mode << 5);
+ 		if (ret < 0)
+ 			return ret;
+-	}
+ 
+-	/* Set AAC Timing */
+-	if (dw9768->aac_timing != DW9768_AAC_TIME_DEFAULT) {
+-		ret = i2c_smbus_write_byte_data(client, DW9768_AAC_TIME_REG,
+-						dw9768->aac_timing);
+-		if (ret < 0)
+-			return ret;
++		/* Set clock presc */
++		if (dw9768->clock_presc != DW9768_CLOCK_PRE_SCALE_DEFAULT) {
++			ret = dw9768_mod_reg(dw9768, DW9768_AAC_PRESC_REG,
++					     DW9768_CLOCK_PRE_SCALE_SEL_MASK,
++					     dw9768->clock_presc);
++			if (ret < 0)
++				return ret;
++		}
++
++		/* Set AAC Timing */
++		if (dw9768->aac_timing != DW9768_AAC_TIME_DEFAULT) {
++			ret = dw9768_write_u8(dw9768, DW9768_AAC_TIME_REG,
++					      dw9768->aac_timing,
++					      "aac-timing");
++			if (ret < 0)
++				return ret;
++		}
+ 	}
+ 
+ 	for (val = dw9768->focus->val % DW9768_MOVE_STEPS;
+@@ -275,6 +383,8 @@ static int dw9768_init(struct dw9768 *dw9768)
+ 			     dw9768->move_delay_us + 1000);
+ 	}
+ 
++	dev_dbg(&client->dev, "init complete\n");
++
+ 	return 0;
+ }
+ 
+@@ -283,6 +393,9 @@ static int dw9768_release(struct dw9768 *dw9768)
+ 	struct i2c_client *client = v4l2_get_subdevdata(&dw9768->sd);
+ 	int ret, val;
+ 
++	if (dw9768->is_gt9772b)
++		return 0;
++
+ 	val = round_down(dw9768->focus->val, DW9768_MOVE_STEPS);
+ 	for ( ; val >= 0; val -= DW9768_MOVE_STEPS) {
+ 		ret = dw9768_set_dac(dw9768, val);
+@@ -294,8 +407,8 @@ static int dw9768_release(struct dw9768 *dw9768)
+ 			     dw9768->move_delay_us + 1000);
+ 	}
+ 
+-	ret = i2c_smbus_write_byte_data(client, DW9768_RING_PD_CONTROL_REG,
+-					DW9768_PD_MODE_EN);
++	ret = dw9768_write_u8(dw9768, DW9768_RING_PD_CONTROL_REG,
++			      DW9768_PD_MODE_EN, "power-down-on");
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -313,6 +426,7 @@ static int dw9768_runtime_suspend(struct device *dev)
+ 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+ 	struct dw9768 *dw9768 = sd_to_dw9768(sd);
+ 
++	dev_dbg(dev, "runtime suspend\n");
+ 	dw9768_release(dw9768);
+ 	regulator_bulk_disable(ARRAY_SIZE(dw9768_supply_names),
+ 			       dw9768->supplies);
+@@ -333,6 +447,8 @@ static int dw9768_runtime_resume(struct device *dev)
+ 		return ret;
+ 	}
+ 
++	dev_dbg(dev, "runtime resume regulators enabled\n");
++
+ 	/*
+ 	 * The datasheet refers to t_OPR that needs to be waited before sending
+ 	 * I2C commands after power-up.
+@@ -340,8 +456,10 @@ static int dw9768_runtime_resume(struct device *dev)
+ 	usleep_range(DW9768_T_OPR_US, DW9768_T_OPR_US + 100);
+ 
+ 	ret = dw9768_init(dw9768);
+-	if (ret < 0)
++	if (ret < 0) {
++		dev_err(dev, "failed to initialize VCM: %d\n", ret);
+ 		goto disable_regulator;
++	}
+ 
+ 	return 0;
+ 
+@@ -357,6 +475,12 @@ static int dw9768_set_ctrl(struct v4l2_ctrl *ctrl)
+ 	struct dw9768 *dw9768 = container_of(ctrl->handler,
+ 					     struct dw9768, ctrls);
+ 
++	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE) {
++		struct i2c_client *client = v4l2_get_subdevdata(&dw9768->sd);
++
++		dev_dbg(&client->dev, "set focus=%d\n", ctrl->val);
++	}
++
+ 	if (ctrl->id == V4L2_CID_FOCUS_ABSOLUTE)
+ 		return dw9768_set_dac(dw9768, ctrl->val);
+ 
+@@ -420,6 +544,9 @@ static int dw9768_probe(struct i2c_client *client)
+ 	/* Initialize subdev */
+ 	v4l2_i2c_subdev_init(&dw9768->sd, client, &dw9768_ops);
+ 
++	dw9768->is_gt9772b = of_device_is_compatible(dev->of_node,
++						     "giantec,gt9772b");
++
+ 	dw9768->aac_mode = DW9768_AAC_MODE_DEFAULT;
+ 	dw9768->aac_timing = DW9768_AAC_TIME_DEFAULT;
+ 	dw9768->clock_presc = DW9768_CLOCK_PRE_SCALE_DEFAULT;
+@@ -440,6 +567,12 @@ static int dw9768_probe(struct i2c_client *client)
+ 						      dw9768->clock_presc,
+ 						      dw9768->aac_timing);
+ 
++	dev_dbg(dev,
++		 "probe addr=0x%02x gt9772b=%d aac_mode=%u clock_presc=%u aac_timing=%u move_delay_us=%u\n",
++		 client->addr, dw9768->is_gt9772b, dw9768->aac_mode,
++		 dw9768->clock_presc, dw9768->aac_timing,
++		 dw9768->move_delay_us);
++
+ 	for (i = 0; i < ARRAY_SIZE(dw9768_supply_names); i++)
+ 		dw9768->supplies[i].supply = dw9768_supply_names[i];
+ 
+@@ -481,6 +614,8 @@ static int dw9768_probe(struct i2c_client *client)
+ 			goto err_clean_entity;
+ 		}
+ 		pm_runtime_set_active(dev);
++	} else {
++		pm_runtime_set_suspended(dev);
+ 	}
+ 
+ 	pm_runtime_enable(dev);
+@@ -492,7 +627,10 @@ static int dw9768_probe(struct i2c_client *client)
+ 
+ 	pm_runtime_set_autosuspend_delay(dev, 1000);
+ 	pm_runtime_use_autosuspend(dev);
+-	pm_runtime_idle(dev);
++	if (full_power)
++		pm_runtime_idle(dev);
++
++	dev_dbg(dev, "registered V4L2 lens subdev\n");
+ 
+ 	return 0;
+ 
+@@ -530,6 +668,7 @@ static void dw9768_remove(struct i2c_client *client)
+ static const struct of_device_id dw9768_of_table[] = {
+ 	{ .compatible = "dongwoon,dw9768" },
+ 	{ .compatible = "giantec,gt9769" },
++	{ .compatible = "giantec,gt9772b" },
+ 	{}
+ };
+ MODULE_DEVICE_TABLE(of, dw9768_of_table);

@@ -1,0 +1,458 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] regulator: add WL2868C camera LDO driver (Lenovo TB321FU)
+
+GUF296's driver for the Will Semiconductor WL2868C seven-channel camera LDO
+(CCI1 0x35), which feeds the three TB321FU camera modules. Taken from his
+linux tree at 027d8f0b34bf ("tb321fu: harden device and AudioReach
+lifecycle"), the latest version of the file. Tested on the TB321FU on
+2026-10-10: the cam_ldo* rails register and follow the sensors' runtime PM.
+
+diff --git a/drivers/regulator/Kconfig b/drivers/regulator/Kconfig
+index dd9077455..392e900f8 100644
+--- a/drivers/regulator/Kconfig
++++ b/drivers/regulator/Kconfig
+@@ -1851,6 +1851,14 @@ config REGULATOR_VQMMC_IPQ4019
+ 	  This driver provides support for the VQMMC LDO I/0
+ 	  voltage regulator of the IPQ4019 SD/EMMC controller.
+ 
++config REGULATOR_WL2868C
++	tristate "Will Semiconductor WL2868C camera LDO regulator"
++	depends on I2C && OF
++	select REGMAP_I2C
++	help
++	  This driver supports the Will Semiconductor WL2868C 7-channel
++	  camera LDO regulator.
++
+ config REGULATOR_WM831X
+ 	tristate "Wolfson Microelectronics WM831x PMIC regulators"
+ 	depends on MFD_WM831X
+diff --git a/drivers/regulator/Makefile b/drivers/regulator/Makefile
+index 5823d0794..5cb11f123 100644
+--- a/drivers/regulator/Makefile
++++ b/drivers/regulator/Makefile
+@@ -212,6 +212,7 @@ obj-$(CONFIG_REGULATOR_RZG2L_VBCTRL) += renesas-usb-vbus-regulator.o
+ obj-$(CONFIG_REGULATOR_VCTRL) += vctrl-regulator.o
+ obj-$(CONFIG_REGULATOR_VEXPRESS) += vexpress-regulator.o
+ obj-$(CONFIG_REGULATOR_VQMMC_IPQ4019) += vqmmc-ipq4019-regulator.o
++obj-$(CONFIG_REGULATOR_WL2868C) += wl2868c-regulator.o
+ obj-$(CONFIG_REGULATOR_WM831X) += wm831x-dcdc.o
+ obj-$(CONFIG_REGULATOR_WM831X) += wm831x-isink.o
+ obj-$(CONFIG_REGULATOR_WM831X) += wm831x-ldo.o
+diff --git a/drivers/regulator/wl2868c-regulator.c b/drivers/regulator/wl2868c-regulator.c
+new file mode 100755
+index 000000000..daf4cc60a
+--- /dev/null
++++ b/drivers/regulator/wl2868c-regulator.c
+@@ -0,0 +1,412 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Will Semiconductor WL2868C 7-channel camera LDO regulator.
++ */
++
++#include <linux/bitops.h>
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/i2c.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/property.h>
++#include <linux/regmap.h>
++#include <linux/regulator/consumer.h>
++#include <linux/regulator/driver.h>
++
++#define WL2868C_LDO1_VOUT	0x03
++#define WL2868C_LDO2_VOUT	0x04
++#define WL2868C_LDO3_VOUT	0x05
++#define WL2868C_LDO4_VOUT	0x06
++#define WL2868C_LDO5_VOUT	0x07
++#define WL2868C_LDO6_VOUT	0x08
++#define WL2868C_LDO7_VOUT	0x09
++#define WL2868C_LDO_EN		0x0e
++
++#define ET5907_LDO1_VOUT	0x04
++#define ET5907_LDO2_VOUT	0x05
++#define ET5907_LDO3_VOUT	0x06
++#define ET5907_LDO4_VOUT	0x07
++#define ET5907_LDO5_VOUT	0x08
++#define ET5907_LDO6_VOUT	0x09
++#define ET5907_LDO7_VOUT	0x0a
++#define ET5907_LDO_EN		0x03
++
++#define WL2868C_VSEL_MASK	0xff
++#define WL2868C_NUM_SUPPLIES	3
++
++enum wl2868c_regulator_id {
++	WL2868C_LDO1,
++	WL2868C_LDO2,
++	WL2868C_LDO3,
++	WL2868C_LDO4,
++	WL2868C_LDO5,
++	WL2868C_LDO6,
++	WL2868C_LDO7,
++	WL2868C_MAX_REGULATORS,
++};
++
++struct wl2868c {
++	struct device *dev;
++	struct regmap *regmap;
++	struct gpio_desc *enable_gpio;
++	struct regulator *supplies[WL2868C_NUM_SUPPLIES];
++	const struct wl2868c_chip *chip;
++	unsigned long supplies_enabled;
++	bool enable_gpio_asserted;
++};
++
++struct wl2868c_chip {
++	const char *name;
++	const struct regulator_desc *regulators;
++	unsigned int num_regulators;
++};
++
++static const char * const wl2868c_supply_names[WL2868C_NUM_SUPPLIES] = {
++	"vin1",
++	"vin2",
++	"vin3",
++};
++
++static const struct regmap_config wl2868c_regmap_config = {
++	.reg_bits = 8,
++	.val_bits = 8,
++	.max_register = 0x1f,
++};
++
++static int wl2868c_regulator_enable(struct regulator_dev *rdev)
++{
++	struct wl2868c *wl2868c = rdev_get_drvdata(rdev);
++
++	return regmap_update_bits(wl2868c->regmap, rdev->desc->enable_reg,
++				  rdev->desc->enable_mask,
++				  rdev->desc->enable_mask);
++}
++
++static int wl2868c_regulator_disable(struct regulator_dev *rdev)
++{
++	struct wl2868c *wl2868c = rdev_get_drvdata(rdev);
++
++	return regmap_update_bits(wl2868c->regmap, rdev->desc->enable_reg,
++				  rdev->desc->enable_mask, 0);
++}
++
++static int wl2868c_regulator_is_enabled(struct regulator_dev *rdev)
++{
++	struct wl2868c *wl2868c = rdev_get_drvdata(rdev);
++	unsigned int val;
++	int ret;
++
++	ret = regmap_read(wl2868c->regmap, rdev->desc->enable_reg, &val);
++	if (ret)
++		return ret;
++
++	return !!(val & rdev->desc->enable_mask);
++}
++
++static int wl2868c_regulator_set_voltage_sel(struct regulator_dev *rdev,
++					     unsigned int sel)
++{
++	sel <<= ffs(rdev->desc->vsel_mask) - 1;
++
++	return regmap_update_bits(rdev->regmap, rdev->desc->vsel_reg,
++				  rdev->desc->vsel_mask,
++				  sel & rdev->desc->vsel_mask);
++}
++
++static int wl2868c_regulator_get_voltage_sel(struct regulator_dev *rdev)
++{
++	return regulator_get_voltage_sel_regmap(rdev);
++}
++
++static const struct regulator_ops wl2868c_regulator_ops = {
++	.enable = wl2868c_regulator_enable,
++	.disable = wl2868c_regulator_disable,
++	.is_enabled = wl2868c_regulator_is_enabled,
++	.list_voltage = regulator_list_voltage_linear,
++	.map_voltage = regulator_map_voltage_linear,
++	.get_voltage_sel = wl2868c_regulator_get_voltage_sel,
++	.set_voltage_sel = wl2868c_regulator_set_voltage_sel,
++};
++
++#define WL2868C_REGULATOR(_id, _name, _min, _max, _step, _vsel, _enreg, _bit) \
++	[WL2868C_##_id] = {						\
++		.name = _name,						\
++		.of_match = of_match_ptr(_name),			\
++		.regulators_node = of_match_ptr("regulators"),		\
++		.id = WL2868C_##_id,					\
++		.ops = &wl2868c_regulator_ops,				\
++		.type = REGULATOR_VOLTAGE,				\
++		.owner = THIS_MODULE,					\
++		.n_voltages = (((_max) - (_min)) / (_step) + 1),	\
++		.min_uV = (_min),					\
++		.uV_step = (_step),					\
++		.vsel_reg = (_vsel),					\
++		.vsel_mask = WL2868C_VSEL_MASK,				\
++		.enable_reg = (_enreg),					\
++		.enable_mask = BIT(_bit),				\
++		.enable_val = BIT(_bit),				\
++	}
++
++static int wl2868c_read_with_retry(struct device *dev, struct regmap *regmap,
++				   unsigned int reg, unsigned int *val)
++{
++	int ret, i;
++
++	for (i = 0; i < 3; i++) {
++		ret = regmap_read(regmap, reg, val);
++		if (!ret)
++			return 0;
++
++		usleep_range(2000, 3000);
++	}
++
++	return ret;
++}
++
++static const struct regulator_desc wl2868c_regulators[] = {
++	WL2868C_REGULATOR(LDO1, "ldo1", 496000, 2536000, 8000,
++			  WL2868C_LDO1_VOUT, WL2868C_LDO_EN, 0),
++	WL2868C_REGULATOR(LDO2, "ldo2", 496000, 2536000, 8000,
++			  WL2868C_LDO2_VOUT, WL2868C_LDO_EN, 1),
++	WL2868C_REGULATOR(LDO3, "ldo3", 1504000, 3544000, 8000,
++			  WL2868C_LDO3_VOUT, WL2868C_LDO_EN, 2),
++	WL2868C_REGULATOR(LDO4, "ldo4", 1504000, 3544000, 8000,
++			  WL2868C_LDO4_VOUT, WL2868C_LDO_EN, 3),
++	WL2868C_REGULATOR(LDO5, "ldo5", 1504000, 3544000, 8000,
++			  WL2868C_LDO5_VOUT, WL2868C_LDO_EN, 4),
++	WL2868C_REGULATOR(LDO6, "ldo6", 1504000, 3544000, 8000,
++			  WL2868C_LDO6_VOUT, WL2868C_LDO_EN, 5),
++	WL2868C_REGULATOR(LDO7, "ldo7", 1504000, 3544000, 8000,
++			  WL2868C_LDO7_VOUT, WL2868C_LDO_EN, 6),
++};
++
++static const struct regulator_desc et5907_regulators[] = {
++	WL2868C_REGULATOR(LDO1, "ldo1", 496000, 2536000, 8000,
++			  ET5907_LDO1_VOUT, ET5907_LDO_EN, 0),
++	WL2868C_REGULATOR(LDO2, "ldo2", 496000, 2536000, 8000,
++			  ET5907_LDO2_VOUT, ET5907_LDO_EN, 1),
++	WL2868C_REGULATOR(LDO3, "ldo3", 1504000, 3544000, 8000,
++			  ET5907_LDO3_VOUT, ET5907_LDO_EN, 2),
++	WL2868C_REGULATOR(LDO4, "ldo4", 1504000, 3544000, 8000,
++			  ET5907_LDO4_VOUT, ET5907_LDO_EN, 3),
++	WL2868C_REGULATOR(LDO5, "ldo5", 1504000, 3544000, 8000,
++			  ET5907_LDO5_VOUT, ET5907_LDO_EN, 4),
++	WL2868C_REGULATOR(LDO6, "ldo6", 1504000, 3544000, 8000,
++			  ET5907_LDO6_VOUT, ET5907_LDO_EN, 5),
++	WL2868C_REGULATOR(LDO7, "ldo7", 1504000, 3544000, 8000,
++			  ET5907_LDO7_VOUT, ET5907_LDO_EN, 6),
++};
++
++static const struct wl2868c_chip wl2868c_chip = {
++	.name = "wl2868c",
++	.regulators = wl2868c_regulators,
++	.num_regulators = ARRAY_SIZE(wl2868c_regulators),
++};
++
++static const struct wl2868c_chip et5907_chip = {
++	.name = "et5907",
++	.regulators = et5907_regulators,
++	.num_regulators = ARRAY_SIZE(et5907_regulators),
++};
++
++static int wl2868c_get_supplies(struct device *dev, struct wl2868c *wl2868c)
++{
++	int i, ret;
++
++	for (i = 0; i < WL2868C_NUM_SUPPLIES; i++) {
++		wl2868c->supplies[i] =
++			devm_regulator_get_optional(dev, wl2868c_supply_names[i]);
++		if (IS_ERR(wl2868c->supplies[i])) {
++			ret = PTR_ERR(wl2868c->supplies[i]);
++			wl2868c->supplies[i] = NULL;
++			if (ret != -ENODEV)
++				return dev_err_probe(dev, ret,
++						     "failed to get %s supply\n",
++						     wl2868c_supply_names[i]);
++		}
++	}
++
++	return 0;
++}
++
++static int wl2868c_enable_supplies(struct device *dev, struct wl2868c *wl2868c)
++{
++	int i, ret;
++
++	for (i = 0; i < WL2868C_NUM_SUPPLIES; i++) {
++		if (!wl2868c->supplies[i])
++			continue;
++
++		ret = regulator_enable(wl2868c->supplies[i]);
++		if (ret) {
++			dev_err(dev, "failed to enable %s supply: %d\n",
++				wl2868c_supply_names[i], ret);
++			goto disable_supplies;
++		}
++		wl2868c->supplies_enabled |= BIT(i);
++	}
++
++	return 0;
++
++disable_supplies:
++	while (--i >= 0) {
++		if (wl2868c->supplies_enabled & BIT(i)) {
++			if (!regulator_disable(wl2868c->supplies[i]))
++				wl2868c->supplies_enabled &= ~BIT(i);
++		}
++	}
++
++	return ret;
++}
++
++static void wl2868c_disable_supplies(struct wl2868c *wl2868c)
++{
++	int i, ret;
++
++	for (i = WL2868C_NUM_SUPPLIES - 1; i >= 0; i--) {
++		if (!(wl2868c->supplies_enabled & BIT(i)))
++			continue;
++
++		ret = regulator_disable(wl2868c->supplies[i]);
++		if (ret) {
++			dev_warn(wl2868c->dev, "failed to disable %s supply: %d\n",
++				 wl2868c_supply_names[i], ret);
++			continue;
++		}
++		wl2868c->supplies_enabled &= ~BIT(i);
++	}
++}
++
++static void wl2868c_power_off(void *data)
++{
++	struct wl2868c *wl2868c = data;
++
++	if (wl2868c->enable_gpio_asserted) {
++		gpiod_set_value_cansleep(wl2868c->enable_gpio, 0);
++		wl2868c->enable_gpio_asserted = false;
++	}
++
++	wl2868c_disable_supplies(wl2868c);
++}
++
++static int wl2868c_probe(struct i2c_client *client)
++{
++	struct regulator_config config = {};
++	struct device *dev = &client->dev;
++	struct wl2868c *wl2868c;
++	unsigned int id0, id1;
++	int ret, i;
++
++	wl2868c = devm_kzalloc(dev, sizeof(*wl2868c), GFP_KERNEL);
++	if (!wl2868c)
++		return -ENOMEM;
++
++	wl2868c->dev = dev;
++	wl2868c->chip = device_get_match_data(dev);
++	if (!wl2868c->chip)
++		wl2868c->chip = &wl2868c_chip;
++
++	ret = wl2868c_get_supplies(dev, wl2868c);
++	if (ret)
++		return ret;
++
++	ret = wl2868c_enable_supplies(dev, wl2868c);
++	if (ret)
++		return ret;
++
++	wl2868c->enable_gpio = devm_gpiod_get_optional(dev, "enable",
++						       GPIOD_OUT_HIGH);
++	if (IS_ERR(wl2868c->enable_gpio)) {
++		ret = dev_err_probe(dev, PTR_ERR(wl2868c->enable_gpio),
++				    "failed to request enable gpio\n");
++		goto disable_supplies;
++	}
++	wl2868c->enable_gpio_asserted = !!wl2868c->enable_gpio;
++	ret = devm_add_action_or_reset(dev, wl2868c_power_off, wl2868c);
++	if (ret)
++		return ret;
++
++	if (wl2868c->enable_gpio)
++		usleep_range(20000, 25000);
++
++	wl2868c->regmap = devm_regmap_init_i2c(client, &wl2868c_regmap_config);
++	if (IS_ERR(wl2868c->regmap)) {
++		return dev_err_probe(dev, PTR_ERR(wl2868c->regmap),
++				     "failed to initialize regmap\n");
++	}
++
++	ret = wl2868c_read_with_retry(dev, wl2868c->regmap, 0x00, &id0);
++	if (ret) {
++		dev_warn(dev,
++			 "failed to read device id0: %d; registering regulators for power-sequence test\n",
++			 ret);
++	} else {
++		ret = wl2868c_read_with_retry(dev, wl2868c->regmap, 0x01, &id1);
++		if (ret)
++			dev_warn(dev, "failed to read device id1: %d\n", ret);
++		else
++			dev_dbg(dev, "device id: 0x%02x 0x%02x\n", id0, id1);
++	}
++
++	config.dev = dev;
++	config.regmap = wl2868c->regmap;
++	config.driver_data = wl2868c;
++
++	dev_dbg(dev, "using %s register map\n", wl2868c->chip->name);
++
++	for (i = 0; i < wl2868c->chip->num_regulators; i++) {
++		ret = PTR_ERR_OR_ZERO(devm_regulator_register(dev,
++					&wl2868c->chip->regulators[i],
++					&config));
++		if (ret) {
++			return dev_err_probe(dev, ret,
++					     "failed to register ldo%d\n", i + 1);
++		}
++	}
++
++	i2c_set_clientdata(client, wl2868c);
++
++	return 0;
++
++disable_supplies:
++	wl2868c_disable_supplies(wl2868c);
++	return dev_err_probe(dev, ret, "probe failed\n");
++}
++
++static void wl2868c_shutdown(struct i2c_client *client)
++{
++	struct wl2868c *wl2868c = i2c_get_clientdata(client);
++
++	if (wl2868c)
++		wl2868c_power_off(wl2868c);
++}
++
++static const struct of_device_id wl2868c_of_match[] = {
++	{ .compatible = "willsemi,wl2868c", .data = &wl2868c_chip },
++	{ .compatible = "lenovo,wl2868c", .data = &wl2868c_chip },
++	{ .compatible = "vendor,wl2868c", .data = &wl2868c_chip },
++	{ .compatible = "vendor,et5907", .data = &et5907_chip },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, wl2868c_of_match);
++
++static const struct i2c_device_id wl2868c_i2c_id[] = {
++	{ "wl2868c" },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, wl2868c_i2c_id);
++
++static struct i2c_driver wl2868c_i2c_driver = {
++	.driver = {
++		.name = "wl2868c",
++		.of_match_table = wl2868c_of_match,
++	},
++	.probe = wl2868c_probe,
++	.shutdown = wl2868c_shutdown,
++	.id_table = wl2868c_i2c_id,
++};
++module_i2c_driver(wl2868c_i2c_driver);
++
++MODULE_DESCRIPTION("Will Semiconductor WL2868C regulator driver");
++MODULE_LICENSE("GPL");

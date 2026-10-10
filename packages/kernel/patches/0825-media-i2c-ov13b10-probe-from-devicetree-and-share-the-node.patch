@@ -1,0 +1,84 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] media: i2c: ov13b10: probe from devicetree, share a node with a second source
+
+The driver only had ACPI ids. Add an OF match, and let it take its address
+from the "reg" entry named "ov13b10" in "reg-names" so a board that fits
+either this sensor or another one on the same connector can describe both in
+one node, keeping a single sensor endpoint in the CSI-2 graph. If the chip is
+not there the original address is restored for the other driver.
+
+TB321FU units ship a GC13A0 (0x11) or an OV13B10 (0x36) as rear main camera;
+the OV13B10 one was identified on 2026-10-10 (chip id 0x560d42) and captures
+at 4208x3120 through CAMSS.
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index b0d34141a..e262eb245 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -2,6 +2,7 @@
+ // Copyright (c) 2021 Intel Corporation.
+ 
+ #include <linux/acpi.h>
++#include <linux/of.h>
+ #include <linux/clk.h>
+ #include <linux/delay.h>
+ #include <linux/gpio/consumer.h>
+@@ -1585,7 +1586,7 @@ static int ov13b10_check_hwcfg(struct ov13b10 *ov13b)
+ 	return ret;
+ }
+ 
+-static int ov13b10_probe(struct i2c_client *client)
++static int __ov13b10_probe(struct i2c_client *client)
+ {
+ 	struct ov13b10 *ov13b;
+ 	bool full_power;
+@@ -1678,6 +1679,30 @@ static int ov13b10_probe(struct i2c_client *client)
+ 	return ret;
+ }
+ 
++/*
++ * A board that fits either this sensor or another one on the same connector
++ * can describe both in one node, so that the CSI-2 graph has a single sensor
++ * endpoint: the first "reg" belongs to the other sensor and the "reg" entry
++ * named "ov13b10" in "reg-names" is ours. If our chip is not there, give the
++ * address back so the other driver can probe the node.
++ */
++static int ov13b10_probe(struct i2c_client *client)
++{
++	unsigned short addr = client->addr;
++	u32 reg;
++	int idx, ret;
++
++	idx = of_property_match_string(client->dev.of_node, "reg-names", "ov13b10");
++	if (idx > 0 && !of_property_read_u32_index(client->dev.of_node, "reg", idx, &reg))
++		client->addr = reg;
++
++	ret = __ov13b10_probe(client);
++	if (ret)
++		client->addr = addr;
++
++	return ret;
++}
++
+ static void ov13b10_remove(struct i2c_client *client)
+ {
+ 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+@@ -1705,11 +1730,18 @@ static const struct acpi_device_id ov13b10_acpi_ids[] = {
+ MODULE_DEVICE_TABLE(acpi, ov13b10_acpi_ids);
+ #endif
+ 
++static const struct of_device_id ov13b10_of_match[] = {
++	{ .compatible = "ovti,ov13b10" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, ov13b10_of_match);
++
+ static struct i2c_driver ov13b10_i2c_driver = {
+ 	.driver = {
+ 		.name = "ov13b10",
+ 		.pm = pm_ptr(&ov13b10_pm_ops),
+ 		.acpi_match_table = ACPI_PTR(ov13b10_acpi_ids),
++		.of_match_table = ov13b10_of_match,
+ 	},
+ 	.probe = ov13b10_probe,
+ 	.remove = ov13b10_remove,

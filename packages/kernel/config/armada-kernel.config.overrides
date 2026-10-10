@@ -393,6 +393,17 @@ CONFIG_BACKLIGHT_KTZ8866=y                # KTZ8866 backlight
 CONFIG_TOUCHSCREEN_NT36523_SPI=m          # Novatek NT36523 SPI touch (TB321FU, patch 0806)
 CONFIG_SND_SOC_AW882XX=m                  # Awinic AW882xx smart PA speakers
 CONFIG_INPUT_AW86937_Y700=m               # AW86937 vibration motors (TB321FU, patch 0816)
+# TB321FU cameras: WL2868C LDO, GC13A0 or OV13B10 rear main, SC202CS/SC820CS, GT9772B VCM
+CONFIG_REGULATOR_WL2868C=m                # camera LDO (patch 0820)
+CONFIG_VIDEO_GC13A0=m                     # rear main on some units (patch 0821)
+CONFIG_VIDEO_OV13B10=m                    # rear main on other units (patch 0825)
+CONFIG_VIDEO_Y700_SMARTSENS=m             # SC202CS rear secondary, SC820CS front (patch 0822)
+CONFIG_VIDEO_DW9768=m                     # GT9772B focus actuator (patch 0823)
+# the rear sensor node links the PMIC flash LEDs: without V4L2 flash subdevs its
+# async notifier never completes and CAMSS creates no camera nodes
+CONFIG_V4L2_FLASH_LED_CLASS=m
+# libcamera allocates frame buffers from /dev/dma_heap/system; as a module nothing loads it
+CONFIG_DMABUF_HEAPS_SYSTEM=y
 # TB321FU: the kernel Image ships in super separately from the rootfs modules; let
 # modules built against an older vmlinux load without BTF instead of being refused
 CONFIG_MODULE_ALLOW_BTF_MISMATCH=y
