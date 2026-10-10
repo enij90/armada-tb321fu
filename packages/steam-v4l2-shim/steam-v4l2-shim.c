@@ -30,7 +30,7 @@
 #define SDL_YCBCR_COLORSPACE(range, prim, xfer, mat) \
 	((2u << 28) | ((range) << 24) | (2u << 20) | ((prim) << 10) | ((xfer) << 5) | (mat))
 
-// Used until the decoder has reported a format: BT.709 full range, what a
+// Used while the decoder reports no colorimetry: BT.709 full range, what a
 // Windows host streaming H.264 or HEVC declares.
 #define DEFAULT_COLORSPACE SDL_YCBCR_COLORSPACE(2, 1, 1, 1)
 
@@ -100,20 +100,37 @@ int ioctl(int fd, unsigned long req, ...)
 		real_ioctl = dlsym(RTLD_NEXT, "ioctl");
 	int ret = real_ioctl(fd, req, arg);
 
-	if (active && ret == 0 && (req == VIDIOC_G_FMT || req == VIDIOC_S_FMT)) {
+	// The decoder reports the stream's colorimetry on the capture queue after
+	// a source change. Only G_FMT is trusted: the S_FMT reply echoes what
+	// Steam asked for (all defaults), and a report with no colorimetry at all
+	// must not replace one that has it.
+	if (active && ret == 0 && req == VIDIOC_G_FMT) {
 		int err = errno;
 		struct v4l2_format *f = arg;
+		unsigned cs, enc, quant, xfer;
+		int capture = 1;
 		if (f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
-			fmt.colorspace = f->fmt.pix_mp.colorspace;
-			fmt.ycbcr_enc = f->fmt.pix_mp.ycbcr_enc;
-			fmt.quantization = f->fmt.pix_mp.quantization;
-			fmt.xfer_func = f->fmt.pix_mp.xfer_func;
-			have_fmt = 1;
+			cs = f->fmt.pix_mp.colorspace;
+			enc = f->fmt.pix_mp.ycbcr_enc;
+			quant = f->fmt.pix_mp.quantization;
+			xfer = f->fmt.pix_mp.xfer_func;
 		} else if (f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-			fmt.colorspace = f->fmt.pix.colorspace;
-			fmt.ycbcr_enc = f->fmt.pix.ycbcr_enc;
-			fmt.quantization = f->fmt.pix.quantization;
-			fmt.xfer_func = f->fmt.pix.xfer_func;
+			cs = f->fmt.pix.colorspace;
+			enc = f->fmt.pix.ycbcr_enc;
+			quant = f->fmt.pix.quantization;
+			xfer = f->fmt.pix.xfer_func;
+		} else {
+			capture = 0;
+		}
+		if (capture && (cs | enc | quant | xfer)) {
+			if (!have_fmt || cs != fmt.colorspace || enc != fmt.ycbcr_enc ||
+			    quant != fmt.quantization || xfer != fmt.xfer_func)
+				fprintf(stderr, "steam-v4l2-shim: decoder colorimetry cs=%u ycbcr=%u"
+					" quant=%u xfer=%u\n", cs, enc, quant, xfer);
+			fmt.colorspace = cs;
+			fmt.ycbcr_enc = enc;
+			fmt.quantization = quant;
+			fmt.xfer_func = xfer;
 			have_fmt = 1;
 		}
 		errno = err;
@@ -189,7 +206,7 @@ _Bool SDL_SetNumberProperty(uint32_t props, const char *name, int64_t value)
 			fprintf(stderr, "steam-v4l2-shim: texture colorspace 0 -> 0x%08x"
 				" (V4L2 cs=%u ycbcr=%u quant=%u xfer=%u%s)\n", reported,
 				fmt.colorspace, fmt.ycbcr_enc, fmt.quantization, fmt.xfer_func,
-				have_fmt ? "" : ", no format yet");
+				have_fmt ? "" : ", none reported");
 		}
 	}
 	return real(props, name, value);
