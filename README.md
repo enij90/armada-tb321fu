@@ -34,7 +34,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Display, 1600×2560 BOE, 60/90/120/144/165 Hz, landscape | ✅ |
 | Touchscreen | ✅ |
 | GPU (Adreno 750, Turnip/Freedreno) | ✅ |
-| Hardware video decoding (iris) | ✅ |
+| Hardware video decoding (iris), also in Steam Remote Play | ✅ |
 | Speakers (2× AW882xx) | ✅ |
 | Internal microphones | ✅ |
 | Wi-Fi (WCN7850) | ✅ |
@@ -43,7 +43,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
 | Vibration motors (2× AW86937), game rumble | ✅ |
 | Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
-| Cameras | ❌ |
+| Cameras: 3 via libcamera (image quality not tuned yet) | ✅ |
 | CSOT panel | ❌ |
 
 ### Legion G9 controller
@@ -54,7 +54,9 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 - The volume shortcuts of the controller's firmware are off: use Steam's.
 - The **light strips** can be set from Armada Control.
 - The four **back buttons** cannot be used as separate buttons: the controller firmware
-  reports each one as one of the other buttons (set in Lenovo's Android app).
+  reports each one as one of the other buttons. To change it on the controller, press
+  **M** together with the back button, then the button it should send (Lenovo's Android
+  app can do it too). The M button is handled by the firmware only and cannot be mapped.
 
 ### Battery
 
@@ -63,10 +65,30 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 - At 3% it powers off instead of suspending, also while asleep: a flat battery could leave
   it unable to start, even on the charger, until a forced reset.
 
+## Recent changes
+
+- **Display:** the seam between the two halves of a rotated image is fixed: no more doubled
+  line. The display controller rotates the image by default instead of the GPU shader, which
+  uses less power in games and streams.
+- **Cameras:** the three cameras work through libcamera, so apps that use PipeWire or
+  libcamera can see them. Depending on the unit, the main rear camera uses one of two
+  sensors, OmniVision OV13B10 or GalaxyCore GC13A0, and the tablet uses whichever one it
+  finds. Only the OV13B10 has been tested: the GC13A0 driver (from GUF296) is included but
+  untested, reports from units with that sensor are welcome.
+- **Steam Remote Play** (client) decodes video in hardware (iris) and shows the right colours.
+- **Upstream Armada:** merged the latest changes. Proton 11 is now the default, and the
+  Aurora store is available.
+
 ## Known issues
 
 - Sometimes, after GRUB, the tablet restarts once or twice before booting. It then
   starts normally.
+- Camera image quality is not tuned yet: the main rear camera is dark, the second rear
+  camera is blurry, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
+- The clock does not keep time: without network, the date starts from 14 September until
+  the time is synced over the network.
+- The Legion G9 light strips (`armada-rgb`) can fail at boot with "controller not connected".
+  Restarting the service by hand fixes it.
 
 ## Installation
 
@@ -173,6 +195,7 @@ Device-specific parts:
 - device profile `system_files/usr/lib/armada/devices/lenovo-legion-tab.conf`;
 - `tb321fu-*` services, UCM and WirePlumber configuration under `system_files/`;
 - gamescope patch `0030` (EDID pixel clock above 655.35 MHz, needed for 165 Hz);
+- Steam Remote Play hardware decoding shim, `packages/steam-v4l2-shim` (loaded only by Steam's `streaming_client`);
 - InputPlumber profile and patch for the Legion G9, `armada-rgb` backend for its light strips.
 
 ## Credits
@@ -185,6 +208,7 @@ Device-specific parts:
   - the CSOT panel driver;
   - the UEFI/GRUB boot chain;
   - the AW86937 haptics driver;
+  - the camera drivers;
   - most of the firmware.
 - **[Armada](https://github.com/armada-os/armada)**: the OS this is based on (its original README: [README-armada.md](README-armada.md)).
 - **[ROCKNIX](https://github.com/ROCKNIX/distribution)**: SM8650 platform work and inline-rotation support for the display controller.
