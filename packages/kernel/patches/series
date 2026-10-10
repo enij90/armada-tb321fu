@@ -96,6 +96,9 @@
 0032-ASoC-codecs-aw88166-AYN-Products-Specific-modificati.patch
 0618-drm-msm-dp-dont-fail-audio-prepare-when-display-off.patch
 0619-drm-msm-map-submitqueue-priority-onto-high-low.patch
+0620-drm-msm-a6xx-hfi-irq-clears-only-the-cm3-fault.patch
+0621-drm-msm-a6xx-bound-the-gmu-wait-for-a-fault-devcoredump.patch
+0622-drm-msm-a6xx-mask-the-hfi-interrupt-before-booting-the-gmu.patch
 
 # ============== LED / RGB ==============
 0030-leds-Add-driver-for-HEROIC-HTR3212.patch
@@ -103,6 +106,7 @@
 
 # ============== PWM ==============
 0054_sn3112-pwm-driver.patch
+0054c-pwm-sn3112-power-down-across-system-suspend.patch
 
 # ============== SoC / Platform ==============
 20260424_neil_armstrong_arm64_dts_qcom_sm8_456_50_add_missing_cx_power_domain_to_gcc.patch
@@ -115,6 +119,7 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 0533-scsi-ufs-ufs-qcom-enable-only-lane-clocks-in-lane-clock-apis.patch
 0535-scsi-ufs-core-fast-abort-unsupported-query-idns.patch
 0536-scsi-ufs-core-dynamically-disable-timestamp-on-unsupported-devices.patch
+0537-usb-xhci-pci-renesas-let-the-controller-power-off-in-suspend.patch
 0512-PCI-qcom-skip-L23-ready-poll-on-SM8550.patch
 0513-PCI-qcom-honour-an-opp-suspend-opp-as-the-non-s2ram-memory-floor.patch
 0522-PCI-host-common-let-only-endpoints-veto-d3cold.patch

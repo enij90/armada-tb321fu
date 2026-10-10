@@ -10,6 +10,7 @@ python3 -B - "$ROOT" "$WORK" <<'PYEOF'
 import importlib.machinery
 import importlib.util
 import json
+from types import SimpleNamespace
 from pathlib import Path
 import struct
 import sys
@@ -149,68 +150,149 @@ state = {
     "controls": {},
 }
 capture = {
-    "left_x": {"center": 0, "min": -1200, "max": 1250},
-    "left_y": {"center": 0, "min": -1210, "max": 1230},
-    "right_x": {"center": 0, "min": -1220, "max": 1240},
-    "right_y": {"center": 0, "min": -1230, "max": 1260},
-    "left_trigger": {"center": 0, "min": 0, "max": 1500},
-    "right_trigger": {"center": 0, "min": 0, "max": 1510},
+    "left_x": {"min": -1200, "max": 1250},
+    "left_y": {"min": -1210, "max": 1230},
+    "right_x": {"min": -1220, "max": 1240},
+    "right_y": {"min": -1230, "max": 1260},
+    "left_trigger": {"min": 0, "max": 1500},
+    "right_trigger": {"min": 0, "max": 1510},
 }
-calibration.controller_state = lambda: state
-calibration.save_calibration(capture)
+calibration.read_controller_state = lambda: dict(state)
+
+
+def save(captured):
+    calibration._recording = SimpleNamespace(capture=lambda: captured)
+    return calibration.save_calibration()
+
+
+save(capture)
 save_payload = last_write()
 assert save_payload["backend"] == "retroid"
-assert save_payload["axis_leftx_min"] == -1164
-assert save_payload["axis_leftx_deadzone"] == 0
-assert save_payload["axis_leftx_antideadzone"] == 0
+assert save_payload["axis_leftx_min"] == -1140
+assert save_payload["axis_leftx_deadzone"] == 57
+assert save_payload["axis_leftx_antideadzone"] == 57
 assert save_payload["trigger_right_max"] == 1464
 assert save_payload["trigger_right_deadzone"] == 45
 assert save_payload["trigger_right_antideadzone"] == 45
+assert calibration._recording is None
+try:
+    calibration.save_calibration()
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("saved with nothing calibrated")
 
 sticks = {key: capture[key] for key in ("left_x", "left_y", "right_x", "right_y")}
 shaped = {"axis_leftx_min": -1200, "axis_leftx_center": 5, "axis_leftx_max": 1200,
           "axis_leftx_deadzone": 84, "axis_leftx_antideadzone": 84}
-unmoved = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 0, "min": -3, "max": 4}}, shaped
-)
+unmoved = calibration.calibration_from_capture({**capture, "left_x": {"min": -3, "max": 4}}, shaped)
 assert {key: unmoved[key] for key in shaped} == shaped
-again = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 0, "min": -1116, "max": 1166}}, shaped
-)
-assert again["axis_leftx_max"] == 1164
+untouched = calibration.calibration_from_capture({"left_y": capture["left_y"]}, shaped)
+assert {key: untouched[key] for key in shaped} == shaped
+again = calibration.calibration_from_capture({**capture, "left_x": {"min": -1200, "max": 1250}}, shaped)
+assert again["axis_leftx_max"] == 1140
 assert again["axis_leftx_center"] == 5
 assert again["axis_leftx_deadzone"] == 84
-repeated = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 0, "min": -1116, "max": 1166}}, again
-)
-assert {key: repeated[key] for key in shaped} == {key: again[key] for key in shaped}
-threshold = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 0, "min": -256, "max": 256}}, {}
-)
-assert threshold["axis_leftx_max"] == 248
+assert again["axis_leftx_antideadzone"] == 84
+threshold = calibration.calibration_from_capture({**capture, "left_x": {"min": -256, "max": 256}}, {})
+assert threshold["axis_leftx_max"] == 243
 
-legacy_stick = {"axis_leftx_center": 0, "axis_leftx_deadzone": 84, "axis_leftx_antideadzone": 0}
+offset = calibration.calibration_from_capture(
+    {**capture, "left_x": {"min": -960, "max": 1140, "rest_min": 20, "rest_max": 60}}, {"axis_leftx_deadzone": 84}
+)
+assert offset["axis_leftx_center"] == -40
+assert offset["axis_leftx_max"] == 950
+assert offset["axis_leftx_min"] == -950
+assert offset["axis_leftx_deadzone"] == 47
+assert offset["axis_leftx_antideadzone"] == 47
+wandering = calibration.calibration_from_capture(
+    {**capture, "left_x": {"min": -960, "max": 1140, "rest_min": -60, "rest_max": 100}}, {}
+)
+assert wandering["axis_leftx_center"] == -20
+assert wandering["axis_leftx_max"] == 931
+assert wandering["axis_leftx_deadzone"] == 120
 masked = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 0, "min": -1140, "max": 1260}}, legacy_stick
+    {**capture, "left_x": {"min": -1200, "max": 1200, "rest_min": 0, "rest_max": 150}},
+    {"axis_leftx_deadzone": 100, "axis_leftx_antideadzone": 100},
 )
-assert masked["axis_leftx_center"] == 0
-assert masked["axis_leftx_deadzone"] == 84
-assert masked["axis_leftx_antideadzone"] == 84
-visible = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 60, "min": -1140, "max": 1260}}, {}
-)
-assert visible["axis_leftx_center"] == -60
-assert visible["axis_leftx_max"] == 1164
-assert visible["axis_leftx_deadzone"] == 0
+assert masked["axis_leftx_center"] == -75
+assert masked["axis_leftx_deadzone"] == 175
 default_deadzone = calibration.calibration_from_capture(capture, {}, 70)
 assert default_deadzone["axis_leftx_deadzone"] == 70
 assert default_deadzone["axis_leftx_antideadzone"] == 70
 assert calibration.stick_defaults(mangmi_event, "mangmi") == (1408, 70)
-offset = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 40, "min": -960, "max": 1140}}, {}
+flipped = calibration.calibration_from_capture(
+    {**capture, "left_x": {"min": -960, "max": 1140, "rest_min": 40, "rest_max": 40}},
+    {"axis_leftx_center": 5}, 0, {"axis_leftx"},
 )
-assert offset["axis_leftx_center"] == -40
-assert offset["axis_leftx_max"] == 970
+assert flipped["axis_leftx_center"] == 45
+assert flipped["axis_leftx_max"] == 950
+assert flipped["axis_lefty_center"] == 0
+assert calibration.inverted_axes(retroid_event, "retroid") == frozenset()
+assert calibration.inverted_axes(rsinput_event, "rsinput") == frozenset()
+
+
+def controls(lx=0, ly=0, rx=0, ry=0, lt=0, rt=0, reach=1408, fuzz=0):
+    axis = lambda value: {"value": value, "min": -reach, "max": reach, "fuzz": fuzz}
+    trigger = lambda value: {"value": value, "min": 0, "max": 1552, "fuzz": 30}
+    return {"left_x": axis(lx), "left_y": axis(ly), "right_x": axis(rx), "right_y": axis(ry),
+            "left_trigger": trigger(lt), "right_trigger": trigger(rt)}
+
+
+def hold(recording, clock, seconds, **kwargs):
+    for _ in range(round(seconds / 0.05)):
+        clock[0] += 0.05
+        recording.sample(controls(**kwargs), clock[0])
+
+
+recording = calibration.Recording({})
+clock = [0.0]
+hold(recording, clock, 0.05, lx=-47, ly=42)
+assert recording.rests["left_stick"] == [(-47, 42)]
+hold(recording, clock, 0.6, lx=-47, ly=42)
+assert not recording.progress()["right_stick"]["left"]
+hold(recording, clock, 0.3, lx=-1248, ly=131)
+filling = recording.progress()["left_stick"]["left"]
+assert 0 < filling < 1, filling
+hold(recording, clock, 0.4, lx=-1248, ly=131)
+assert recording.progress()["left_stick"]["left"] == 1
+assert not recording.progress()["ready"]
+hold(recording, clock, 0.6, lx=-62, ly=49)
+for step in range(20):
+    hold(recording, clock, 0.05, lx=1100 + step * 5, ly=-300 + step * 30)
+assert recording.progress()["left_stick"]["right"] < 1
+hold(recording, clock, 0.6, lx=1052, ly=-70)
+hold(recording, clock, 0.6, lx=-21, ly=98)
+assert recording.progress()["ready"]
+hold(recording, clock, 0.6, lx=-48, ly=-1226)
+hold(recording, clock, 0.6, lx=-129, ly=1168)
+hold(recording, clock, 0.6, lx=-48, ly=57)
+hold(recording, clock, 0.6, lx=-800, ly=60)
+hold(recording, clock, 0.6, lx=-48, ly=57)
+assert recording.capture()["left_x"]["min"] == -1248
+hold(recording, clock, 0.6, lx=-1260, ly=60)
+hold(recording, clock, 0.6, lx=0, ly=0, lt=1500)
+held = recording.capture()
+assert held["left_x"] == {"min": -1260, "max": 1052, "rest_min": -62, "rest_max": 0}, held
+assert held["left_y"] == {"min": -1226, "max": 1168, "rest_min": 0, "rest_max": 98}, held
+assert "right_x" not in held and "right_trigger" not in held
+assert held["left_trigger"]["max"] == 1500 and held["left_trigger"]["min"] == 0
+assert recording.progress()["left_trigger"] == 1
+assert recording.progress()["right_trigger"] == 0
+measured = calibration.calibration_from_capture(held, {})
+assert measured["axis_leftx_center"] == 31
+assert measured["axis_leftx_max"] == (1052 + 31) * 95 // 100
+assert measured["axis_leftx_deadzone"] == 51
+assert "axis_rightx_max" not in measured
+
+shaped_recording = calibration.Recording({"axis_leftx_antideadzone": 70, "axis_lefty_antideadzone": 70})
+clock = [0.0]
+hold(shaped_recording, clock, 0.6, reach=1070)
+hold(shaped_recording, clock, 0.6, lx=-1060, reach=1070)
+hold(shaped_recording, clock, 0.6, lx=6, reach=1070, fuzz=16)
+hold(shaped_recording, clock, 0.6, lx=1080, reach=1070)
+assert shaped_recording.capture()["left_x"] == {"min": -1130, "max": 1150, "rest_min": 0, "rest_max": 0}
+
 resting = calibration.calibration_from_capture(
     {**sticks, "left_trigger": {"min": 60, "max": 1100}, "right_trigger": {"min": 0, "max": 40}},
     {"trigger_right_max": 1400, "trigger_right_deadzone": 50, "trigger_right_antideadzone": 50},
@@ -279,15 +361,7 @@ assert 0 < pulled["min"] <= 16
 assert len(set(deadzones)) == 1, deadzones
 assert abs(fuzzy["trigger_left_max"] - 1076) <= 8
 
-fuzzy_stick = calibration.calibration_from_capture(
-    {**capture, "left_x": {"center": 6, "min": -1130, "max": 1130, "fuzz": 16}},
-    {"axis_leftx_center": 5, "axis_leftx_deadzone": 70, "axis_leftx_antideadzone": 70},
-    70,
-)
-assert fuzzy_stick["axis_leftx_center"] == 5
-assert fuzzy_stick["axis_leftx_max"] == 1164
-
-calibration.save_calibration(capture)
+save(capture)
 assert last_write()["version"] == 2
 assert calls[-1][0] == "write_config"
 calibration.begin_calibration_intercept = lambda: True
@@ -303,7 +377,7 @@ def failing_call(action, **payload):
 
 
 calibration.begin_session("modal")
-calibration.save_calibration(capture)
+save(capture)
 calibration.call = failing_call
 try:
     calibration.end_session("modal")
@@ -322,7 +396,7 @@ assert len(calls) == reloads
 saves = len(calls)
 (retroid_params / "trigger_left_max").unlink()
 try:
-    calibration.save_calibration(capture)
+    save(capture)
 except RuntimeError:
     pass
 else:
@@ -338,14 +412,14 @@ except RuntimeError:
 else:
     raise AssertionError("tester-only controller reset was accepted")
 
-calibration.controller_state = lambda: {
+calibration.read_controller_state = lambda: {
     "supported": True,
     "canApply": False,
     "backend": "tester",
     "controls": {},
 }
 try:
-    calibration.save_calibration(capture)
+    save(capture)
 except RuntimeError:
     pass
 else:
