@@ -1,0 +1,59 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/panel: nt36523: declare a VRR range on the kirby panels
+
+The Lenovo TB321FU kirby panels (CSOT and BOE) support dynamic refresh
+through VFP extension, as the stock firmware dfps_immediate_porch_mode_vfp
+mode down to 30 Hz confirms.  Declare a VRR-capable monitor range so the
+DPU AVR block (patch 0107) can hold the vertical front porch between
+commits instead of scanning out repeated frames at the fixed refresh rate.
+
+The floor is set to 40 Hz: low enough to cover 30-fps game output with
+margin, high enough to keep the maximum frame period (25 ms) comfortable.
+
+--- a/drivers/gpu/drm/panel/panel-novatek-nt36523.c
++++ b/drivers/gpu/drm/panel/panel-novatek-nt36523.c
+@@ -82,6 +82,7 @@
+ 	bool has_dcs_backlight;
+ 	bool has_dsc;
+ 	bool display_on_after_dsc;
++	unsigned int vrr_min_hz;
+ };
+ 
+ static inline struct panel_info *to_panel_info(struct drm_panel *panel)
+@@ -1396,6 +1397,7 @@
+ 	.is_dual_dsi = true,
+ 	.has_dsc = true,
+ 	.display_on_after_dsc = true,
++	.vrr_min_hz = 40,
+ };
+ 
+ static int kirby_boe_init_sequence(struct panel_info *pinfo)
+@@ -1502,6 +1504,7 @@
+ 	.is_dual_dsi = true,
+ 	.has_dsc = true,
+ 	.display_on_after_dsc = true,	/* reuses kirby_csot_display_on_sequence (identical) */
++	.vrr_min_hz = 40,
+ };
+ 
+ static const struct panel_desc j606f_boe_desc = {
+@@ -1727,6 +1730,20 @@
+ 	connector->display_info.width_mm = pinfo->desc->width_mm;
+ 	connector->display_info.height_mm = pinfo->desc->height_mm;
+ 	connector->display_info.bpc = pinfo->desc->bpc;
++	if (pinfo->desc->vrr_min_hz) {
++		unsigned int max_hz = 0;
++
++		for (i = 0; i < pinfo->desc->num_modes; i++) {
++			const struct drm_display_mode *m = &pinfo->desc->modes[i];
++
++			max_hz = max_t(unsigned int, max_hz,
++				       DIV_ROUND_UP(m->clock * 1000,
++						    m->htotal * m->vtotal));
++		}
++		connector->display_info.monitor_range.min_vfreq = pinfo->desc->vrr_min_hz;
++		connector->display_info.monitor_range.max_vfreq = max_hz;
++		drm_connector_set_vrr_capable_property(connector, true);
++	}
+ 
+ 	return pinfo->desc->num_modes;
+ }

@@ -1,0 +1,32 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dpu: count AVR lines with the mode's htotal
+
+dpu_encoder_phys_vid_setup_avr() divides the mode's pixel clock by the
+INTF's htotal. The INTF timing is halved on a split display and narrowed
+by DSC, so the longest frame came out htotal(mode) / htotal(INTF) times
+too long: on the dual-DSI DSC TB321FU, 3.7 times, a 92.7 ms frame for a
+40 Hz minimum.
+
+Count the lines with the mode's htotal, which goes with its clock;
+INTF_AVR_VTOTAL stays in INTF pixels (lines * INTF htotal).
+
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
+@@ -277,8 +277,15 @@
+ 	    !intf->ops.avr_trigger)
+ 		return;
+ 
+-	if (min_hz && htotal)
+-		lines = div_u64((u64)clock_khz * 1000, htotal * min_hz);
++	/*
++	 * The clock is the whole mode's: count lines with the mode's htotal.
++	 * The INTF's htotal is smaller on a split or DSC display, and gave a
++	 * frame that many times too long (92 ms instead of 25 ms on the
++	 * dual-DSI TB321FU).
++	 */
++	if (min_hz && phys_enc->cached_mode.htotal)
++		lines = div_u64((u64)clock_khz * 1000,
++				phys_enc->cached_mode.htotal * min_hz);
+ 
+ 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
+ 	intf->ops.enable_avr(intf, false);

@@ -1,0 +1,29 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dpu: set DSI AVR_SUPPORT on all bonded tiles
+
+dpu_encoder_set_dsi_avr() only set the AVR_SUPPORT bit on the first DSI
+host (h_tile_instance[0]).  On a bonded-DSI display the second host kept
+its VID_CFG0 without the bit, so its video engine did not know that AVR
+was active.
+
+Loop over every tile so both DSI controllers carry AVR_SUPPORT while the
+DPU INTFs run in AVR mode.
+
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -312,10 +312,12 @@
+ {
+ 	struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(drm_enc);
+ 	struct msm_drm_private *priv = drm_enc->dev->dev_private;
+-	int index = dpu_enc->disp_info.h_tile_instance[0];
++	int i;
+ 
+-	if (dpu_enc->disp_info.intf_type == INTF_DSI)
+-		msm_dsi_set_avr(priv->kms->dsi[index], enable);
++	if (dpu_enc->disp_info.intf_type == INTF_DSI) {
++		for (i = 0; i < dpu_enc->disp_info.num_of_h_tiles; i++)
++			msm_dsi_set_avr(priv->kms->dsi[dpu_enc->disp_info.h_tile_instance[i]], enable);
++	}
+ }
+ 
+ /**
