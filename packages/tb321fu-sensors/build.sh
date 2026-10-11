@@ -32,6 +32,7 @@ dnf -y install "$top"/RPMS/*/libssc-[0-9]*.rpm "$top"/RPMS/*/libssc-devel-*.rpm
 build hexagonrpc
 build iio-sensor-proxy
 build tb321fu-imu-bridge
+build tb321fu-als-bridge
 
 # Runtime packages only: libssc-devel is a build dependency.
 find "$top/RPMS" -name '*.rpm' ! -name '*-devel-*' -exec cp {} /work/out/ \;

@@ -393,6 +393,7 @@ CONFIG_BACKLIGHT_KTZ8866=y                # KTZ8866 backlight
 CONFIG_TOUCHSCREEN_NT36523_SPI=m          # Novatek NT36523 SPI touch (TB321FU, patch 0806)
 CONFIG_SND_SOC_AW882XX=m                  # Awinic AW882xx smart PA speakers
 CONFIG_INPUT_AW86937_Y700=m               # AW86937 vibration motors (TB321FU, patch 0816)
+CONFIG_TB321FU_ALS=y                      # light sensor fed by tb321fu-als-bridge from SSC (patch 0827)
 # TB321FU cameras: WL2868C LDO, GC13A0 or OV13B10 rear main, SC202CS/SC820CS, GT9772B VCM
 CONFIG_REGULATOR_WL2868C=m                # camera LDO (patch 0820)
 CONFIG_VIDEO_GC13A0=m                     # rear main on some units (patch 0821)

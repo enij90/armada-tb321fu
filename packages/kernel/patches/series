@@ -253,3 +253,4 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0824-media-qcom-camss-csid-gen3-plain16-rdi-guf296.patch
 0825-media-i2c-ov13b10-probe-from-devicetree-and-share-the-node.patch
 0826-drm-msm-dpu-count-avr-lines-with-the-modes-htotal.patch
+0827-iio-light-add-tb321fu-ambient-light-sensor-fed-from-userspace.patch
