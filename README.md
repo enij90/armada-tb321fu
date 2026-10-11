@@ -32,6 +32,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Feature | Status |
 | --- | --- |
 | Display, 1600×2560 BOE, 60/90/120/144/165 Hz, landscape | ✅ |
+| Variable refresh rate (VRR), 40–165 Hz | ✅ |
 | Touchscreen | ✅ |
 | GPU (Adreno 750, Turnip/Freedreno) | ✅ |
 | Hardware video decoding (iris), also in Steam Remote Play | ✅ |
@@ -43,6 +44,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
 | Vibration motors (2× AW86937), game rumble | ✅ |
 | Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
+| Adaptive brightness (light sensor) | ✅ |
 | Cameras: 3 via libcamera (image quality not tuned yet) | ✅ |
 | CSOT panel | ❌ |
 
@@ -67,6 +69,14 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 
 ## Recent changes
 
+- **Variable refresh rate (VRR):** the display follows the game's frame rate between 40 and
+  165 Hz. Turn it on in the Quick Access menu. At rest the display drops to
+  40 Hz, which saves about half a watt. Two fixes to Armada's VRR patches were needed for
+  this tablet's display, which is driven by two DSI links with compression.
+- **Adaptive brightness:** the light sensor now drives Steam's adaptive brightness
+  (Settings → Display).
+- **Upstream Armada:** merged the latest changes, among them the Decky Quick Access
+  alignment and "Switch to Desktop" on the first boot.
 - **Display:** the seam between the two halves of a rotated image is fixed: no more doubled
   line. The display controller rotates the image by default instead of the GPU shader, which
   uses less power in games and streams.
@@ -76,8 +86,6 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
   finds. Only the OV13B10 has been tested: the GC13A0 driver (from GUF296) is included but
   untested, reports from units with that sensor are welcome.
 - **Steam Remote Play** (client) decodes video in hardware (iris) and shows the right colours.
-- **Upstream Armada:** merged the latest changes. Proton 11 is now the default, and the
-  Aurora store is available.
 
 ## Known issues
 
@@ -196,7 +204,9 @@ Device-specific parts:
 - `tb321fu-*` services, UCM and WirePlumber configuration under `system_files/`;
 - gamescope patch `0030` (EDID pixel clock above 655.35 MHz, needed for 165 Hz);
 - Steam Remote Play hardware decoding shim, `packages/steam-v4l2-shim` (loaded only by Steam's `streaming_client`);
-- InputPlumber profile and patch for the Legion G9, `armada-rgb` backend for its light strips.
+- InputPlumber profile and patch for the Legion G9, `armada-rgb` backend for its light strips;
+- sensors from the Qualcomm Sensor Core (libssc), `packages/tb321fu-sensors`: motion sensors
+  for InputPlumber and the light sensor for Steam (kernel patch `0827`).
 
 ## Credits
 
