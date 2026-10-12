@@ -1,0 +1,104 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] backlight: ktz8866: use linear mapping, ignore the PWM input, optional floor
+
+The driver registers a BACKLIGHT_SCALE_LINEAR device and sets the level
+over I2C, but never programs BL_CFG1. The Lenovo Legion Tab Gen 3 (TB321FU)
+bootloader leaves it at 0xd3: exponential mapping (0.3% per code, about
+500:1 over the range) and the PWM input on. Userspace then applies its own
+perceptual curve on top of the chip one and the lower half of the slider
+barely changes the light. Restore linear mapping with PWM off, as the
+Lenovo kernel does (0xda).
+
+With linear mapping the lowest Steam slider step (level 20) is brighter
+than the panel needs in the dark, while code 3 is still visible. The
+optional lenovo,brightness-floor = <level code> property maps that level
+to that code: lower levels scale down to it, higher ones stay linear up to
+the maximum.
+---
+--- a/drivers/video/backlight/ktz8866.c	2026-10-12 12:33:39.169542175 +0200
++++ b/drivers/video/backlight/ktz8866.c	2026-10-12 18:18:57.174796875 +0200
+@@ -40,6 +40,8 @@
+ 
+ /* definition */
+ #define BL_EN_BIT BIT(6)
++#define BLED_MAP_LINEAR BIT(3)
++#define PWM_EN BIT(0)
+ #define LCD_BIAS_EN 0x9F
+ #define PWM_HYST 0x5
+ 
+@@ -48,6 +50,9 @@
+ 	struct regmap *regmap;
+ 	bool led_on;
+ 	struct gpio_desc *enable_gpio;
++	/* Optional: level floor_level is driven at code floor_code (see probe). */
++	u32 floor_level;
++	u32 floor_code;
+ };
+ 
+ static const struct regmap_config ktz8866_regmap_config = {
+@@ -68,6 +73,24 @@
+ 	return regmap_update_bits(ktz->regmap, reg, mask, val);
+ }
+ 
++/*
++ * Map a brightness level to the chip code. Without a floor this is the
++ * identity. With one, floor_level lands on floor_code, the levels below it
++ * scale down to it and the ones above stay linear up to the maximum, so a
++ * userspace minimum can reach the lowest current the panel still shows.
++ */
++static unsigned int ktz8866_code(struct ktz8866 *ktz, unsigned int level)
++{
++	unsigned int from = ktz->floor_level, to = ktz->floor_code;
++
++	if (!from || !level)
++		return level;
++	if (level <= from)
++		return max(1U, DIV_ROUND_CLOSEST(level * to, from));
++	return to + DIV_ROUND_CLOSEST((level - from) * (MAX_BRIGHTNESS - to),
++				      MAX_BRIGHTNESS - from);
++}
++
+ static int ktz8866_backlight_update_status(struct backlight_device *backlight_dev)
+ {
+ 	struct ktz8866 *ktz = bl_get_data(backlight_dev);
+@@ -81,6 +104,8 @@
+ 		ktz->led_on = false;
+ 	}
+ 
++	brightness = ktz8866_code(ktz, brightness);
++
+ 	/* Set brightness */
+ 	ktz8866_write(ktz, BL_BRT_LSB, brightness & 0x7);
+ 	ktz8866_write(ktz, BL_BRT_MSB, (brightness >> 3) & 0xFF);
+@@ -97,6 +122,13 @@
+ {
+ 	unsigned int val = 0;
+ 
++	/*
++	 * Brightness is reported as a linear scale set over I2C, but a
++	 * bootloader may leave exponential mapping and the PWM input on
++	 * (the Lenovo TB321FU ABL writes 0xd3). Back to the power-on mapping.
++	 */
++	ktz8866_update_bits(ktz, BL_CFG1, BLED_MAP_LINEAR | PWM_EN, BLED_MAP_LINEAR);
++
+ 	if (!of_property_read_u32(ktz->client->dev.of_node, "current-num-sinks", &val))
+ 		ktz8866_write(ktz, BL_EN, BIT(val) - 1);
+ 	else
+@@ -151,6 +183,17 @@
+ 	if (IS_ERR(ktz->enable_gpio))
+ 		return PTR_ERR(ktz->enable_gpio);
+ 
++	{
++		u32 floor[2];
++
++		if (!of_property_read_u32_array(client->dev.of_node, "lenovo,brightness-floor",
++						floor, 2) &&
++		    floor[0] < MAX_BRIGHTNESS && floor[1] >= 1 && floor[1] <= floor[0]) {
++			ktz->floor_level = floor[0];
++			ktz->floor_code = floor[1];
++		}
++	}
++
+ 	memset(&props, 0, sizeof(props));
+ 	props.type = BACKLIGHT_RAW;
+ 	props.max_brightness = MAX_BRIGHTNESS;

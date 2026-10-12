@@ -878,6 +878,11 @@
 
 		current-num-sinks = <4>;
 		max-brightness = <2047>;
+		/*
+		 * Steam's lowest slider step writes 20; the panel still shows code 3
+		 * (about 0.15 % of full current), so let the slider reach it.
+		 */
+		lenovo,brightness-floor = <20 3>;
 			default-brightness-level = <1027>;
 		};
 
