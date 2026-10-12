@@ -1,0 +1,33 @@
+From: guf296 <guf296@126.com>
+Subject: [PATCH] soc: qcom: smp2p: reset inbound edge cache only on SSR
+
+Only clear the inbound entries' last values when the remote side
+actually restarted.
+
+Taken from https://github.com/GUF296/linux branch TB321FU-7.1.1
+(5df8e852e), the Lenovo Legion Tab Gen 3 / Y700 2025 (TB321FU) bring-up.
+---
+  drivers/soc/qcom/smp2p.c | 10 ++++++----
+  1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/soc/qcom/smp2p.c b/drivers/soc/qcom/smp2p.c
+index af0ceeaf6..d7360b276 100644
+--- a/drivers/soc/qcom/smp2p.c
++++ b/drivers/soc/qcom/smp2p.c
+@@ -194,10 +194,12 @@ static bool qcom_smp2p_check_ssr(struct qcom_smp2p *smp2p)
+ 
+ 	restart_done = in->flags & BIT(SMP2P_FLAGS_RESTART_DONE_BIT);
+ 	restart = restart_done != smp2p->ssr_ack;
+-	list_for_each_entry(entry, &smp2p->inbound, node) {
+-		if (!entry->value)
+-			continue;
+-		entry->last_value = 0;
++	if (restart) {
++		list_for_each_entry(entry, &smp2p->inbound, node) {
++			if (!entry->value)
++				continue;
++			entry->last_value = 0;
++		}
+ 	}
+ 
+ 	return restart;
