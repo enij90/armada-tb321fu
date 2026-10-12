@@ -2,3 +2,8 @@
 # composite device with the profile's default target, so re-apply the selected
 # controller type (controller-type retries until the device exists).
 ACTION=="add", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="3537", ATTRS{id/product}=="1134", TAG+="systemd", ENV{SYSTEMD_WANTS}+="armada-controller-type.service"
+
+# Its vendor HID interface (lighting) shows up after armada-rgb has run at boot, and
+# again after a resume or a USB re-enumeration: restore the saved lighting then.
+# (Interface 1 by ID_PATH: ATTRS keys of one rule must match the same parent.)
+ACTION=="add", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3537", ATTRS{idProduct}=="1134", ENV{ID_PATH}=="*:1.1", TAG+="systemd", ENV{SYSTEMD_WANTS}+="armada-rgb.service"
