@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 import time
+from collections import deque
 from pathlib import Path
 
 LOG = logging.getLogger("armada-steam-charging-eta")
@@ -14,11 +15,82 @@ UP = [
     "org.freedesktop.UPower.Device",
 ]
 ROOT_UP = [*UP[:4], "/org/freedesktop/UPower", "org.freedesktop.UPower"]
+SUPPLIES = Path("/sys/class/power_supply")
+# Charge readings older than WINDOW seconds are dropped; the rate needs MIN_SPAN.
+WINDOW = 180
+MIN_SPAN = 60
+# Above TAPER_FROM of full charge the charger tapers (constant voltage):
+# assume the rest goes in at TAPER times the rate measured below it.
+TAPER_FROM = 0.8
+TAPER = 0.5
 
 
-def upower(name, root=False):
-    output = subprocess.check_output([*(ROOT_UP if root else UP), name], text=True, timeout=2)
-    return output.split(maxsplit=1)[1].strip()
+def upower(*names, root=False):
+    # One busctl call for all the properties: each one prints a "type value" line.
+    output = subprocess.check_output([*(ROOT_UP if root else UP), *names], text=True, timeout=2)
+    values = [line.split(maxsplit=1)[1].strip() for line in output.splitlines() if line.strip()]
+    return values if len(names) > 1 else values[0]
+
+
+def battery():
+    for supply in sorted(SUPPLIES.iterdir()):
+        try:
+            if (supply / "type").read_text().strip() == "Battery":
+                return supply
+        except OSError:
+            pass
+    return None
+
+
+def read_int(path, default=None):
+    try:
+        return int(path.read_text().strip())
+    except (OSError, ValueError):
+        return default
+
+
+class ChargeEta:
+    """Time to full from how fast the battery's charge counter rises.
+
+    Some battery firmware reports no time to full, a stale power reading or a
+    current with the wrong sign, and UPower then has no charging estimate
+    (Steam shows ?h ?m). The charge counter itself is reliable.
+    """
+
+    def __init__(self):
+        self.samples = deque()
+
+    def update(self, plugged):
+        bat = battery()
+        if bat is None or not plugged:
+            self.samples.clear()
+            return -1
+        unit = "charge" if (bat / "charge_now").exists() else "energy"
+        level = read_int(bat / f"{unit}_now")
+        full = read_int(bat / f"{unit}_full")
+        if level is None or not full:
+            return -1
+        limit = read_int(bat / "charge_control_end_threshold", 100) or 100
+        target = full * min(limit, 100) / 100
+
+        now = time.monotonic()
+        self.samples.append((now, level))
+        while now - self.samples[0][0] > WINDOW:
+            self.samples.popleft()
+        start, first = self.samples[0]
+        if now - start < MIN_SPAN:
+            return -1
+        rate = (level - first) / (now - start)
+        # Not rising: the charger gives less than the device draws.
+        if rate <= 0 or level >= target:
+            return -1
+
+        taper = full * TAPER_FROM
+        if level < taper:
+            return int(max(0, min(target, taper) - level) / rate
+                       + max(0, target - taper) / (rate * TAPER))
+        # Already tapering: the measured rate keeps falling towards the end.
+        return int((target - level) / (rate * (1 + TAPER) / 2))
 
 
 def write(name, value):
@@ -27,12 +99,13 @@ def write(name, value):
     os.replace(temporary, ROOT / name)
 
 
-def publish():
-    state = int(upower("State"))
+def publish(eta):
+    state, percent, time_to_full, time_to_empty = upower(
+        "State", "Percentage", "TimeToFull", "TimeToEmpty"
+    )
+    state, percent = int(state), float(percent)
+    time_to_full, time_to_empty = int(time_to_full), int(time_to_empty)
     on_battery = upower("OnBattery", root=True) == "true"
-    percent = float(upower("Percentage"))
-    time_to_full = int(upower("TimeToFull"))
-    time_to_empty = int(upower("TimeToEmpty"))
 
     charging = state == 1
     discharging = state in (2, 3, 6)
@@ -41,7 +114,9 @@ def publish():
         "Full" if state == 4 else "Not charging"
     )
     # Steam uses these separate vpower files for charging and discharge ETAs.
-    secs_until_full = time_to_full if charging and time_to_full > 0 else -1
+    secs_until_full = eta.update(not on_battery) if charging else -1
+    if secs_until_full <= 0 and charging and time_to_full > 0:
+        secs_until_full = time_to_full
     secs_until_shutdown = time_to_empty if discharging and time_to_empty > 0 else -1
 
     values = {
@@ -58,15 +133,16 @@ def publish():
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     last_error = None
+    eta = ChargeEta()
     while True:
         try:
-            publish()
+            publish(eta)
             last_error = None
         except Exception as error:
             if str(error) != last_error:
                 LOG.warning("vpower update unavailable: %s", error)
                 last_error = str(error)
-        time.sleep(2)
+        time.sleep(3)
 
 
 if __name__ == "__main__":
