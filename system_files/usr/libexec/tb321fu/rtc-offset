@@ -1,0 +1,42 @@
+#!/bin/bash
+# The PMIC RTC (rtc-pm8xxx) keeps counting through power-off but has no
+# offset to wall time: the UEFI variable it expects is missing and the SDAM
+# cell AYANEO uses does not exist on this PMIC (SDAM 2 is 128 bytes). rtc-efi
+# reads nothing, so every boot starts in the past until NTP. Keep the offset
+# in /var instead.
+#   restore: set the clock from the RTC counter and the saved offset
+#   save:    store the offset, only while chrony is synchronised
+set -eu
+
+OFFSET_FILE=/var/lib/tb321fu/rtc-offset
+
+rtc=
+for n in /sys/class/rtc/rtc*; do
+	case "$(cat "$n/name")" in rtc-pm8xxx*) rtc=$n; break ;; esac
+done
+[ -n "$rtc" ] || { echo "no rtc-pm8xxx device" >&2; exit 1; }
+counter=$(cat "$rtc/since_epoch")
+
+case "${1:-}" in
+restore)
+	[ -s "$OFFSET_FILE" ] || { echo "no saved offset yet"; exit 0; }
+	offset=$(cat "$OFFSET_FILE")
+	now=$(date +%s)
+	want=$((counter + offset))
+	if [ "$want" -gt $((now + 2)) ] || [ "$want" -lt $((now - 2)) ]; then
+		date -s "@$want" >/dev/null
+		echo "clock set from the RTC: $(date -d "@$want" "+%F %T") (was $(date -d "@$now" "+%F %T"))"
+	fi
+	;;
+save)
+	chronyc -n tracking 2>/dev/null | grep -q "^Leap status *: Normal" \
+		|| { echo "clock not synchronised, offset not saved"; exit 0; }
+	mkdir -p "${OFFSET_FILE%/*}"
+	echo $(($(date +%s) - counter)) > "$OFFSET_FILE.new"
+	mv -f "$OFFSET_FILE.new" "$OFFSET_FILE"
+	;;
+*)
+	echo "usage: $0 restore|save" >&2
+	exit 2
+	;;
+esac

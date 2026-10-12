@@ -1,0 +1,10 @@
+[Unit]
+Description=Lenovo TB321FU: save the PMIC RTC offset after NTP and every 6 hours
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target

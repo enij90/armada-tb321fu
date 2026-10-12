@@ -1,0 +1,16 @@
+[Unit]
+Description=Lenovo TB321FU: set the clock from the PMIC RTC and a saved offset
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+DefaultDependencies=no
+RequiresMountsFor=/var/lib/tb321fu
+After=local-fs.target
+Before=time-set.target sysinit.target chronyd.service
+Wants=time-set.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/tb321fu/rtc-offset restore
+
+[Install]
+WantedBy=sysinit.target

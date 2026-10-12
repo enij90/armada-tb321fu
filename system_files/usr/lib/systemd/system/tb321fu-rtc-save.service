@@ -1,0 +1,8 @@
+[Unit]
+Description=Lenovo TB321FU: save the PMIC RTC offset
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+After=time-sync.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/tb321fu/rtc-offset save
