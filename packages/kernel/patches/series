@@ -255,3 +255,4 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0826-drm-msm-dpu-count-avr-lines-with-the-modes-htotal.patch
 0827-iio-light-add-tb321fu-ambient-light-sensor-fed-from-userspace.patch
 0828-soc-qcom-smp2p-reset-the-inbound-edge-cache-only-on-ssr-guf296.patch
+0829-usb-typec-ucsi-glink-preserve-the-altmode-mux-on-sm8650-guf296.patch

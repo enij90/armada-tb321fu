@@ -1,0 +1,400 @@
+From: guf296 <guf296@126.com>
+Subject: [PATCH] usb: typec: ucsi: keep the DP alt mode mux on SM8650 (TB321FU)
+
+UCSI parts of the TB321FU Type-C bring-up: UCSI_PRESERVE_ALTMODE_MUX keeps
+the DisplayPort alt mode mux when a partner also reports USB, the port takes
+the host role when the tablet powers a USB partner, and pmic_glink UCSI
+handles the audio accessory port selection.
+
+Taken from https://github.com/GUF296/linux branch TB321FU-7.1.1
+(5df8e852e), via hashtagbasit/SteamOS-ARM-Port (0012, UCSI files only).
+---
+diff --git a/drivers/usb/typec/ucsi/psy.c b/drivers/usb/typec/ucsi/psy.c
+old mode 100644
+new mode 100755
+index c8ebab8ba..2a90607c7
+--- a/drivers/usb/typec/ucsi/psy.c
++++ b/drivers/usb/typec/ucsi/psy.c
+@@ -60,6 +60,9 @@ static int ucsi_psy_get_status(struct ucsi_connector *con,
+ 
+ 	val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+ 
++	if (UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO)
++		return 0;
++
+ 	if (con->ucsi->version >= UCSI_VERSION_2_0)
+ 		sink_path_enabled =
+ 			UCSI_CONSTAT(con, SINK_PATH_STATUS_V2_0) ==
+@@ -79,6 +82,9 @@ static int ucsi_psy_get_online(struct ucsi_connector *con,
+ 			       union power_supply_propval *val)
+ {
+ 	val->intval = UCSI_PSY_OFFLINE;
++	if (UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO)
++		return 0;
++
+ 	if (UCSI_CONSTAT(con, CONNECTED) &&
+ 	    (UCSI_CONSTAT(con, PWR_DIR) == TYPEC_SINK))
+ 		val->intval = UCSI_PSY_FIXED_ONLINE;
+@@ -90,6 +96,11 @@ static int ucsi_psy_get_voltage_min(struct ucsi_connector *con,
+ {
+ 	u32 pdo;
+ 
++	if (UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO) {
++		val->intval = 0;
++		return 0;
++	}
++
+ 	switch (UCSI_CONSTAT(con, PWR_OPMODE)) {
+ 	case UCSI_CONSTAT_PWR_OPMODE_PD:
+ 		pdo = con->src_pdos[0];
+@@ -114,6 +125,11 @@ static int ucsi_psy_get_voltage_max(struct ucsi_connector *con,
+ 	u32 pdo;
+ 	int max_voltage = 0;
+ 
++	if (UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO) {
++		val->intval = 0;
++		return 0;
++	}
++
+ 	switch (UCSI_CONSTAT(con, PWR_OPMODE)) {
+ 	case UCSI_CONSTAT_PWR_OPMODE_PD:
+ 		for (int i = 0; i < con->num_pdos; i++) {
+@@ -146,6 +162,11 @@ static int ucsi_psy_get_voltage_now(struct ucsi_connector *con,
+ 	int index;
+ 	u32 pdo;
+ 
++	if (UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO) {
++		val->intval = 0;
++		return 0;
++	}
++
+ 	switch (UCSI_CONSTAT(con, PWR_OPMODE)) {
+ 	case UCSI_CONSTAT_PWR_OPMODE_PD:
+ 		index = rdo_index(con->rdo);
+@@ -175,7 +196,8 @@ static int ucsi_psy_get_current_max(struct ucsi_connector *con,
+ 	u32 pdo;
+ 	int max_current = 0;
+ 
+-	if (!UCSI_CONSTAT(con, CONNECTED)) {
++	if (!UCSI_CONSTAT(con, CONNECTED) ||
++	    UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO) {
+ 		val->intval = 0;
+ 		return 0;
+ 	}
+@@ -212,7 +234,8 @@ static int ucsi_psy_get_current_max(struct ucsi_connector *con,
+ static int ucsi_psy_get_current_now(struct ucsi_connector *con,
+ 				    union power_supply_propval *val)
+ {
+-	if (!UCSI_CONSTAT(con, CONNECTED)) {
++	if (!UCSI_CONSTAT(con, CONNECTED) ||
++	    UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO) {
+ 		val->intval = 0;
+ 		return 0;
+ 	}
+@@ -241,7 +264,8 @@ static int ucsi_psy_get_usb_type(struct ucsi_connector *con,
+ 				 union power_supply_propval *val)
+ {
+ 	val->intval = POWER_SUPPLY_USB_TYPE_C;
+-	if (UCSI_CONSTAT(con, CONNECTED) &&
++	if (UCSI_CONSTAT(con, PARTNER_TYPE) != UCSI_CONSTAT_PARTNER_TYPE_AUDIO &&
++	    UCSI_CONSTAT(con, CONNECTED) &&
+ 	    UCSI_CONSTAT(con, PWR_OPMODE) == UCSI_CONSTAT_PWR_OPMODE_PD)
+ 		val->intval = POWER_SUPPLY_USB_TYPE_PD;
+ 
+@@ -255,6 +279,11 @@ static int ucsi_psy_get_charge_type(struct ucsi_connector *con, union power_supp
+ 		return 0;
+ 	}
+ 
++	if (UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_AUDIO) {
++		val->intval = POWER_SUPPLY_CHARGE_TYPE_NONE;
++		return 0;
++	}
++
+ 	/* The Battery Charging Cabability Status field is only valid in sink role. */
+ 	if (UCSI_CONSTAT(con, PWR_DIR) != TYPEC_SINK) {
+ 		val->intval = POWER_SUPPLY_CHARGE_TYPE_UNKNOWN;
+diff --git a/drivers/usb/typec/ucsi/ucsi.c b/drivers/usb/typec/ucsi/ucsi.c
+index 61cb24ed8..6401c5f9c 100644
+--- a/drivers/usb/typec/ucsi/ucsi.c
++++ b/drivers/usb/typec/ucsi/ucsi.c
+@@ -1158,6 +1158,8 @@ static void ucsi_unregister_partner(struct ucsi_connector *con)
+ static void ucsi_partner_change(struct ucsi_connector *con)
+ {
+ 	enum usb_role u_role = USB_ROLE_NONE;
++	bool preserve_altmode_mux = false;
++	bool source_host_role = false;
+ 	int ret;
+ 
+ 	switch (UCSI_CONSTAT(con, PARTNER_TYPE)) {
+@@ -1185,8 +1187,15 @@ static void ucsi_partner_change(struct ucsi_connector *con)
+ 			typec_set_mode(con->port, TYPEC_MODE_AUDIO);
+ 			break;
+ 		default:
+-			if (UCSI_CONSTAT(con, PARTNER_FLAG_USB))
++			if (UCSI_CONSTAT(con, PARTNER_FLAG_USB)) {
++				preserve_altmode_mux =
++					(con->ucsi->quirks & UCSI_PRESERVE_ALTMODE_MUX) &&
++					UCSI_CONSTAT(con, PARTNER_FLAG_ALT_MODE);
++				if (preserve_altmode_mux)
++					break;
++
+ 				typec_set_mode(con->port, TYPEC_STATE_USB);
++			}
+ 		}
+ 
+ 		if (((con->ucsi->version >= UCSI_VERSION_3_0 &&
+@@ -1202,6 +1211,25 @@ static void ucsi_partner_change(struct ucsi_connector *con)
+ 		UCSI_CONSTAT(con, PARTNER_FLAG_USB4_GEN4)))))
+ 		u_role = USB_ROLE_NONE;
+ 
++	if ((con->ucsi->quirks & UCSI_PRESERVE_ALTMODE_MUX) &&
++	    UCSI_CONSTAT(con, CONNECTED) &&
++	    UCSI_CONSTAT(con, PARTNER_FLAG_USB) &&
++	    !UCSI_CONSTAT(con, PWR_DIR) &&
++	    (UCSI_CONSTAT(con, PARTNER_TYPE) == UCSI_CONSTAT_PARTNER_TYPE_DFP ||
++	     UCSI_CONSTAT(con, PARTNER_TYPE) == 0)) {
++		u_role = USB_ROLE_HOST;
++		typec_set_data_role(con->port, TYPEC_HOST);
++		source_host_role = true;
++	}
++
++	dev_dbg(con->ucsi->dev,
++		"con%d partner_change connected=%lu change=0x%lx type=%lu flags=0x%lx pwr_dir=%lu opmode=%lu u_role=%d preserve_altmode=%d source_host_role=%d\n",
++		con->num, UCSI_CONSTAT(con, CONNECTED),
++		UCSI_CONSTAT(con, CHANGE), UCSI_CONSTAT(con, PARTNER_TYPE),
++		UCSI_CONSTAT(con, PARTNER_FLAGS), UCSI_CONSTAT(con, PWR_DIR),
++		UCSI_CONSTAT(con, PWR_OPMODE), u_role, preserve_altmode_mux,
++		source_host_role);
++
+ 	ret = usb_role_switch_set_role(con->usb_role_sw, u_role);
+ 	if (ret)
+ 		dev_err(con->ucsi->dev, "con:%d: failed to set usb role:%d\n",
+@@ -1219,6 +1247,9 @@ static int ucsi_check_connection(struct ucsi_connector *con)
+ 		return ret;
+ 	}
+ 
++	if (con->ucsi->ops->connector_status)
++		con->ucsi->ops->connector_status(con);
++
+ 	if (UCSI_CONSTAT(con, CONNECTED)) {
+ 		if (prev_state)
+ 			return 0;
+diff --git a/drivers/usb/typec/ucsi/ucsi.h b/drivers/usb/typec/ucsi/ucsi.h
+old mode 100644
+new mode 100755
+index cff9ddc2a..e8d828d37
+--- a/drivers/usb/typec/ucsi/ucsi.h
++++ b/drivers/usb/typec/ucsi/ucsi.h
+@@ -500,6 +500,9 @@ struct ucsi {
+ 
+ /* USB4 connection can imply that USB communcation is supported */
+ #define UCSI_USB4_IMPLIES_USB	BIT(2)
++
++/* Preserve a mux state selected by an out-of-band alternate mode driver */
++#define UCSI_PRESERVE_ALTMODE_MUX	BIT(3)
+ };
+ 
+ #define UCSI_MAX_DATA_LENGTH(u) (((u)->version < UCSI_VERSION_2_0) ? 0x10 : 0xff)
+diff --git a/drivers/usb/typec/ucsi/ucsi_glink.c b/drivers/usb/typec/ucsi/ucsi_glink.c
+index 12e07b9fe..988316f9a 100644
+--- a/drivers/usb/typec/ucsi/ucsi_glink.c
++++ b/drivers/usb/typec/ucsi/ucsi_glink.c
+@@ -11,6 +11,7 @@
+ #include <linux/soc/qcom/pdr.h>
+ #include <linux/usb/typec_mux.h>
+ #include <linux/gpio/consumer.h>
++#include <linux/bitmap.h>
+ #include <linux/soc/qcom/pmic_glink.h>
+ #include "ucsi.h"
+ 
+@@ -64,6 +65,11 @@ struct pmic_glink_ucsi {
+ 	struct device *dev;
+ 
+ 	struct gpio_desc *port_orientation[PMIC_GLINK_MAX_PORTS];
++	struct gpio_desc *c2_select;
++	struct gpio_desc *secondary_audio_detect;
++	bool connector_connected[PMIC_GLINK_MAX_PORTS];
++	bool audio_accessory_connected[PMIC_GLINK_MAX_PORTS];
++	u64 last_command;
+ 
+ 	struct pmic_glink_client *client;
+ 
+@@ -81,6 +87,67 @@ struct pmic_glink_ucsi {
+ 	u8 read_buf[UCSI_BUF_V2_SIZE];
+ };
+ 
++static void pmic_glink_ucsi_write_field(unsigned long *map,
++					struct ucsi_bitfield field,
++					u16 version, unsigned long value)
++{
++	if (version >= field.version)
++		bitmap_write(map, value, field.offset, field.size);
++}
++
++static unsigned long pmic_glink_ucsi_read_field(unsigned long *map,
++				       struct ucsi_bitfield field,
++				       u16 version)
++{
++	if (version < field.version)
++		return 0;
++
++	return bitmap_read(map, field.offset, field.size);
++}
++
++static void pmic_glink_ucsi_force_secondary_audio(struct pmic_glink_ucsi *ucsi,
++						 unsigned long *status)
++{
++	bool secondary_audio_present = false;
++	bool raw_audio_accessory;
++	unsigned long change, flags;
++	u8 idx = 1;
++
++	if (ucsi->secondary_audio_detect)
++		secondary_audio_present =
++			gpiod_get_value_cansleep(ucsi->secondary_audio_detect) > 0;
++
++	raw_audio_accessory =
++		pmic_glink_ucsi_read_field(status, UCSI_CONSTAT_PARTNER_TYPE,
++					       ucsi->ucsi->version) ==
++		UCSI_CONSTAT_PARTNER_TYPE_AUDIO;
++
++	if (raw_audio_accessory && secondary_audio_present)
++		ucsi->audio_accessory_connected[idx] = true;
++	else if (!secondary_audio_present)
++		ucsi->audio_accessory_connected[idx] = false;
++
++	if (!ucsi->audio_accessory_connected[idx] || !secondary_audio_present)
++		return;
++
++	change = pmic_glink_ucsi_read_field(status, UCSI_CONSTAT_CHANGE,
++					      ucsi->ucsi->version);
++	flags = pmic_glink_ucsi_read_field(status, UCSI_CONSTAT_PARTNER_FLAGS,
++					     ucsi->ucsi->version);
++
++	pmic_glink_ucsi_write_field(status, UCSI_CONSTAT_CONNECTED,
++				      ucsi->ucsi->version, 1);
++	pmic_glink_ucsi_write_field(status, UCSI_CONSTAT_CHANGE,
++				      ucsi->ucsi->version,
++				      change | UCSI_CONSTAT_CONNECT_CHANGE);
++	pmic_glink_ucsi_write_field(status, UCSI_CONSTAT_PARTNER_TYPE,
++				      ucsi->ucsi->version,
++				      UCSI_CONSTAT_PARTNER_TYPE_AUDIO);
++	pmic_glink_ucsi_write_field(status, UCSI_CONSTAT_PARTNER_FLAGS,
++				      ucsi->ucsi->version,
++				      flags | BIT(0));
++}
++
+ static int pmic_glink_ucsi_read(struct ucsi *__ucsi, unsigned int offset,
+ 				void *val, size_t val_len)
+ {
+@@ -129,9 +196,20 @@ static int pmic_glink_ucsi_read_cci(struct ucsi *ucsi, u32 *cci)
+ 	return pmic_glink_ucsi_read(ucsi, UCSI_CCI, cci, sizeof(*cci));
+ }
+ 
+-static int pmic_glink_ucsi_read_message_in(struct ucsi *ucsi, void *val, size_t val_len)
++static int pmic_glink_ucsi_read_message_in(struct ucsi *__ucsi, void *val, size_t val_len)
+ {
+-	return pmic_glink_ucsi_read(ucsi, UCSI_MESSAGE_IN, val, val_len);
++	struct pmic_glink_ucsi *ucsi = ucsi_get_drvdata(__ucsi);
++	int ret;
++
++	ret = pmic_glink_ucsi_read(__ucsi, UCSI_MESSAGE_IN, val, val_len);
++	if (ret)
++		return ret;
++
++	if (UCSI_COMMAND(ucsi->last_command) == UCSI_GET_CONNECTOR_STATUS &&
++	    UCSI_DEFAULT_GET_CONNECTOR_NUMBER(ucsi->last_command) == 2)
++		pmic_glink_ucsi_force_secondary_audio(ucsi, val);
++
++	return 0;
+ }
+ 
+ static int pmic_glink_ucsi_locked_write(struct pmic_glink_ucsi *ucsi, unsigned int offset,
+@@ -187,6 +265,7 @@ static int pmic_glink_ucsi_async_control(struct ucsi *__ucsi, u64 command)
+ 	int ret;
+ 
+ 	mutex_lock(&ucsi->lock);
++	ucsi->last_command = command;
+ 	ret = pmic_glink_ucsi_locked_write(ucsi, UCSI_CONTROL, &command, sizeof(command));
+ 	mutex_unlock(&ucsi->lock);
+ 
+@@ -207,9 +286,43 @@ static void pmic_glink_ucsi_update_connector(struct ucsi_connector *con)
+ static void pmic_glink_ucsi_connector_status(struct ucsi_connector *con)
+ {
+ 	struct pmic_glink_ucsi *ucsi = ucsi_get_drvdata(con->ucsi);
++	bool c1_connected, c2_connected, connected;
+ 	int orientation;
+ 
+-	if (!UCSI_CONSTAT(con, CONNECTED)) {
++	if (con->num == 2)
++		pmic_glink_ucsi_force_secondary_audio(ucsi, con->status);
++
++	connected = UCSI_CONSTAT(con, CONNECTED);
++	if (con->num <= PMIC_GLINK_MAX_PORTS)
++		ucsi->connector_connected[con->num - 1] = connected;
++
++	if (ucsi->c2_select) {
++		c1_connected = ucsi->connector_connected[0];
++		c2_connected = ucsi->connector_connected[1];
++
++		if (c1_connected && !c2_connected) {
++			gpiod_set_value_cansleep(ucsi->c2_select, 0);
++		} else if (!c1_connected && c2_connected) {
++			gpiod_set_value_cansleep(ucsi->c2_select, 1);
++		}
++	}
++
++	dev_dbg(ucsi->dev,
++		"raw con%d connected=%d change=0x%lx type=%lu flags=0x%lx pwr_dir=%lu opmode=%lu c1=%d c2=%d\n",
++		con->num, connected,
++		pmic_glink_ucsi_read_field(con->status, UCSI_CONSTAT_CHANGE,
++					   con->ucsi->version),
++		pmic_glink_ucsi_read_field(con->status, UCSI_CONSTAT_PARTNER_TYPE,
++					   con->ucsi->version),
++		pmic_glink_ucsi_read_field(con->status, UCSI_CONSTAT_PARTNER_FLAGS,
++					   con->ucsi->version),
++		pmic_glink_ucsi_read_field(con->status, UCSI_CONSTAT_PWR_DIR,
++					   con->ucsi->version),
++		pmic_glink_ucsi_read_field(con->status, UCSI_CONSTAT_PWR_OPMODE,
++					   con->ucsi->version),
++		ucsi->connector_connected[0], ucsi->connector_connected[1]);
++
++	if (!connected) {
+ 		typec_set_orientation(con->port, TYPEC_ORIENTATION_NONE);
+ 		return;
+ 	}
+@@ -371,6 +484,7 @@ static void pmic_glink_ucsi_destroy(void *data)
+ static unsigned long quirk_sc8180x = UCSI_NO_PARTNER_PDOS;
+ static unsigned long quirk_sc8280xp = UCSI_NO_PARTNER_PDOS | UCSI_DELAY_DEVICE_PDOS;
+ static unsigned long quirk_sm8450 = UCSI_DELAY_DEVICE_PDOS;
++static unsigned long quirk_sm8650 = UCSI_DELAY_DEVICE_PDOS | UCSI_PRESERVE_ALTMODE_MUX;
+ static unsigned long quirk_x1e80100 = UCSI_DELAY_DEVICE_PDOS | UCSI_USB4_IMPLIES_USB;
+ 
+ static const struct of_device_id pmic_glink_ucsi_of_quirks[] = {
+@@ -381,6 +495,7 @@ static const struct of_device_id pmic_glink_ucsi_of_quirks[] = {
+ 	{ .compatible = "qcom,sc8280xp-pmic-glink", .data = &quirk_sc8280xp, },
+ 	{ .compatible = "qcom,sm8350-pmic-glink", .data = &quirk_sc8180x, },
+ 	{ .compatible = "qcom,sm8450-pmic-glink", .data = &quirk_sm8450, },
++	{ .compatible = "qcom,sm8650-pmic-glink", .data = &quirk_sm8650, },
+ 	{ .compatible = "qcom,sm8550-pmic-glink", .data = &quirk_sm8450, },
+ 	{ .compatible = "qcom,x1e80100-pmic-glink", .data = &quirk_x1e80100, },
+ 	{}
+@@ -423,6 +538,18 @@ static int pmic_glink_ucsi_probe(struct auxiliary_device *adev,
+ 
+ 	ucsi_set_drvdata(ucsi->ucsi, ucsi);
+ 
++	ucsi->c2_select = devm_gpiod_get_optional(dev, "c2-select",
++						  GPIOD_OUT_HIGH);
++	if (IS_ERR(ucsi->c2_select))
++		return dev_err_probe(dev, PTR_ERR(ucsi->c2_select),
++				     "unable to acquire C2 select gpio\n");
++
++	ucsi->secondary_audio_detect =
++		devm_gpiod_get_optional(dev, "secondary-audio-detect", GPIOD_IN);
++	if (IS_ERR(ucsi->secondary_audio_detect))
++		return dev_err_probe(dev, PTR_ERR(ucsi->secondary_audio_detect),
++				     "unable to acquire secondary audio detect gpio\n");
++
+ 	device_for_each_child_node_scoped(dev, fwnode) {
+ 		struct gpio_desc *desc;
+ 		u32 port;

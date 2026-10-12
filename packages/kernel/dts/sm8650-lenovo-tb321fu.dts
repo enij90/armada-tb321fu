@@ -1049,11 +1049,12 @@
 };
 
 /*
- * DP stays off until the USB-C redriver (parade,ps5169) has a driver: without it
- * the DP controller defers forever and blocks the whole msm DRM component bind.
+ * USB-C DisplayPort Alt Mode through the PS5169 redriver (patch 0807). The
+ * redriver driver is built in (CONFIG_TYPEC_MUX_PS5169=y): the DP controller
+ * defers until it probes, and that holds up the whole msm DRM component bind.
  */
 &mdss_dp0 {
-	status = "disabled";
+	status = "okay";
 };
 
 &pcie0 {
