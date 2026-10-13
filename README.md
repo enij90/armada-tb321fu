@@ -41,7 +41,10 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Wi-Fi (WCN7850) | ✅ |
 | Bluetooth | ✅ |
 | USB-C charging, charges to 100% | ✅ |
+| USB-C display output (DisplayPort Alt Mode), video | ✅ |
+| USB-C display output, audio | ❌ (in progress) |
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
+| Headphones on the G9's jack | ✅ |
 | Vibration motors (2× AW86937), game rumble | ✅ |
 | Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
 | Adaptive brightness (light sensor) | ✅ |
@@ -69,6 +72,20 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 
 ## Recent changes
 
+- **External display:** a TV or monitor on USB-C now shows Game Mode, and becomes the main
+  screen while it is connected. Sound over USB-C is not there yet.
+- **Brightness:** the whole slider changes the light, not only its upper half, and the
+  lowest step is darker, for use in the dark.
+- **Clock:** the time is right from boot, also without network. Before, every boot started
+  on 14 September until the network time arrived, and files created in the meantime were
+  later removed as old: this made the performance overlay use CPU even when hidden and
+  Decky disappear after a Steam restart.
+- **Decky Loader** runs natively instead of through the x86-64 emulator (from Armada's
+  pending change by ouroboros420).
+- **Logs:** a message repeated five times a second by the audio DSP is gone, so the system
+  log keeps its history (fix by GUF296).
+- **Legion G9:** the light strips are restored at boot, after sleep and after the controller
+  reconnects.
 - **Variable refresh rate (VRR):** the display follows the game's frame rate between 40 and
   165 Hz. Turn it on in the Quick Access menu. At rest the display drops to
   40 Hz, which saves about half a watt. Two fixes to Armada's VRR patches were needed for
@@ -79,7 +96,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
   alignment and "Switch to Desktop" on the first boot.
 - **Display:** the seam between the two halves of a rotated image is fixed: no more doubled
   line. The display controller rotates the image by default instead of the GPU shader, which
-  uses less power in games and streams.
+  uses less power in games.
 - **Cameras:** the three cameras work through libcamera, so apps that use PipeWire or
   libcamera can see them. Depending on the unit, the main rear camera uses one of two
   sensors, OmniVision OV13B10 or GalaxyCore GC13A0, and the tablet uses whichever one it
@@ -93,10 +110,7 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
   starts normally.
 - Camera image quality is not tuned yet: the main rear camera is dark, the second rear
   camera is blurry, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
-- The clock does not keep time: without network, the date starts from 14 September until
-  the time is synced over the network.
-- The Legion G9 light strips (`armada-rgb`) can fail at boot with "controller not connected".
-  Restarting the service by hand fixes it.
+- Sound over USB-C (to a TV or monitor) does not work yet.
 
 ## Installation
 
