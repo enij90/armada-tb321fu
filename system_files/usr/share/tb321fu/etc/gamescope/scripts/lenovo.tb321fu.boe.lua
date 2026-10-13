@@ -29,6 +29,23 @@ gamescope.config.known_displays.lenovo_tb321fu_boe = {
         mode.vrefresh = math.floor((1000 * mode.clock) / (mode.htotal * mode.vtotal) + 0.5)
         return mode
     end,
+    -- 98% DCI-P3 (nominal primaries, not measured), 500 nits typical (900 in
+    -- Android's high brightness mode, not used), 1500:1, HDR10 per Lenovo.
+    -- An LCD has one global backlight, so the frame average can reach the
+    -- peak; the black level follows from the contrast ratio.
+    colorimetry = {
+        r = { x = 0.6800, y = 0.3200 },
+        g = { x = 0.2650, y = 0.6900 },
+        b = { x = 0.1500, y = 0.0600 },
+        w = { x = 0.3127, y = 0.3290 },
+    },
+    hdr = {
+        supported = true,
+        eotf = gamescope.eotf.gamma22,
+        max_content_light_level = 500,
+        max_frame_average_luminance = 500,
+        min_content_light_level = 0.33,
+    },
     -- No EDID: gamescope synthesizes one and identifies the panel through
     -- GAMESCOPE_INTERNAL_DEVICE_ID (the Armada device id).
     matches = function(display)

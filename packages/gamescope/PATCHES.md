@@ -62,3 +62,5 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0030-edid-clamp-synthetic-pixel-clock-above-the-dtd-limit.patch`
   source: armada
+- `patches/0031-pipewire-report-a-missing-capture-buffer-once-a-minute.patch`
+  source: armada

@@ -12,7 +12,7 @@ jobs:
   label:
     name: Apply device label
     runs-on: ubuntu-22.04
-    if: contains(github.event.issue.body, '### Hardware Device')
+    if: github.repository == 'armada-os/armada' && contains(github.event.issue.body, '### Hardware Device')
     steps:
       - name: Determine device label
         id: device

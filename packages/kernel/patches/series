@@ -101,6 +101,7 @@
 0620-drm-msm-a6xx-hfi-irq-clears-only-the-cm3-fault.patch
 0621-drm-msm-a6xx-bound-the-gmu-wait-for-a-fault-devcoredump.patch
 0622-drm-msm-a6xx-mask-the-hfi-interrupt-before-booting-the-gmu.patch
+0623-drm-msm-a6xx-drop-the-boot-bandwidth-vote-once-the-gmu-votes.patch
 
 # ============== LED / RGB ==============
 0030-leds-Add-driver-for-HEROIC-HTR3212.patch
@@ -257,3 +258,5 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0828-soc-qcom-smp2p-reset-the-inbound-edge-cache-only-on-ssr-guf296.patch
 0829-usb-typec-ucsi-glink-preserve-the-altmode-mux-on-sm8650-guf296.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
+0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
+0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch

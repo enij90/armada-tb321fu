@@ -1,0 +1,54 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] power: supply: qcom_battmgr: fix the battery current sign on the TB321FU
+
+The Lenovo Legion Tab Gen 3 (TB321FU) battery firmware reports
+BATT_CURR_NOW negative while charging and positive while discharging.
+UPower takes the sign over the charging status, so a charging tablet was
+shown as discharging, with a time to empty in Steam instead of a time to
+full. Invert it on this machine only.
+
+Based on GUF296's fix (github.com/GUF296/linux, TB321FU-7.1.1), found through
+hashtagbasit/SteamOS-ARM-Port (0014), which applies it to every SM8650.
+---
+--- a/drivers/power/supply/qcom_battmgr.c	2026-10-13 09:20:48.744607384 +0200
++++ b/drivers/power/supply/qcom_battmgr.c	2026-10-13 09:21:22.685195172 +0200
+@@ -9,6 +9,7 @@
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/nvmem-consumer.h>
++#include <linux/of.h>
+ #include <linux/of_device.h>
+ #include <linux/power_supply.h>
+ #include <linux/property.h>
+@@ -323,6 +324,9 @@
+ 
+ 	enum qcom_battmgr_unit unit;
+ 
++	/* Firmware that reports the battery current negative while charging */
++	bool invert_current;
++
+ 	int error;
+ 	struct completion ack;
+ 
+@@ -1470,6 +1474,8 @@
+ 			break;
+ 		case BATT_CURR_NOW:
+ 			battmgr->status.current_now = le32_to_cpu(resp->intval.value);
++			if (battmgr->invert_current)
++				battmgr->status.current_now = -battmgr->status.current_now;
+ 			break;
+ 		case BATT_TEMP:
+ 			val = le32_to_cpu(resp->intval.value);
+@@ -1715,6 +1721,12 @@
+ 	else
+ 		battmgr->variant = QCOM_BATTMGR_SM8350;
+ 
++	/*
++	 * The Lenovo TB321FU firmware reports the battery current negative
++	 * while charging: UPower then shows a charging tablet as discharging.
++	 */
++	battmgr->invert_current = of_machine_is_compatible("lenovo,tb321fu");
++
+ 	ret = qcom_battmgr_charge_control_thresholds_init(battmgr);
+ 	if (ret < 0)
+ 		return dev_err_probe(dev, ret,
