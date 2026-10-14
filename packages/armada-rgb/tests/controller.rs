@@ -316,12 +316,21 @@ fn cli_supports_channel_backend() {
 }
 
 #[test]
-fn air_y_pro_profile_controls_both_aw20036_rings() {
+fn air_y_pro_profile_controls_both_aw20036_rings_and_logo() {
+    assert_mangmi_profile("MANGMI Air Y Pro", 18);
+}
+
+#[test]
+fn pocket_max_profile_controls_both_aw20036_rings_without_logo() {
+    assert_mangmi_profile("MANGMI Pocket Max", 16);
+}
+
+fn assert_mangmi_profile(model: &str, led_count: usize) {
     let fixture: Fixture = Fixture::new();
-    fs::write(&fixture.model, b"MANGMI Air Y Pro\0").unwrap();
+    fs::write(&fixture.model, format!("{model}\0")).unwrap();
     fs::write(&fixture.profiles, include_bytes!("../profiles.json")).unwrap();
 
-    for index in 0..16 {
+    for index in 0..led_count {
         for color in ["red", "green", "blue"] {
             fixture.channel_target(&format!("{color}:indicator-{index}"), "255");
         }
@@ -341,7 +350,7 @@ fn air_y_pro_profile_controls_both_aw20036_rings() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for index in 0..16 {
+    for index in 0..led_count {
         assert_eq!(
             fixture.value(&format!("red:indicator-{index}"), "brightness"),
             "64"
