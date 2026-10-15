@@ -1563,7 +1563,9 @@
 
 	bluetooth {
 		compatible = "qcom,wcn7850-bt";
-		firmware-name = "hmtnv20_Kirby_prc.bin", "hmtbtfw20.tlv";
+		/* Board NVM for the rest of the world (the stock ROM is ROW); the PRC
+		 * one differs only in the RF power tables. Both ship in the firmware repo. */
+		firmware-name = "hmtnv20_Kirby_row.bin", "hmtbtfw20.tlv";
 		local-bd-address = [33 3f 12 7f 03 00];
 
 		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;

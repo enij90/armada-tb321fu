@@ -877,3 +877,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: armada
   upstream: local
   notes: SM8650 counterpart of armada-os/armada#723 dropping 0044 on SM8750. Mainline keeps the PCIe GDSCs in retention across gdsc_disable(); with the controller still powered the s2idle wake needed the 0527 PCIe bus vote in the sleep set, which kept the MC0 BCM voted. With the GDSCs allowed off (and 0527 dropped) the TB321FU resumes with a fresh PCIe link and Wi-Fi (WCN7850) reconnects; verified over a dozen rtc1 wakes and a night.
+- `patches/0835-ASoC-qcom-q6apm-lpass-dais-release-the-secondary-tdm-clock-across-system-suspend.patch`
+  source: armada
+  upstream: local
+  notes: Companion of 0530/0531 for the TB321FU speakers (secondary TDM, Y700 q6apm clock). 0530 closes the graphs at suspend but kept the q6prm bit clock voted, so a stream left open at suspend kept LPASS and CX up for the whole sleep. Measured on the TB321FU: paplay held across a 2 minute s2idle, CXSD 0 s before, 90 s of 114 with the patch; the stream and the amps restart on resume.
+- `patches/0836-usb-typec-ucsi-glink-let-c2-keep-the-data-lanes-while-connected.patch`
+  source: armada
+  upstream: local
+  notes: On top of 0829 (GUF296). 0829 switched c2-select only when exactly one connector was connected, so with a charger on C1 first (or at boot) the controller on C2 got no USB. C2 now wins while connected, C1 otherwise. Verified at boot with a charger on C1 and the G9 on C2 (GPIO 58 high, G9 enumerated). Replaces the userspace tb321fu-c2select/gpiohold, which failed with EBUSY once the driver owned the line.

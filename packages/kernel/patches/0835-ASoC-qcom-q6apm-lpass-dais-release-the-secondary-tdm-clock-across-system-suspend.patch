@@ -1,0 +1,34 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] ASoC: qcom: q6apm-lpass-dais: release the secondary TDM clock across system suspend
+
+The Y700/TB321FU speakers run on the secondary TDM port, whose bit clock
+is a q6prm clock taken in prepare and released only at shutdown. 0530
+closes the graphs at suspend but leaves the clock voted, so a stream still
+open at suspend keeps LPASS powered and CX never collapses (measured: a
+paplay of silence held across a 2 minute s2idle, cxsd count unchanged).
+Drop the clock with the graphs; prepare re-enables it on resume.
+---
+--- a/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c	2026-10-15 08:55:06.952571166 +0200
++++ b/sound/soc/qcom/qdsp6/q6apm-lpass-dais.c	2026-10-15 08:55:06.952650285 +0200
+@@ -644,6 +644,21 @@
+ 		dai_data->is_restored[i] = false;
+ 	}
+ 
++	/*
++	 * The secondary TDM/MI2S bit clock is a q6prm clock: while it is voted
++	 * the ADSP keeps LPASS powered and CX cannot collapse for the whole
++	 * sleep. A stream still open at suspend would keep it, so drop it with
++	 * the graphs; prepare takes it back on resume.
++	 */
++	if (dai_data->sec_tdm_clks_enabled) {
++		struct clk *ibit = q6apm_lpass_y700_sec_ibit_clk(dai_data,
++								 SECONDARY_TDM_RX_0);
++
++		if (ibit)
++			clk_disable_unprepare(ibit);
++		dai_data->sec_tdm_clks_enabled = false;
++	}
++
+ 	return 0;
+ }
+ 
