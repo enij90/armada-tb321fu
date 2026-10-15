@@ -39,7 +39,7 @@ adb shell getprop ro.vendor.display.paneltype
 | Speakers (2× AW882xx) | ✅ |
 | Internal microphones | ✅ |
 | Wi-Fi (WCN7850) | ✅ |
-| Bluetooth | ✅ |
+| Bluetooth | 🚧 work in progress (see known issues) |
 | USB-C charging, charges to 100% | ✅ |
 | USB-C display output (DisplayPort Alt Mode), video | ✅ |
 | USB-C display output, audio | ✅ (see known issues) |
@@ -90,9 +90,8 @@ Please report the result in an issue, whether it works or not.
   it did. The sensors stop while it sleeps, Wi-Fi powers off and on again cleanly, and an
   app that leaves sound open no longer keeps the audio processor awake (part of the work
   comes from Armada's SM8750 sleep change).
-- **Bluetooth:** the radio now gets this tablet's own settings, taken from its Android
-  partition. Before, it ran on generic ones: it found few devices and could not keep
-  phones, speakers or controllers connected. Pair them again after the update.
+- **Bluetooth:** the radio now loads this tablet's own settings from its Android partition.
+  Pair devices again after the update.
 - **Sound over USB-C:** a TV or monitor on USB-C now plays the sound too.
 - **Volume:** the speaker volume steps are even across the whole slider.
 - **Charging:** Steam shows the tablet as charging, with the time to full, instead of
@@ -142,6 +141,9 @@ Please report the result in an issue, whether it works or not.
   blurry at a distance, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
 - Sound over USB-C: sometimes the TV stays silent after plugging in. Unplug and plug it
   in again.
+- Bluetooth is still work in progress: Steam's device list empties after a while (turn
+  Bluetooth off and on to search again), and phone calls routed to the tablet make the
+  radio restart.
 
 ## Installation
 
