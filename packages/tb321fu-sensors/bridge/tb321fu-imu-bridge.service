@@ -5,6 +5,10 @@ ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
 After=tb321fu-sns-init.service
 Wants=tb321fu-sns-init.service
 Before=inputplumber.service
+# The SSC stream keeps the sensor DSP busy in s2idle, so CX and DDR never
+# collapse: stop before sleep, tb321fu-sensors-resume.service restarts it.
+Conflicts=sleep.target
+Before=sleep.target
 
 [Service]
 # 200 Hz IMU for aiming (libssc patch), close to the Steam Deck's ~250 Hz

@@ -4,6 +4,10 @@ ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
 ConditionPathExists=/sys/devices/platform/tb321fu-als
 After=tb321fu-sns-init.service
 Wants=tb321fu-sns-init.service
+# The SSC stream keeps the sensor DSP busy in s2idle, so CX and DDR never
+# collapse: stop before sleep, tb321fu-sensors-resume.service restarts it.
+Conflicts=sleep.target
+Before=sleep.target
 
 [Service]
 ExecStart=/usr/libexec/tb321fu-als-bridge

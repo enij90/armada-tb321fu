@@ -1,0 +1,122 @@
+From ec9c75fd004ea94ce3c5328fb4c9be49d40313c6 Mon Sep 17 00:00:00 2001
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 09:50:51 +0200
+Subject: [PATCH] ipa: simple: Lengthen the frame in low light
+
+Sensor modes with a high default frame rate cap the exposure time: the
+OV13B10 1080p mode runs at 60 fps, 16.6 ms at most, and indoors the AGC
+ends up at full analogue gain with a dark, noisy picture.
+
+When the sensor exposes V4L2_CID_VBLANK, extend the exposure limit up to
+a 33.3 ms frame and set the vertical blanking from the exposure, so the
+frame rate drops towards 30 fps only when the exposure needs it. Modes
+already at 30 fps are unchanged. VBLANK is a priority write in the
+delayed controls so it reaches the sensor before the longer exposure.
+---
+ src/ipa/simple/ipa_context.h             |  3 ++
+ src/ipa/simple/soft_simple.cpp           | 39 +++++++++++++++++++++++-
+ src/libcamera/pipeline/simple/simple.cpp |  3 ++
+ 3 files changed, 44 insertions(+), 1 deletion(-)
+
+diff --git a/src/ipa/simple/ipa_context.h b/src/ipa/simple/ipa_context.h
+index 34f7403..a190dc3 100644
+--- a/src/ipa/simple/ipa_context.h
++++ b/src/ipa/simple/ipa_context.h
+@@ -27,6 +27,9 @@ namespace ipa::soft {
+ struct IPASessionConfiguration {
+ 	struct {
+ 		int32_t exposureMin, exposureMax;
++		/* Exposure limit and vertical blanking of the sensor mode default. */
++		int32_t exposureMaxDefault;
++		std::optional<int32_t> vblankDefault;
+ 		double againMin, againMax, again10, againMinStep;
+ 		utils::Duration lineDuration;
+ 	} agc;
+diff --git a/src/ipa/simple/soft_simple.cpp b/src/ipa/simple/soft_simple.cpp
+index 629e1a3..6fe892c 100644
+--- a/src/ipa/simple/soft_simple.cpp
++++ b/src/ipa/simple/soft_simple.cpp
+@@ -5,6 +5,7 @@
+  * Simple Software Image Processing Algorithm module
+  */
+ 
++#include <algorithm>
+ #include <chrono>
+ #include <stdint.h>
+ #include <sys/mman.h>
+@@ -215,6 +216,34 @@ int IPASoftSimple::configure(const IPAConfigInfo &configInfo)
+ 		context_.sensorInfo.minLineLength * 1.0s / context_.sensorInfo.pixelRate;
+ 	context_.configuration.agc.exposureMin = exposureInfo.min().get<int32_t>();
+ 	context_.configuration.agc.exposureMax = exposureInfo.max().get<int32_t>();
++	context_.configuration.agc.exposureMaxDefault =
++		context_.configuration.agc.exposureMax;
++
++	/*
++	 * In low light, lengthen the frame through V4L2_CID_VBLANK before
++	 * raising the gain, down to kMaxFrameDuration. Sensor modes with a
++	 * high default frame rate otherwise cap the exposure time well below
++	 * what video needs indoors. The frame length is approximated by the
++	 * default exposure limit, the sensor exposure margin is a few lines.
++	 */
++	const auto vblankIt = sensorInfoMap_.find(V4L2_CID_VBLANK);
++	if (vblankIt != sensorInfoMap_.end() &&
++	    context_.configuration.agc.lineDuration > 0s) {
++		static constexpr utils::Duration kMaxFrameDuration = 33333us;
++		const int32_t vblankDef = vblankIt->second.def().get<int32_t>();
++		const int32_t vblankMax = vblankIt->second.max().get<int32_t>();
++		const int32_t maxLines = static_cast<int32_t>(
++			kMaxFrameDuration / context_.configuration.agc.lineDuration);
++		const int32_t extra =
++			std::clamp(maxLines - context_.configuration.agc.exposureMax,
++				   0, vblankMax - vblankDef);
++
++		if (extra > 0) {
++			context_.configuration.agc.vblankDefault = vblankDef;
++			context_.configuration.agc.exposureMax += extra;
++		}
++	}
++
+ 	if (!context_.configuration.agc.exposureMin) {
+ 		LOG(IPASoft, Warning) << "Minimum exposure is zero, that can't be linear";
+ 		context_.configuration.agc.exposureMin = 1;
+@@ -260,7 +289,8 @@ int IPASoftSimple::configure(const IPAConfigInfo &configInfo)
+ 		<< context_.configuration.agc.exposureMax
+ 		<< ", gain " << context_.configuration.agc.againMin << "-"
+ 		<< context_.configuration.agc.againMax
+-		<< " (" << context_.configuration.agc.againMinStep << ")";
++		<< " (" << context_.configuration.agc.againMinStep << ")"
++		<< (context_.configuration.agc.vblankDefault ? ", lengthens vblank" : "");
+ 
+ 	return 0;
+ }
+@@ -325,6 +355,13 @@ void IPASoftSimple::processStats(const uint32_t frame,
+ 	ctrls.set(V4L2_CID_ANALOGUE_GAIN,
+ 		  static_cast<int32_t>(camHelper_ ? camHelper_->gainCode(againNew) : againNew));
+ 
++	const auto &agc = context_.configuration.agc;
++	if (agc.vblankDefault)
++		ctrls.set(V4L2_CID_VBLANK,
++			  *agc.vblankDefault +
++				  std::max(0, frameContext.sensor.exposure -
++						      agc.exposureMaxDefault));
++
+ 	setSensorControls.emit(ctrls);
+ }
+ 
+diff --git a/src/libcamera/pipeline/simple/simple.cpp b/src/libcamera/pipeline/simple/simple.cpp
+index c6fe12d..7354462 100644
+--- a/src/libcamera/pipeline/simple/simple.cpp
++++ b/src/libcamera/pipeline/simple/simple.cpp
+@@ -570,6 +570,9 @@ SimpleCameraData::SimpleCameraData(SimplePipelineHandler *pipe,
+ 		{ V4L2_CID_ANALOGUE_GAIN, { delays.gainDelay, false } },
+ 		{ V4L2_CID_EXPOSURE, { delays.exposureDelay, false } },
+ 	};
++	/* The soft IPA lengthens the frame in low light, see its configure(). */
++	if (sensor_->controls().count(V4L2_CID_VBLANK))
++		params[V4L2_CID_VBLANK] = { delays.vblankDelay, true };
+ 	delayedCtrls_ = std::make_unique<DelayedControls>(sensor_->device(), params);
+ 
+ 	LOG(SimplePipeline, Debug)
+-- 
+2.53.0
+

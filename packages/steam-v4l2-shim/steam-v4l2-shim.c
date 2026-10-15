@@ -30,9 +30,11 @@
 #define SDL_YCBCR_COLORSPACE(range, prim, xfer, mat) \
 	((2u << 28) | ((range) << 24) | (2u << 20) | ((prim) << 10) | ((xfer) << 5) | (mat))
 
-// Used while the decoder reports no colorimetry: BT.709 full range, what a
-// Windows host streaming H.264 or HEVC declares.
-#define DEFAULT_COLORSPACE SDL_YCBCR_COLORSPACE(2, 1, 1, 1)
+// Used while the decoder reports no colorimetry (iris reports none): BT.709
+// limited range. Measured against the host frame (Windows host, AMD encoder):
+// limited range matches it within 2 levels, full range compresses the
+// contrast (about 0.83x + 20 per channel, washed-out bluish picture).
+#define DEFAULT_COLORSPACE SDL_YCBCR_COLORSPACE(1, 1, 1, 1)
 
 static int (*real_ioctl)(int, unsigned long, ...);
 static int active;

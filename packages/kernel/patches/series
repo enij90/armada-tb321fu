@@ -137,7 +137,7 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 0001-pcie-update-sm8550-dtsi.patch
 0520-arm64-dts-qcom-sm8550-add-a-pcie-suspend-opp.patch
 0521-arm64-dts-qcom-sm8750-add-a-pcie-suspend-opp.patch
-0527-arm64-dts-qcom-sm8650-add-a-pcie-suspend-opp.patch
+# 0527-arm64-dts-qcom-sm8650-add-a-pcie-suspend-opp.patch  # not needed with 0834 (PCIe GDSCs off in s2idle), see PATCHES.md
 0120-20250728_konradybcio_gpu_cc_power_requirements_reality_check.patch
 0121-pmdomain-qcom-rpmhpd-presync-floor-gmu-rails.patch
 0122-interconnect__qcom__sm8550__Enable_QoS_configuration.patch
@@ -232,7 +232,19 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0538-ASoC-qcom-sc8280xp-cap-Pocket-DS-speaker-digital-volume.patch
 0529-ASoC-qdsp6-q6apm-fail-the-graph-open-when-the-DSP-rejects-it.patch
 0530-ASoC-qdsp6-release-AudioReach-graphs-across-system-suspend.patch
+0531-ASoC-qcom-sc8280xp-release-the-board-i2s-clock-across-system-suspend.patch
 0532-hwmon-pwm-fan-optionally-run-the-fan-while-charging-in-s2idle.patch
+
+# ============== LPASS clocks released in s2idle (7.3 backports + force suspend, armada-os/armada#723) ==============
+0557-ASoC-codecs-lpass-wsa-macro-switch-to-pm-clock-framework.patch
+0558-ASoC-codecs-lpass-va-macro-switch-to-pm-clock-framework.patch
+0559-ASoC-codecs-lpass-wsa-macro-use-devm-clk-hw-register-for-mclk.patch
+0560-ASoC-codecs-lpass-tx-macro-switch-to-pm-clock-framework.patch
+0561-ASoC-codecs-lpass-rx-macro-switch-to-pm-clock-framework.patch
+0562-ASoC-codecs-lpass-tx-rx-macro-check-clk-set-rate-return-value.patch
+0563-ASoC-codecs-lpass-macro-force-runtime-suspend-across-system-sleep.patch
+0564-soundwire-qcom-force-runtime-suspend-across-system-sleep.patch
+0565-pinctrl-qcom-sm8650-lpass-lpi-force-runtime-suspend-across-system-sleep.patch
 
 # Lenovo Legion Tab Gen 3 (TB321FU / SM8650)
 0800-drm-panel-add-kirby-nt36523-csot-dsc.patch
@@ -265,3 +277,4 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
 0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch
+0834-clk-qcom-gcc-sm8650-let-the-pcie-gdscs-power-off-in-s2idle.patch

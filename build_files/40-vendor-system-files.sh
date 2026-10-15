@@ -106,7 +106,7 @@ systemctl enable armada-control.service
 /ctx/build_files/tb321fu-camera.sh
 
 # Lenovo TB321FU (units are ConditionFirmware-gated to that DT)
-systemctl enable tb321fu-setup.service tb321fu-gpu-pm.service tb321fu-usb.service tb321fu-c2select.service tb321fu-mark-boot-successful.service tb321fu-usb-host.service tb321fu-boot-bind.service tb321fu-grub-sync.service tb321fu-sns-init.service tb321fu-imu-bridge.service tb321fu-als-bridge.service tb321fu-charge-limit.service tb321fu-rtc.service tb321fu-rtc-save.timer
+systemctl enable tb321fu-setup.service tb321fu-gpu-pm.service tb321fu-usb.service tb321fu-c2select.service tb321fu-mark-boot-successful.service tb321fu-usb-host.service tb321fu-boot-bind.service tb321fu-grub-sync.service tb321fu-sns-init.service tb321fu-imu-bridge.service tb321fu-als-bridge.service tb321fu-sensors-resume.service tb321fu-charge-limit.service tb321fu-rtc.service tb321fu-rtc-save.timer
 systemctl enable steamos-manager.service
 systemctl --global enable steamos-manager.service
 systemctl --global enable steamos-manager-session-cleanup.service
