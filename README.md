@@ -142,10 +142,6 @@ Please report the result in an issue, whether it works or not.
   blurry at a distance, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
 - Sound over USB-C: sometimes the TV stays silent after plugging in. Unplug and plug it
   in again.
-- MoonDeck: with "Pass audio, resolution and other options to Moonlight" and a changed
-  Steam text size, MoonDeck 1.12.1 can pass an odd width that the host cannot encode
-  ("No video received"). Fixed in the next MoonDeck release; until then turn that option
-  off or keep the text size on automatic.
 
 ## Installation
 
