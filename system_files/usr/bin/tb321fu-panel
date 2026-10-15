@@ -1,0 +1,37 @@
+#!/bin/bash
+# Lenovo TB321FU: choose which panel's DTB GRUB boots by default.
+#   tb321fu-panel csot   units with the CSOT panel
+#   tb321fu-panel boe    units with the BOE panel (the default)
+#   tb321fu-panel        show the current choice
+# The choice is the panel-csot marker on the GRUB FAT, read by tb321fu-grub-sync,
+# which rewrites grub.cfg. Boot the "(CSOT panel)" entry once, then run this.
+set -euo pipefail
+
+SUPER="${SUPER:-/dev/disk/by-partlabel/super}"
+MNT=/run/tb321fu-panel
+
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+
+mkdir -p "$MNT"
+loop=$(losetup -f --show "$SUPER")
+cleanup() { sync; umount "$MNT" 2>/dev/null || true; losetup -d "$loop" 2>/dev/null || true; }
+trap cleanup EXIT
+mount -t vfat -o rw,noatime "$loop" "$MNT"
+
+case "${1:-}" in
+    csot)
+        ls "$MNT"/dtb-*-csot.dtb >/dev/null 2>&1 ||
+            { echo "no CSOT DTB on the FAT: update the system first" >&2; exit 1; }
+        touch "$MNT/panel-csot" ;;
+    boe)
+        rm -f "$MNT/panel-csot" ;;
+    "")
+        [ -f "$MNT/panel-csot" ] && echo csot || echo boe
+        exit 0 ;;
+    *)
+        echo "usage: tb321fu-panel [csot|boe]" >&2; exit 2 ;;
+esac
+sync
+cleanup; trap - EXIT
+/usr/libexec/tb321fu/grub-sync
+echo "default panel: $1 (from the next boot)"

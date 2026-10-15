@@ -97,6 +97,8 @@ OPTIONS=$(sed -n 's/^options //p' "$ENTRY")
 LINUX=$(sed -n 's/^linux //p' "$ENTRY"); INITRD=$(sed -n 's/^initrd //p' "$ENTRY")
 DEP=$(ls -d "$T"/ostree/deploy/default/deploy/*.0)
 DTB=$(ls "$DEP"/usr/lib/modules/*/dtb/qcom/sm8650-lenovo-tb321fu.dtb | head -1)
+# CSOT panel units: same board, own DTB, offered as a second GRUB entry.
+DTB_CSOT=$(ls "$DEP"/usr/lib/modules/*/dtb/qcom/sm8650-lenovo-tb321fu-csot.dtb 2>/dev/null | head -1 || true)
 log "entry: linux=$LINUX initrd=$INITRD"
 log "options: $OPTIONS"
 
@@ -115,6 +117,16 @@ cp -r "$W/sfat-src/boot/grub/arm64-efi" "$S/boot/grub/"
 cp "$T$LINUX" "$S/Image"
 cp "$T$INITRD" "$S/initramfs.img"
 cp "$DTB" "$S/dtb/sm8650-lenovo-tb321fu.dtb"
+CSOT_ENTRY=""
+if [ -n "$DTB_CSOT" ]; then
+    cp "$DTB_CSOT" "$S/dtb/sm8650-lenovo-tb321fu-csot.dtb"
+    CSOT_ENTRY="menuentry \"Armada $VERSION (CSOT panel)\" {
+    devicetree /dtb/sm8650-lenovo-tb321fu-csot.dtb
+    linux /Image $OPTIONS $EXTRA_KARGS
+    initrd /initramfs.img
+}
+"
+fi
 cat > "$S/boot/grub/grub.cfg" <<EOF
 set timeout=3
 set default=0
@@ -128,6 +140,7 @@ menuentry "Armada $VERSION" {
     initrd /initramfs.img
 }
 
+${CSOT_ENTRY}
 menuentry "Power off" {
     halt
 }

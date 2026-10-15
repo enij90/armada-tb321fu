@@ -14,6 +14,11 @@ SUPER="${SUPER:-/dev/disk/by-partlabel/super}"
 MNT="${MNT:-/run/tb321fu-super}"
 ARGS_FILE="${ARGS_FILE:-/usr/lib/armada/bootimg-args}"
 DTB_NAME=sm8650-lenovo-tb321fu.dtb
+# Units with the CSOT panel need their own DTB (panel init, touch firmware).
+# Each slot also gets dtb-<slot>-csot.dtb; GRUB boots it by default when the
+# FAT holds the panel-csot marker (tb321fu-panel), and offers the other panel
+# as an extra entry either way.
+CSOT_DTB_NAME=sm8650-lenovo-tb321fu-csot.dtb
 # Device kernel arguments added to the deployment's own (BLS options).
 # enforcing=0: SELinux permissive, as on the install images (to revisit).
 EXTRA_KARGS="${EXTRA_KARGS:-efi=novamap console=tty1 fbcon=map:0 enforcing=0}"
@@ -45,6 +50,7 @@ entry_files() {
     printf '%s\n' "${BOOTROOT}${linux#/boot}" "${BOOTROOT}${initrd#/boot}" \
         "${BOOTROOT}${fdtdir#/boot}/qcom/${DTB_NAME}"
 }
+csot_dtb() { echo "${BOOTROOT}$(field fdtdir "$1" | sed 's#^/boot##')/qcom/${CSOT_DTB_NAME}"; }
 files_id() { sha256sum "$@" | awk '{print $1}' | sha256sum | cut -c1-64; }
 entry_id() {
     local f; mapfile -t f < <(entry_files "$1")
@@ -89,11 +95,14 @@ if [ -f "${MNT}/Image" ] && [ ! -f "${MNT}/.slot-b.id" ]; then
 fi
 
 title() { field title "$1" | sed 's/ *(ostree:[0-9]*)$//'; }
-menuentry() { # slot entry label-suffix
-    local options
+has_csot() { [ -f "${MNT}/dtb-$1-csot.dtb" ]; }
+default_panel() { if [ -f "${MNT}/panel-csot" ] && has_csot "$1"; then echo csot; else echo boe; fi; }
+menuentry() { # slot entry label-suffix [panel]
+    local options dtb="dtb-$1.dtb"
+    [ "${4:-boe}" = csot ] && dtb="dtb-$1-csot.dtb"
     options="$(field options "$2") ${EXTRA_KARGS}"
-    printf 'menuentry "%s%s" {\n    devicetree /dtb-%s.dtb\n    linux /Image-%s %s\n    initrd /initrd-%s.img\n}\n\n' \
-        "$(title "$2")" "$3" "$1" "$1" "$options" "$1"
+    printf 'menuentry "%s%s" {\n    devicetree /%s\n    linux /Image-%s %s\n    initrd /initrd-%s.img\n}\n\n' \
+        "$(title "$2")" "$3" "$dtb" "$1" "$options" "$1"
 }
 write_cfg() { # default-slot default-entry [other-slot other-entry]
     local cfg="${MNT}/boot/grub/grub.cfg"
@@ -101,8 +110,13 @@ write_cfg() { # default-slot default-entry [other-slot other-entry]
         printf 'set timeout=3\nset default=0\nset gfxpayload=keep\n\n'
         printf '# Written by tb321fu-grub-sync from the OSTree BLS entries.\n'
         printf '# GRUB sets $root to this FAT; no "search" (it would probe the btrfs userdata).\n\n'
-        menuentry "$1" "$2" ""
-        [ -n "${3:-}" ] && menuentry "$3" "$4" " (previous)"
+        local panel; panel=$(default_panel "$1")
+        menuentry "$1" "$2" "" "$panel"
+        [ -n "${3:-}" ] && menuentry "$3" "$4" " (previous)" "$(default_panel "$3")"
+        if has_csot "$1"; then
+            if [ "$panel" = csot ]; then menuentry "$1" "$2" " (BOE panel)" boe
+            else menuentry "$1" "$2" " (CSOT panel)" csot; fi
+        fi
         printf 'menuentry "Power off" {\n    halt\n}\n'
     } > "${cfg}.new"
     sync "${cfg}.new"
@@ -149,6 +163,24 @@ if [ -z "$next_slot" ]; then
     printf '%s' "$next_id" > "${MNT}/.slot-${next_slot}.id"
     sync
 fi
+
+# CSOT DTB of each slot, also for slots written before it existed. Not part of
+# the slot id: a missing or failed copy only drops the "(CSOT panel)" entry.
+copy_csot() { # slot entry
+    local src dst="${MNT}/dtb-$1-csot.dtb"
+    [ -n "$1" ] && [ -n "$2" ] || return 0
+    src=$(csot_dtb "$2")
+    if [ -f "$src" ]; then
+        cmp -s "$src" "$dst" && return 0
+        cp -f "$src" "${dst}.new" && sync "${dst}.new" && mv -f "${dst}.new" "$dst" ||
+            { rm -f "${dst}.new" "$dst"; log "could not copy the CSOT DTB to slot $1"; }
+    else
+        rm -f "$dst"
+    fi
+}
+copy_csot "$next_slot" "$next"
+[ -n "$prev_slot" ] && [ "$prev_slot" != "$next_slot" ] && copy_csot "$prev_slot" "$prev"
+sync
 
 if [ -n "$prev_slot" ] && [ "$prev_slot" != "$next_slot" ]; then
     write_cfg "$next_slot" "$next" "$prev_slot" "$prev"

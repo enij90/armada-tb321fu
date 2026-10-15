@@ -24,6 +24,23 @@ find . -type f | while read -r f; do
     cp -a "$f" "$t"
 done
 
+# CSOT units: the panel driver has 60 and 120 Hz only (BOE: 60 to 165 Hz). Switch
+# the gamescope session file between the two variants as long as the user has
+# not edited it (it is still one of the two shipped variants).
+sess=/etc/gamescope-session-plus/sessions.d/steam
+boe_sess="$S/gamescope-session-plus/sessions.d/steam"
+if [ -f "$sess" ] && [ -f "$boe_sess" ]; then
+    csot_sess=$(mktemp)
+    sed 's/^CUSTOM_REFRESH_RATES=.*/CUSTOM_REFRESH_RATES=60,120/; s/^STEAM_DISPLAY_REFRESH_LIMITS=.*/STEAM_DISPLAY_REFRESH_LIMITS=60,120/' \
+        "$boe_sess" > "$csot_sess"
+    panel=$(find /sys/firmware/devicetree/base -path '*/panel@0/compatible' -exec cat {} + 2>/dev/null | tr '\0' ' ')
+    if [[ "$panel" == *csot* ]]; then want=$csot_sess; else want=$boe_sess; fi
+    if ! cmp -s "$want" "$sess" && { cmp -s "$boe_sess" "$sess" || cmp -s "$csot_sess" "$sess"; }; then
+        cp "$want" "$sess"
+    fi
+    rm -f "$csot_sess"
+fi
+
 # The install image is smaller than userdata, but the partition already spans the
 # rest of the disk: bootc-generic-growpart then reports NOCHANGE and never grows
 # the filesystem. Grow btrfs to the partition (a no-op once it fills it).

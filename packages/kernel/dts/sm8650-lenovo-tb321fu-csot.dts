@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Lenovo Legion Tab Gen 3 / Legion Y700 2025 (TB321FU) with the CSOT panel.
+ * Same board as the BOE unit: only the panel init and the touch firmware
+ * differ. GRUB offers it as "(CSOT panel)"; tb321fu-panel makes it the default.
+ */
+
+#include "sm8650-lenovo-tb321fu.dts"
+
+&display_panel {
+	compatible = "lenovo,tb321fu-kirby-nt36523-csot-dsc-vid",
+		     "lenovo,kirby-nt36523-csot-dsc-vid",
+		     "lenovo,tb321fu-kirby-nt36523-csot-dsc",
+		     "lenovo,kirby-nt36523-csot-dsc";
+	panel-name = "kirby_nt36523_csot_dsc_vid";
+};
+
+&touchscreen {
+	firmware-name = "qcom/sm8650/lenovo/tb321fu/novatek_ts_csot_fw.bin";
+};
