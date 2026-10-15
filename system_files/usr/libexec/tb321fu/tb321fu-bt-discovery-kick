@@ -1,0 +1,57 @@
+#!/usr/bin/python3
+# Lenovo TB321FU: Steam turns Bluetooth on with rfkill unblock and asks for
+# discovery at once, while the WCN7850 is still loading its firmware (~2 s).
+# BlueZ answers NotReady and Steam never retries, so its device list stays
+# empty. When an adapter powers on and nobody is discovering, run a short
+# discovery so the list fills.
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+
+ADAPTER = "org.bluez.Adapter1"
+KICK_DELAY_MS = 1500
+DISCOVERY_S = 20
+
+bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+pending = {}
+
+
+def call(path, method):
+    try:
+        bus.call_sync("org.bluez", path, ADAPTER, method, None, None,
+                      Gio.DBusCallFlags.NONE, 5000, None)
+    except GLib.Error:
+        pass
+
+
+def discovering(path):
+    try:
+        v = bus.call_sync("org.bluez", path, "org.freedesktop.DBus.Properties",
+                          "Get", GLib.Variant("(ss)", (ADAPTER, "Discovering")),
+                          GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, 5000, None)
+        return v.unpack()[0]
+    except GLib.Error:
+        return True
+
+
+def kick(path):
+    pending.pop(path, None)
+    if not discovering(path):
+        call(path, "StartDiscovery")
+        GLib.timeout_add_seconds(DISCOVERY_S, lambda: call(path, "StopDiscovery") and False)
+    return False
+
+
+def on_signal(_conn, _sender, path, _iface, _signal, params):
+    iface, changed, _ = params.unpack()
+    if iface != ADAPTER or changed.get("Powered") is not True:
+        return
+    if path in pending:
+        GLib.source_remove(pending[path])
+    pending[path] = GLib.timeout_add(KICK_DELAY_MS, kick, path)
+
+
+bus.signal_subscribe("org.bluez", "org.freedesktop.DBus.Properties",
+                     "PropertiesChanged", None, None,
+                     Gio.DBusSignalFlags.NONE, on_signal)
+GLib.MainLoop().run()

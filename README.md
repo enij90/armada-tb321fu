@@ -10,10 +10,11 @@ It is not supported by the Armada project: please report problems here, not upst
 > alongside Armada may be possible, but it is not covered here.)
 > You can always go back to stock Android with Lenovo's official rescue tool (LMSA).
 
-## Supported hardware: BOE panel only
+## Supported hardware: BOE panel, CSOT untested
 
-The TB321FU ships with two different display panels: **BOE** and **CSOT**. Only **BOE** is
-supported for now. On a CSOT tablet the screen stays black.
+The TB321FU ships with two different display panels: **BOE** and **CSOT**. **BOE** is
+supported. **CSOT** has its own boot entry but nobody has tried it yet (see
+[CSOT panel](#csot-panel-untested)).
 
 Check your panel **before doing anything**, from stock Android, with USB debugging enabled
 (no root needed):
@@ -23,9 +24,8 @@ adb shell getprop ro.vendor.display.paneltype
 ```
 
 - `1` → **BOE**: supported.
-- anything else, or empty → **not supported** (probably CSOT): stop here.
-
-CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
+- anything else, or empty → probably **CSOT**: untested. If you want to try it, read
+  [CSOT panel](#csot-panel-untested) first, and keep the stock firmware at hand to go back.
 
 ## Status
 
@@ -42,14 +42,14 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 | Bluetooth | ✅ |
 | USB-C charging, charges to 100% | ✅ |
 | USB-C display output (DisplayPort Alt Mode), video | ✅ |
-| USB-C display output, audio | ❌ (in progress) |
+| USB-C display output, audio | ✅ (see known issues) |
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
 | Headphones on the G9's jack | ✅ |
 | Vibration motors (2× AW86937), game rumble | ✅ |
 | Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
 | Adaptive brightness (light sensor) | ✅ |
 | Cameras: 3 via libcamera (image quality not tuned yet) | ✅ |
-| CSOT panel | ❌ |
+| CSOT panel | 🧪 untested, see below |
 
 ### Legion G9 controller
 
@@ -63,6 +63,20 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
   **M** together with the back button, then the button it should send (Lenovo's Android
   app can do it too). The M button is handled by the firmware only and cannot be mapped.
 
+### CSOT panel (untested)
+
+Some units have a CSOT panel instead of the BOE one (on Android,
+`getprop ro.vendor.display.paneltype` gives 1 on BOE units). With the default
+entry a CSOT unit shows only a black screen after GRUB. To try it:
+
+1. In the GRUB menu (3 seconds after the Lenovo logo), pick the entry ending in
+   **(CSOT panel)**.
+2. If Game Mode comes up and touch works, make it the default: open a terminal in
+   Desktop Mode (or connect over SSH) and run `sudo tb321fu-panel csot`.
+   `sudo tb321fu-panel boe` goes back.
+
+Please report the result in an issue, whether it works or not.
+
 ### Battery
 
 - The tablet charges to 100%. Android's battery care limit (70–80%), which the battery
@@ -72,6 +86,22 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 
 ## Recent changes
 
+- **Standby:** the tablet now sleeps much deeper: overnight it uses about half the battery
+  it did. The sensors stop while it sleeps, Wi-Fi powers off and on again cleanly, and an
+  app that leaves sound open no longer keeps the audio processor awake (part of the work
+  comes from Armada's SM8750 sleep change).
+- **Bluetooth:** the radio now gets this tablet's own settings, taken from its Android
+  partition. Before, it ran on generic ones: it found few devices and could not keep
+  phones, speakers or controllers connected. Pair them again after the update.
+- **Sound over USB-C:** a TV or monitor on USB-C now plays the sound too.
+- **Volume:** the speaker volume steps are even across the whole slider.
+- **Charging:** Steam shows the tablet as charging, with the time to full, instead of
+  discharging.
+- **Cameras:** in low light the main camera slows down to 30 fps to take in more light,
+  instead of staying at 60 fps with a dark, noisy picture.
+- **Steam Remote Play:** colours match the host (the picture was washed out and bluish).
+- **Legion G9:** the controller keeps USB when a charger or hub is plugged into the other
+  port, in whatever order.
 - **External display:** a TV or monitor on USB-C now shows Game Mode, and becomes the main
   screen while it is connected. Sound over USB-C is not there yet.
 - **Brightness:** the whole slider changes the light, not only its upper half, and the
@@ -108,9 +138,14 @@ CSOT support is planned; testers with a CSOT tablet are welcome (open an issue).
 
 - Sometimes, after GRUB, the tablet restarts once or twice before booting. It then
   starts normally.
-- Camera image quality is not tuned yet: the main rear camera is dark, the second rear
-  camera is blurry, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
-- Sound over USB-C (to a TV or monitor) does not work yet.
+- Camera image quality is not tuned yet: the second rear camera is a macro camera and is
+  blurry at a distance, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
+- Sound over USB-C: sometimes the TV stays silent after plugging in. Unplug and plug it
+  in again.
+- MoonDeck: with "Pass audio, resolution and other options to Moonlight" and a changed
+  Steam text size, MoonDeck 1.12.1 can pass an odd width that the host cannot encode
+  ("No video received"). Fixed in the next MoonDeck release; until then turn that option
+  off or keep the text size on automatic.
 
 ## Installation
 

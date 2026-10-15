@@ -1,0 +1,12 @@
+[Unit]
+Description=Lenovo TB321FU: start a short Bluetooth discovery when an adapter powers on
+ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
+After=bluetooth.service
+BindsTo=bluetooth.service
+
+[Service]
+ExecStart=/usr/libexec/tb321fu/tb321fu-bt-discovery-kick
+Restart=on-failure
+
+[Install]
+WantedBy=bluetooth.target
