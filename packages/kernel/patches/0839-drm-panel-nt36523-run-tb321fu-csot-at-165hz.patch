@@ -1,0 +1,95 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/panel: nt36523: run the TB321FU CSOT panel at 165 Hz
+
+The CSOT panel ran in the stock "others" class (B2=0x91, B3=0x01) with only
+120 and 60 Hz. Its stock node is a "165Hz CPHY video panel" with the same
+dispparam-pen-165hz-power-on-command as the BOE panel (B2=0x80, B3=0x20),
+the same dfps list (165/144/120/90/60/30) and the same timings apart from
+the vertical sync/back porch split. Do what 0810/0811 do for the BOE panel:
+165 Hz class at init and 165/144/120/90/60 Hz modes at the 165 Hz link
+clock, lowering the rate with a longer VFP.
+
+This also puts VRR on the CSOT panel in the same panel class where it was
+validated on the BOE panel. Untested on CSOT hardware.
+---
+--- a/drivers/gpu/drm/panel/panel-novatek-nt36523.c
++++ b/drivers/gpu/drm/panel/panel-novatek-nt36523.c
+@@ -754,8 +754,13 @@
+ 				    0x91, 0x02, 0x47, 0x00, 0x0b, 0x05, 0x0e,
+ 				    0x03, 0x68);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x92, 0x10, 0xe0);
+-	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb2, 0x91);
+-	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb3, 0x01);
++	/*
++	 * Run the panel in its 165 Hz class (stock dispparam-pen-165hz-power-on-command,
++	 * same B2/B3 as the BOE panel); lower rates come from a longer VFP at the same
++	 * link clock, like Android's dfps_immediate_porch_mode_vfp.
++	 */
++	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb2, 0x80);
++	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xb3, 0x20);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0xbb, 0x13);
+ 	mipi_dsi_dual_dcs_write_seq(dsi0, dsi1, 0x3b,
+ 				    0x03, 0x04, 0x1e, 0x04, 0x04, 0x01);
+@@ -1272,39 +1277,30 @@
+ 	},
+ };
+ 
++/*
++ * htotal 2314; pixel clock 2314 * 2850 * 165 Hz, as on the BOE panel (same stock
++ * timings apart from the vertical sync/back porch split).
++ */
++#define KIRBY_CSOT_165_CLOCK	1088159
++#define KIRBY_CSOT_MODE(vfp)					\
++	{							\
++		.clock = KIRBY_CSOT_165_CLOCK,			\
++		.hdisplay = 1600,				\
++		.hsync_start = 1600 + 566,			\
++		.hsync_end = 1600 + 566 + 40,			\
++		.htotal = 1600 + 566 + 40 + 108,		\
++		.vdisplay = 2560,				\
++		.vsync_start = 2560 + (vfp),			\
++		.vsync_end = 2560 + (vfp) + 4,			\
++		.vtotal = 2560 + (vfp) + 4 + 256,		\
++	}
++
+ static const struct drm_display_mode kirby_csot_modes[] = {
+-	{
+-		/*
+-		 * Daily baseline mode. This matches the Android panel command
+-		 * class using B2=0x91/B3=0x01 and keeps the validated bonded DSI,
+-		 * DSC, and porch tuple.
+-		 */
+-		.clock = 791388,
+-		.hdisplay = 1600,
+-		.hsync_start = 1600 + 566,
+-		.hsync_end = 1600 + 566 + 40,
+-		.htotal = 1600 + 566 + 40 + 108,
+-		.vdisplay = 2560,
+-		.vsync_start = 2560 + 30,
+-		.vsync_end = 2560 + 30 + 4,
+-		.vtotal = 2560 + 30 + 4 + 256,
+-	},
+-	{
+-		/*
+-		 * Android dynamic-FPS porch mode keeps the 120 Hz link clock for
+-		 * this refresh class and lowers the frame rate by extending VFP.
+-		 * Other refresh classes need explicit panel switch commands.
+-		 */
+-		.clock = 791388,
+-		.hdisplay = 1600,
+-		.hsync_start = 1600 + 566,
+-		.hsync_end = 1600 + 566 + 40,
+-		.htotal = 1600 + 566 + 40 + 108,
+-		.vdisplay = 2560,
+-		.vsync_start = 2560 + 2880,
+-		.vsync_end = 2560 + 2880 + 4,
+-		.vtotal = 2560 + 2880 + 4 + 256,
+-	},
++	KIRBY_CSOT_MODE(30),	/* 165 Hz, preferred */
++	KIRBY_CSOT_MODE(446),	/* 144 Hz */
++	KIRBY_CSOT_MODE(1099),	/* 120 Hz */
++	KIRBY_CSOT_MODE(2405),	/*  90 Hz */
++	KIRBY_CSOT_MODE(5018),	/*  60 Hz */
+ };
+ 
+ static const struct drm_display_mode j606f_boe_modes[] = {
