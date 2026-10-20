@@ -881,3 +881,7 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: armada
   upstream: local
   notes: Companion of 0530/0531 for the TB321FU speakers (secondary TDM, Y700 q6apm clock). 0530 closes the graphs at suspend but kept the q6prm bit clock voted, so a stream left open at suspend kept LPASS and CX up for the whole sleep. Measured on the TB321FU: paplay held across a 2 minute s2idle, CXSD 0 s before, 90 s of 114 with the patch; the stream and the amps restart on resume.
+- `patches/0838-rtc-interface-release-the-wakeup-source-when-the-rtc-cannot-be-read.patch`
+  source: armada
+  upstream: candidate (bug from e8ba8a2bc4f6, still in mainline)
+  notes: rtc_timer_do_work() returned without pm_relax() when __rtc_read_time() failed. On the TB321FU rtc0 is rtc-efi, whose GetTime fails with EIO; the first NTP write to rtc0 (RTC_SYSTOHC, chrony rtcsync) left "rtc-efi.0" active forever, so reads of /sys/power/wakeup_count blocked and Plasma's power button and idle suspend waited 25 s for the powerdevil helper timeout.

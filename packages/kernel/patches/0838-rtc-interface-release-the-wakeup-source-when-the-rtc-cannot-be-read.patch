@@ -1,0 +1,25 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] rtc: interface: release the wakeup source when the RTC cannot be read
+
+rtc_set_time() and the alarm paths take the RTC parent's wakeup source
+with pm_stay_awake() and schedule rtc_timer_do_work(), which releases it
+at the end. Since e8ba8a2bc4f6 ("rtc: check if __rtc_read_time was
+successful in rtc_timer_do_work()") a failed read returns early without
+pm_relax(), so the wakeup source stays active for good.
+
+On the TB321FU rtc0 is rtc-efi and its GetTime fails (EIO). The first
+NTP write to rtc0 (RTC_SYSTOHC, chrony rtcsync) leaves "rtc-efi.0"
+active, reading /sys/power/wakeup_count then blocks forever, and
+Plasma's power button and idle suspend wait 25 s for the powerdevil
+helper's D-Bus timeout before suspending.
+---
+--- a/drivers/rtc/interface.c
++++ b/drivers/rtc/interface.c
+@@ -980,6 +980,7 @@
+ again:
+ 	err = __rtc_read_time(rtc, &tm);
+ 	if (err) {
++		pm_relax(rtc->dev.parent);
+ 		mutex_unlock(&rtc->ops_lock);
+ 		return;
+ 	}
