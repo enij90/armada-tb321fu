@@ -10,11 +10,11 @@ It is not supported by the Armada project: please report problems here, not upst
 > alongside Armada may be possible, but it is not covered here.)
 > You can always go back to stock Android with Lenovo's official rescue tool (LMSA).
 
-## Supported hardware: BOE panel, CSOT untested
+## Supported hardware: BOE and CSOT panels
 
-The TB321FU ships with two different display panels: **BOE** and **CSOT**. **BOE** is
-supported. **CSOT** has its own boot entry but nobody has tried it yet (see
-[CSOT panel](#csot-panel-untested)).
+The TB321FU ships with two different display panels: **BOE** and **CSOT**. Both work.
+**CSOT** needs its own boot entry and has no variable refresh rate yet (see
+[CSOT panel](#csot-panel)).
 
 Check your panel **before doing anything**, from stock Android, with USB debugging enabled
 (no root needed):
@@ -24,15 +24,14 @@ adb shell getprop ro.vendor.display.paneltype
 ```
 
 - `1` → **BOE**: supported.
-- anything else, or empty → probably **CSOT**: untested. If you want to try it, read
-  [CSOT panel](#csot-panel-untested) first, and keep the stock firmware at hand to go back.
+- anything else, or empty → probably **CSOT**: read [CSOT panel](#csot-panel) first.
 
 ## Status
 
 | Feature | Status |
 | --- | --- |
 | Display, 1600×2560 BOE, 60/90/120/144/165 Hz, landscape | ✅ |
-| Variable refresh rate (VRR), 40–165 Hz | ✅ |
+| Variable refresh rate (VRR), 40–165 Hz, BOE panel | ✅ |
 | Touchscreen | ✅ |
 | GPU (Adreno 750, Turnip/Freedreno) | ✅ |
 | Hardware video decoding (iris), also in Steam Remote Play | ✅ |
@@ -42,14 +41,14 @@ adb shell getprop ro.vendor.display.paneltype
 | Bluetooth | 🚧 work in progress (see known issues) |
 | USB-C charging, charges to 100% | ✅ |
 | USB-C display output (DisplayPort Alt Mode), video | ✅ |
-| USB-C display output, audio | ✅ (see known issues) |
+| USB-C display output, audio | 🚧 off for now (see known issues) |
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
 | Headphones on the G9's jack | ✅ |
 | Vibration motors (2× AW86937), game rumble | ✅ |
 | Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
 | Adaptive brightness (light sensor) | ✅ |
 | Cameras: 3 via libcamera (image quality not tuned yet) | ✅ |
-| CSOT panel | 🧪 untested, see below |
+| CSOT panel (no VRR yet), see below | ✅ |
 
 ### Legion G9 controller
 
@@ -63,7 +62,7 @@ adb shell getprop ro.vendor.display.paneltype
   **M** together with the back button, then the button it should send (Lenovo's Android
   app can do it too). The M button is handled by the firmware only and cannot be mapped.
 
-### CSOT panel (untested)
+### CSOT panel
 
 Some units have a CSOT panel instead of the BOE one (on Android,
 `getprop ro.vendor.display.paneltype` gives 1 on BOE units). With the default
@@ -75,7 +74,9 @@ entry a CSOT unit shows only a black screen after GRUB. To try it:
    Desktop Mode (or connect over SSH) and run `sudo tb321fu-panel csot`.
    `sudo tb321fu-panel boe` goes back.
 
-Please report the result in an issue, whether it works or not.
+Confirmed working, touch included, on a CSOT unit. Variable refresh rate is off on this
+panel for now: with it the screen glitched and hardly responded. Reports from other CSOT
+units are welcome.
 
 ### Battery
 
@@ -86,6 +87,14 @@ Please report the result in an issue, whether it works or not.
 
 ## Recent changes
 
+- **Charging:** a charger on the long-side USB-C port charges again. In the previous image
+  the tablet did not see it, and could restart when it was plugged in.
+- **Speakers:** the crackle in the first sounds after boot or after sleep should be gone:
+  the speaker amplifiers now get their clock before they power on.
+- **CSOT panel:** confirmed working. Variable refresh rate is off on it, because it made
+  the screen glitch.
+- **Sound over USB-C is off for now:** it shared a path with the tablet's own sound, and
+  could leave the tablet without any sound after a while. It comes back once that is fixed.
 - **Standby:** the tablet now sleeps much deeper: overnight it uses about half the battery
   it did. The sensors stop while it sleeps, Wi-Fi powers off and on again cleanly, and an
   app that leaves sound open no longer keeps the audio processor awake (part of the work
@@ -139,8 +148,9 @@ Please report the result in an issue, whether it works or not.
   starts normally.
 - Camera image quality is not tuned yet: the second rear camera is a macro camera and is
   blurry at a distance, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
-- Sound over USB-C: sometimes the TV stays silent after plugging in. Unplug and plug it
-  in again.
+- Sound over USB-C (to a TV or monitor) is off for now, see recent changes.
+- Legion G9 with a charger on the long side: plug the G9 first. If the charger goes in
+  first, the controller may not be detected: unplug it and plug it in again.
 - Bluetooth is still work in progress: Steam's device list empties after a while (turn
   Bluetooth off and on to search again), and phone calls routed to the tablet make the
   radio restart.
@@ -151,7 +161,7 @@ You start from the tablet as it comes from the factory, running Lenovo's Android
 
 What you will need:
 
-- the tablet, charged, with a **BOE** panel (see the check above);
+- the tablet, charged (check the panel first, see above);
 - a PC (Windows, Linux or macOS) with Android's
   [platform-tools](https://developer.android.com/tools/releases/platform-tools) (`adb`, `fastboot`)
   and a USB-C cable;
