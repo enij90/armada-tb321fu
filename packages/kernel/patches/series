@@ -279,4 +279,4 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch
 0834-clk-qcom-gcc-sm8650-let-the-pcie-gdscs-power-off-in-s2idle.patch
 0835-ASoC-qcom-q6apm-lpass-dais-release-the-secondary-tdm-clock-across-system-suspend.patch
-0836-usb-typec-ucsi-glink-let-c2-keep-the-data-lanes-while-connected.patch
+# 0837-drm-msm-dp-wait-for-the-display-in-audio-prepare-during-a-modeset.patch  # not enough for DP audio, kept out (see handoff)

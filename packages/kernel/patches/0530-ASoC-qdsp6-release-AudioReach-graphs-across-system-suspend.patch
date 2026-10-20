@@ -278,7 +278,7 @@ restored port running rather than stopping it while codecs start.
 +	 * PCM trigger; start the port here so BCLK is up in time. The
 +	 * trigger's !is_port_started guard then no-ops. Playback only.
 +	 */
-+	if (stream == SNDRV_PCM_STREAM_PLAYBACK && q6apm_lpass_dai_is_mi2s(id)) {
++	if (stream == SNDRV_PCM_STREAM_PLAYBACK && (q6apm_lpass_dai_is_mi2s(id) || id == SECONDARY_TDM_RX_0)) {
 +		rc = q6apm_graph_start(dai_data->graph[id]);
 +		if (rc < 0) {
 +			dev_err(dev, "Failed to start APM port %d\n", id);
