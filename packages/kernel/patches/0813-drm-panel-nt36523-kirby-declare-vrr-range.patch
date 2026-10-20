@@ -1,5 +1,5 @@
 From: enij90 <226572015+enij90@users.noreply.github.com>
-Subject: [PATCH] drm/panel: nt36523: declare a VRR range on the kirby BOE panel
+Subject: [PATCH] drm/panel: nt36523: declare a VRR range on the kirby panels
 
 The Lenovo TB321FU kirby panels (CSOT and BOE) support dynamic refresh
 through VFP extension, as the stock firmware dfps_immediate_porch_mode_vfp
@@ -7,13 +7,11 @@ mode down to 30 Hz confirms.  Declare a VRR-capable monitor range so the
 DPU AVR block (patch 0107) can hold the vertical front porch between
 commits instead of scanning out repeated frames at the fixed refresh rate.
 
-The floor is set to 40 Hz: low enough to cover 30-fps game output with
-margin, high enough to keep the maximum frame period (25 ms) comfortable.
-
-Only the BOE panel is declared VRR-capable. Enabling it on the CSOT
-panel made the display glitch and become unresponsive (issue #5), and
-we have no CSOT unit to characterize its VFP tolerance, so the CSOT
-panel stays at a fixed refresh until it can be tested on hardware.
+The floor is set to 40 Hz on the BOE panel: low enough to cover 30-fps
+game output with margin, high enough to keep the maximum frame period
+(25 ms) comfortable. On the CSOT panel a 40 Hz floor made the display
+glitch and become unresponsive (issue #5); it gets a 60 Hz floor, its
+lowest stock mode, until it can be characterized on hardware.
 
 --- a/drivers/gpu/drm/panel/panel-novatek-nt36523.c
 +++ b/drivers/gpu/drm/panel/panel-novatek-nt36523.c
@@ -25,6 +23,14 @@ panel stays at a fixed refresh until it can be tested on hardware.
  };
  
  static inline struct panel_info *to_panel_info(struct drm_panel *panel)
+@@ -1396,6 +1397,7 @@
+ 	.is_dual_dsi = true,
+ 	.has_dsc = true,
+ 	.display_on_after_dsc = true,
++	.vrr_min_hz = 60,
+ };
+ 
+ static int kirby_boe_init_sequence(struct panel_info *pinfo)
 @@ -1502,6 +1504,7 @@
  	.is_dual_dsi = true,
  	.has_dsc = true,
