@@ -14,6 +14,8 @@ while read -r sum t; do
     [ -f "$t" ] && echo "$sum  $t" | sha256sum -c --status - && rm -f "$t"
 done <<'END'
 6b5baeb621b3a5a5796c40100efc2bbfb5ebe583cd2b42a7912302c608e50552  /etc/UPower/UPower.conf.d/70-tb321fu-low-battery.conf
+c0a0cd77f392b22bef918da103051ca224ad1d259b32290f41c7b875a8cbc8eb  /etc/gamescope/scripts/lenovo.tb321fu.boe.lua
+07553b230068af8a030eb9ad7cd7183d5b5d52ea799c4ae4bfc02e9b1cadf819  /etc/gamescope/scripts/lenovo.tb321fu.boe.lua
 END
 
 cd "$S" || exit 0
@@ -24,20 +26,16 @@ find . -type f | while read -r f; do
     cp -a "$f" "$t"
 done
 
-# CSOT units: the panel driver has 60 and 120 Hz only (BOE: 60 to 165 Hz). Switch
-# the gamescope session file between the two variants as long as the user has
-# not edited it (it is still one of the two shipped variants).
+# CSOT units used to get a 60/120 Hz session file while the panel driver had
+# only those two modes; it now runs 60 to 165 Hz like the BOE panel. Put the
+# shipped file back as long as the user has not edited the CSOT variant.
 sess=/etc/gamescope-session-plus/sessions.d/steam
 boe_sess="$S/gamescope-session-plus/sessions.d/steam"
 if [ -f "$sess" ] && [ -f "$boe_sess" ]; then
     csot_sess=$(mktemp)
     sed 's/^CUSTOM_REFRESH_RATES=.*/CUSTOM_REFRESH_RATES=60,120/; s/^STEAM_DISPLAY_REFRESH_LIMITS=.*/STEAM_DISPLAY_REFRESH_LIMITS=60,120/' \
         "$boe_sess" > "$csot_sess"
-    panel=$(find /sys/firmware/devicetree/base -path '*/panel@0/compatible' -exec cat {} + 2>/dev/null | tr '\0' ' ')
-    if [[ "$panel" == *csot* ]]; then want=$csot_sess; else want=$boe_sess; fi
-    if ! cmp -s "$want" "$sess" && { cmp -s "$boe_sess" "$sess" || cmp -s "$csot_sess" "$sess"; }; then
-        cp "$want" "$sess"
-    fi
+    cmp -s "$csot_sess" "$sess" && cp "$boe_sess" "$sess"
     rm -f "$csot_sess"
 fi
 

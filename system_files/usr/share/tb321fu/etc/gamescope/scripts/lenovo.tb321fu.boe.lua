@@ -3,6 +3,17 @@
 -- kernel's preferred mode); lower refresh rates extend the vertical front porch
 -- (Android dfps_immediate_porch_mode_vfp).
 
+-- Both panels share the Armada device id; tell them apart by the panel node.
+local function tb321fu_panel_is(name)
+    local f = io.open("/sys/firmware/devicetree/base/soc@0/display-subsystem@ae00000/dsi@ae94000/panel@0/compatible", "r")
+    if not f then
+        return false
+    end
+    local compatible = f:read("*a")
+    f:close()
+    return compatible:find("nt36523-" .. name, 1, true) ~= nil
+end
+
 local tb321fu_refresh_rates = {}
 for hz = 60, 165 do
     table.insert(tb321fu_refresh_rates, hz)
@@ -50,7 +61,8 @@ gamescope.config.known_displays.lenovo_tb321fu_boe = {
     -- GAMESCOPE_INTERNAL_DEVICE_ID (the Armada device id).
     matches = function(display)
         if display.device_id == "lenovo-legion-tab"
-            and display.internal and not display.has_edid then
+            and display.internal and not display.has_edid
+            and tb321fu_panel_is("boe") then
             return 6000
         end
         return -1
