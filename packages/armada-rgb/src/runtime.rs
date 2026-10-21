@@ -1,5 +1,6 @@
 use crate::{
-    ChannelBackend, ColorCorrection, GcmHidBackend, LightingBackend, MulticolorBackend, SerialBackend,
+    ChannelBackend, ColorCorrection, GcmHidBackend, LightingBackend, MulticolorBackend,
+    SerialBackend, SerialProtocol,
 };
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
@@ -35,10 +36,28 @@ struct DeviceProfile {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum BackendProfile {
-    Gcmhid { vendor: String, product: String, strips: Vec<u8> },
-    Serial { device: String },
-    Channels { targets: Vec<String> },
-    Multicolor { targets: Vec<String> },
+    Gcmhid {
+        vendor: String,
+        product: String,
+        strips: Vec<u8>,
+    },
+    Serial {
+        device: String,
+        protocol: ProfileSerialProtocol,
+    },
+    Channels {
+        targets: Vec<String>,
+    },
+    Multicolor {
+        targets: Vec<String>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ProfileSerialProtocol {
+    Micro2,
+    PocketS2,
 }
 
 pub(crate) fn from_env() -> (PathBuf, LightingBackend) {
@@ -104,9 +123,16 @@ fn load_backend(
             ))
         }
         BackendProfile::Gcmhid { .. } => bail!("device profile has no RGB strips"),
-        BackendProfile::Serial { device } => Ok(LightingBackend::Serial(
-            SerialBackend::new(dev_root, device).with_correction(profile.correction),
-        )),
+        BackendProfile::Serial { device, protocol } => {
+            let serial_protocol = match protocol {
+                ProfileSerialProtocol::Micro2 => SerialProtocol::Micro2,
+                ProfileSerialProtocol::PocketS2 => SerialProtocol::PocketS2,
+            };
+            Ok(LightingBackend::Serial(
+                SerialBackend::new(dev_root, device, serial_protocol)
+                    .with_correction(profile.correction),
+            ))
+        }
         BackendProfile::Channels { targets } if !targets.is_empty() => {
             Ok(LightingBackend::Channels(
                 ChannelBackend::new(root, targets).with_correction(profile.correction),
@@ -155,6 +181,7 @@ mod tests {
         let catalog: ProfileCatalog = parse_catalog(include_str!("../profiles.json")).unwrap();
         for model in [
             "AYANEO Pocket MICRO 2",
+            "AYANEO Pocket S2",
             "AYN Odin 2",
             "AYN Odin 2 Portal",
             "AYN Thor",

@@ -13,6 +13,17 @@ device        = "konkr_pocket_fit"
 variant       = "PocketFIT"
 friendly_name = "KONKR Pocket FIT"
 
+[[device]]
+dt.compatible = "lenovo,tb321fu"
+device        = "lenovo_legion_tab"
+variant       = "LegionTabGen3"
+friendly_name = "Lenovo Legion Tab Gen 3"
+
 # armada-powerd owns the governor and serves CpuScaling1 over remotes.d.
 [cpu_scaling]
 driver = "none"
+
+# qcom_battmgr raises end thresholds below 55 to 55.
+[battery_charge_limit]
+suggested_minimum_limit = 55
+method = "power_supply"

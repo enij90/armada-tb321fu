@@ -54,14 +54,23 @@
       }
     },
     {
-      "models": ["AYANEO Pocket MICRO 2"],
+      "models": ["AYANEO Pocket S2"],
       "backend": {
         "type": "serial",
-        "device": "ttyHS2"
+        "device": "ttyHS0",
+        "protocol": "pocket-s2"
       }
     },
     {
-      "models": ["KONKR Pocket FIT Elite"],
+      "models": ["AYANEO Pocket MICRO 2"],
+      "backend": {
+        "type": "serial",
+        "device": "ttyHS2",
+        "protocol": "micro2"
+      }
+    },
+    {
+      "models": ["KONKR Pocket FIT", "KONKR Pocket FIT Elite"],
       "backend": {
         "type": "multicolor",
         "targets": ["konkr:rgb:joysticks"]

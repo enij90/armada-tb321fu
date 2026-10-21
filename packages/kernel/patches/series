@@ -65,6 +65,8 @@
 # ============== Input / Gamepad ==============
 0058-input-joystick-add-ayaneo-mcu-joystick.patch
 0069-input-misc-add-konkr-sysbtn-MCU-system-buttons.patch
+0069a-input-konkr-sysbtn-add-pocket-fit-mcu.patch
+0541-input-joystick-mcu-joystick-power-the-mcu-off-in-suspend.patch
 0031_input--Add-driver-for-RSInput-Gamepad.patch
 0508-input-rsinput-add-pm-resume-to-reinit-mcu-after-suspend.patch
 0504-Enable-64-bit-processes-to-use-compat-input-syscalls.patch
@@ -123,8 +125,12 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 0535-scsi-ufs-core-fast-abort-unsupported-query-idns.patch
 0536-scsi-ufs-core-dynamically-disable-timestamp-on-unsupported-devices.patch
 0537-usb-xhci-pci-renesas-let-the-controller-power-off-in-suspend.patch
+0566-clk-qcom-gcc-sm8550-let-the-pcie-gdscs-collapse-in-suspend.patch
+0567-clk-qcom-gcc-sm8650-let-the-pcie-gdscs-collapse-in-suspend.patch
+0568-arm64-dts-qcom-sm8250-cpu-ddr-votes-active-only.patch
 0512-PCI-qcom-skip-L23-ready-poll-on-SM8550.patch
 0513-PCI-qcom-honour-an-opp-suspend-opp-as-the-non-s2ram-memory-floor.patch
+0556-remoteproc-qcom-pas-manage-the-sm8750-soccp.patch
 0522-PCI-host-common-let-only-endpoints-veto-d3cold.patch
 0523-regulator-qcom-rpmh-add-suspend-state-support.patch
 0524-regulator-core-apply-mem-state-for-s2idle.patch
@@ -135,9 +141,6 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 
 # ============== SM8550 DTSI prerequisites ==============
 0001-pcie-update-sm8550-dtsi.patch
-0520-arm64-dts-qcom-sm8550-add-a-pcie-suspend-opp.patch
-0521-arm64-dts-qcom-sm8750-add-a-pcie-suspend-opp.patch
-# 0527-arm64-dts-qcom-sm8650-add-a-pcie-suspend-opp.patch  # not needed with 0834 (PCIe GDSCs off in s2idle), see PATCHES.md
 0120-20250728_konradybcio_gpu_cc_power_requirements_reality_check.patch
 0121-pmdomain-qcom-rpmhpd-presync-floor-gmu-rails.patch
 0122-interconnect__qcom__sm8550__Enable_QoS_configuration.patch
@@ -150,6 +153,14 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 # ============== Video decode ==============
 1030-media-iris-send-the-stream-POC-type.patch
 1031-media-iris-stop-AV1-tier-overwriting-HEVC-tier.patch
+v9_20260801_sachin_garg_media_iris_cache_work_mode_in_iris_set_stage.patch
+1032-media-iris-count-CABAC-cost-in-the-decoder-VSP-clock.patch
+1033-media-iris-add-decoder-display-delay-controls.patch
+1034-media-iris-decode-in-stage-1-for-decode-order.patch
+1035-media-iris-run-decode-order-sessions-at-the-highest-clock.patch
+1036-media-iris-only-rescale-decoder-power-on-bitstream-queue.patch
+1037-media-iris-decode-in-stage-1-at-the-top-clock-by-default.patch
+1370-media-iris-a-resolution-change-last-buffer-is-not-an-error.patch
 
 # ============== System tweaks ==============
 0500-ROCKNIX-set-boot-fanspeed.patch
@@ -158,6 +169,7 @@ v9_20260729_qualcomm_crypto_qce_runtime_pm_interconnect.patch
 0901-power-supply-qcom-battmgr-fix-charge-unit.patch
 0902-power-supply-qcom-battmgr-expose-charge-now.patch
 0903-power-supply-qcom-battmgr-expose-the-charge-current-limit.patch
+0904-power-supply-qcom-battmgr-report-charge-threshold-set-failures.patch
 0540-arm64-signal-reapply-the-ssbs-policy-on-sigreturn.patch
 
 # ============== SM8650 (AYANEO Pocket S2, KONKR Pocket FIT) ==============
@@ -208,13 +220,13 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0038a-arm64-dts-qcom-sm8750-map-A8xx-RSCC-registers.patch
 0035-arm64-dts-qcom-sm8750-set-CPU-capacity-dmips-mhz.patch
 0037-arm64-dts-qcom-sm8750-add-CPU-thermal-cooling.patch
+0556a-arm64-dts-qcom-sm8750-add-the-soccp.patch
 0049-drm-msm-a8xx-add-adreno-830-catalog.patch
 0039-wifi-ath12k-add-initial-hardware-definition-for-WCN7.patch
 0040-wifi-ath12k-send-QDSS-config-when-CNSS_QDSS_CFG_MISS.patch
 0041-wifi-ath12k-disable-CNSS_QDSS_CFG_MISS_V01-for-the-W.patch
 0042-PCI-pwrctrl-pwrseq-add-support-for-WCN7860.patch
 0043-power-sequencing-qcom-wcn-add-support-for-WCN7860.patch
-0044-clk-qcom-gcc-sm8750-Do-not-turn-off-PCIe-GDSCs-durin.patch
 0045-Bluetooth-qca-add-WCN7860-support.patch
 0066-scsi-ufs-ufs-qcom-add-sm8750-compatible.patch
 0509-soc-qcom-pmic_glink_altmode-defer-until-mux-switch-ready.patch
@@ -234,8 +246,11 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0530-ASoC-qdsp6-release-AudioReach-graphs-across-system-suspend.patch
 0531-ASoC-qcom-sc8280xp-release-the-board-i2s-clock-across-system-suspend.patch
 0532-hwmon-pwm-fan-optionally-run-the-fan-while-charging-in-s2idle.patch
+1021-wifi-ath12k-fix-single-pdev-frequency-ranges.patch
+1022-wifi-ath12k-split-WCN7860-scans-by-firmware-ranges.patch
+1023-wifi-ath12k-protect-TX-during-associated-range-scans.patch
 
-# ============== LPASS clocks released in s2idle (7.3 backports + force suspend, armada-os/armada#723) ==============
+# ============== LPASS clocks released in s2idle (7.3 backports + force suspend) ==============
 0557-ASoC-codecs-lpass-wsa-macro-switch-to-pm-clock-framework.patch
 0558-ASoC-codecs-lpass-va-macro-switch-to-pm-clock-framework.patch
 0559-ASoC-codecs-lpass-wsa-macro-use-devm-clk-hw-register-for-mclk.patch
@@ -264,7 +279,6 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0816-input-misc-add-aw86937-y700-haptics-guf296.patch
 0817-input-misc-aw86937-y700-stop-a-ram-effect-without-waiting.patch
 0818-drm-msm-dpu-preload-seven-pixels-in-qseed4-behind-the-inline-rotator.patch
-0819-drm-msm-dpu-dont-wait-for-vblank-on-a-slave-video-encoder.patch
 0820-regulator-add-wl2868c-camera-ldo-guf296.patch
 0821-media-i2c-add-gc13a0-sensor-guf296.patch
 0822-media-i2c-add-y700-smartsens-sensors-guf296.patch
@@ -278,7 +292,6 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
 0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch
-0834-clk-qcom-gcc-sm8650-let-the-pcie-gdscs-power-off-in-s2idle.patch
 0835-ASoC-qcom-q6apm-lpass-dais-release-the-secondary-tdm-clock-across-system-suspend.patch
 0838-rtc-interface-release-the-wakeup-source-when-the-rtc-cannot-be-read.patch
 # 0837-drm-msm-dp-wait-for-the-display-in-audio-prepare-during-a-modeset.patch  # not enough for DP audio, kept out (see handoff)

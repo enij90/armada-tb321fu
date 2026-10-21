@@ -8,9 +8,8 @@ goes to sleep keeps the clock. It is a q6prm clock: the ADSP keeps LPASS
 powered for it and its RPMh DRV ("AUDIO" in the AOP CXPC violator log)
 holds CX up for the whole sleep.
 
-On the AYN Odin 3 the power key plays a UI sound, so a power-key suspend
-always has the speaker PCM open and never reached CX shutdown, while
-systemctl suspend with no sound playing did.
+On the AYN Odin 3 the power key plays a UI sound, so a power-key
+suspend always has a PCM open.
 
 Release the clock in the card's suspend_post, once the streams and the
 components are suspended, and take it back in resume_pre. A PCM opened
@@ -44,16 +43,11 @@ or closed between the two only updates the count.
  			clk_disable_unprepare(pdata->i2s_clk);
  		break;
  	default:
-@@ -234,6 +235,41 @@
+@@ -234,6 +235,36 @@
  	}
  }
  
-+/*
-+ * A PCM that is still open at suspend keeps the board I2S clock. It is a
-+ * q6prm clock, so the ADSP keeps LPASS powered and holds CX up for the whole
-+ * sleep. Release it once the streams and components are suspended and take
-+ * it back before they resume.
-+ */
++/* A PCM open at suspend keeps this q6prm clock, which holds LPASS and CX up */
 +static int sc8280xp_snd_suspend_post(struct snd_soc_card *card)
 +{
 +	struct sc8280xp_snd_data *pdata = snd_soc_card_get_drvdata(card);
@@ -86,7 +80,7 @@ or closed between the two only updates the count.
  static int sc8280xp_platform_probe(struct platform_device *pdev)
  {
  	struct snd_soc_card *card;
-@@ -257,6 +293,9 @@
+@@ -257,6 +288,9 @@
  	if (ret)
  		return ret;
  

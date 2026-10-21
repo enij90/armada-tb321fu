@@ -181,17 +181,28 @@ fn gcm_strip_packet(strip: u8, [hue, saturation, value]: [u8; 3], effect: u8) ->
     packet
 }
 
+/// MCU packet family spoken over the serial device.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SerialProtocol {
+    /// 11-byte frame used by the AYANEO Pocket MICRO 2.
+    Micro2,
+    /// 27-byte frame used by the AYANEO Pocket S2 analogue-stick rings.
+    PocketS2,
+}
+
 pub struct SerialBackend {
     root: PathBuf,
     device: String,
+    protocol: SerialProtocol,
     correction: Option<ColorCorrection>,
 }
 
 impl SerialBackend {
-    pub fn new(root: PathBuf, device: String) -> Self {
+    pub fn new(root: PathBuf, device: String, protocol: SerialProtocol) -> Self {
         Self {
             root,
             device,
+            protocol,
             correction: None,
         }
     }
@@ -210,7 +221,10 @@ impl SerialBackend {
         } else {
             [0, 0, 0]
         };
-        let frame: [u8; 11] = serial_frame(rgb);
+        let frame: Vec<u8> = match self.protocol {
+            SerialProtocol::Micro2 => serial_frame(rgb).to_vec(),
+            SerialProtocol::PocketS2 => pocket_s2_frame(rgb).to_vec(),
+        };
         let name: &str = &self.device;
         let mut device: File = OpenOptions::new()
             .write(true)
@@ -240,6 +254,20 @@ impl SerialBackend {
 fn serial_frame([red, green, blue]: [u8; 3]) -> [u8; 11] {
     let mut frame: [u8; 11] = [0xF7, 0x01, red, green, blue, 0, 0, 0, 0, 0, 0xED];
     frame[9] = frame[1..9]
+        .iter()
+        .fold(0u8, |sum, byte| sum.wrapping_add(*byte));
+    frame
+}
+
+/// The S2 MCU takes a per-channel brightness byte; the scaled colour is sent
+/// at full brightness so saturation and correction stay in one place.
+fn pocket_s2_frame([red, green, blue]: [u8; 3]) -> [u8; 27] {
+    let brightness: u8 = if red | green | blue == 0 { 0 } else { 0xFF };
+    let mut frame: [u8; 27] = [
+        0xF7, 0x00, 0x1C, 0x20, 0x01, 0x80, 0x00, 0x81, 0x00, 0x8B, 0x0F, 0x88, red, 0x89, green,
+        0x8A, blue, 0x86, brightness, 0x87, brightness, 0x58, 0x08, 0x45, 0x00, 0, 0xED,
+    ];
+    frame[25] = frame[1..25]
         .iter()
         .fold(0u8, |sum, byte| sum.wrapping_add(*byte));
     frame
@@ -603,6 +631,18 @@ mod tests {
             gcm_strip_packet(1, [0, 100, 100], GCM_EFFECT_STATIC),
             [0x00, 0x05, 0x0C, 0x0C, 0x01, 0x01, 0x00, 0x64, 0x64, 0x01, 0x80, 0xFF, 0x67]
         );
+    }
+
+    #[test]
+    fn builds_pocket_s2_frames() {
+        assert_eq!(
+            pocket_s2_frame([0xFF, 0, 0]),
+            [
+                0xF7, 0x00, 0x1C, 0x20, 0x01, 0x80, 0x00, 0x81, 0x00, 0x8B, 0x0F, 0x88, 0xFF, 0x89,
+                0x00, 0x8A, 0x00, 0x86, 0xFF, 0x87, 0xFF, 0x58, 0x08, 0x45, 0x00, 0x22, 0xED
+            ]
+        );
+        assert_eq!(pocket_s2_frame([0, 0, 0])[25], 0x25);
     }
 
     #[test]

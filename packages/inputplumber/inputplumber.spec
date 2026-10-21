@@ -17,8 +17,8 @@ URL:            %{forgeurl}
 Source0:        %{forgeurl}/archive/%{commit}/%{name}-%{commit}.tar.gz
 Patch1:         0001-fix-gamepad-share-raw-input.patch
 Patch2:         0002-fix-force-feedback-reset-effects-when-replacing-targets.patch
-Patch3:         0003-feat-Hardware-Support-Add-AYN-Thor-Lite.patch
-Patch4:         0004-fix-AyaneoHaptics-sleep-between-polls.patch
+Patch3:         0003-fix-AyaneoHaptics-sleep-between-polls.patch
+Patch4:         0004-fix-Hardware-Support-KONKR-Pocket-FIT-MCU-system-buttons.patch
 Patch5:         0005-feat-Hardware-Support-accept-the-TB321FU-IMU-bridge.patch
 Patch6:         0006-fix-evdev-keep-the-Legion-G9-Legion-button-held-through-chords.patch
 
@@ -33,7 +33,6 @@ BuildRequires:  pkgconf-pkg-config
 BuildRequires:  systemd-devel
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  libevdev-devel
-BuildRequires:  libiio-devel
 BuildRequires:  openssl-devel
 BuildRequires:  dbus-devel
 BuildRequires:  git-core
@@ -79,6 +78,7 @@ make install PREFIX=%{buildroot}%{_prefix}
 %{_datadir}/polkit-1/rules.d/%{dbusname}.rules
 %{_prefix}/lib/systemd/system/inputplumber.service
 %{_prefix}/lib/systemd/system/inputplumber-suspend.service
+%{_prefix}/lib/modules-load.d/inputplumber-hrtimer.conf
 %{_prefix}/lib/udev/hwdb.d/*.hwdb
 %{_prefix}/lib/udev/rules.d/*.rules
 %dir %{_datadir}/inputplumber
