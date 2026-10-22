@@ -662,6 +662,10 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0073-ASoC-wcd939x-add-HPH-PCM-HiFi-mode.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8750/patches/linux/0073-ASoC-wcd939x-add-HPH-PCM-HiFi-mode.patch
   upstream: unknown
+  notes: Armada keeps the HPH PCM remap off the TX device, whose channel ids overlap the HPH ones, and writes the crosstalk coefficients before the compander-off return.
+- `patches/0081-ASoC-wcd939x-fix-headphone-analog-volume-controls.patch`
+  source: armada
+  upstream: local
 - `patches/0074-soundwire-qcom-PCM-data-port-format-enable.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8750/patches/linux/0074-soundwire-qcom-PCM-data-port-format-enable.patch
   upstream: unknown
@@ -803,7 +807,7 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   notes: Armada extracted this DTS from the cited ROCKNIX patch and then applied later ROCKNIX DTS updates.
 - `dts/cq8725s-ayn-odin3.dts.patch`
   source: armada
-  notes: Armada enables DPU dithering and codec-rail LPM sleep states after copying `dts/cq8725s-ayn-odin3.dts`.
+  notes: Armada enables DPU dithering, codec-rail LPM sleep states, the PM8550 RGB charge LED and the WCD DMIC internal mic route after copying `dts/cq8725s-ayn-odin3.dts`.
 - `dts/cq8725s-ayn-common.dtsi.patch`
   source: armada
   notes: Armada keeps volume-up from waking the system, marks Odin 3's RSInput node as connected to the Qualcomm haptics device, supplies the device's 1024 range, marks PCIe WAKE# active-low, and keeps the four switched WCN7860 PMU supply rails always-on because re-enabling them at resume can hang the SoC. The 70-count `axis-deadzone` (an unmeasured ROCKNIX bring-up value) was dropped; like the RP6 and every other RSInput device the Odin 3 now passes its stick value through, leaving deadzone policy to Steam Input and the game.
@@ -882,6 +886,9 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: https://git.kernel.org/torvalds/c/b8ca90fafe6adc401601f91d1394ba76bacf67ed
   upstream: https://patch.msgid.link/20260707-xo-sd-codec-tx-rx-v2-3-f61b4622f97f@oss.qualcomm.com
 - `patches/0563-ASoC-codecs-lpass-macro-force-runtime-suspend-across-system-sleep.patch`
+  source: armada
+  upstream: local
+- `patches/0080-ASoC-codecs-lpass-tx-macro-track-every-active-decimator.patch`
   source: armada
   upstream: local
 - `patches/0564-soundwire-qcom-force-runtime-suspend-across-system-sleep.patch`

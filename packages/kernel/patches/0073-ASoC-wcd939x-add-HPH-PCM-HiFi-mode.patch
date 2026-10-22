@@ -27,7 +27,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
 ---
 --- a/sound/soc/codecs/wcd939x.c	2026-06-11 21:30:18.467792000 +0200
 +++ b/sound/soc/codecs/wcd939x.c	2026-06-11 21:30:18.469036928 +0200
-@@ -211,6 +211,7 @@
+@@ -208,6 +208,7 @@
  	int ear_pdm_wd_int;
  	bool comp1_enable;
  	bool comp2_enable;
@@ -35,7 +35,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  	bool ldoh;
  };
  
-@@ -411,6 +412,7 @@
+@@ -408,6 +409,7 @@
  
  	snd_soc_component_write(component, WCD939X_E_CFG0,
  				WCD939X_CFG0_IDLE_STEREO |
@@ -43,7 +43,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  				WCD939X_CFG0_AUTO_DISABLE_ANC);
  
  	return 0;
-@@ -502,6 +504,165 @@
+@@ -499,6 +501,165 @@
  	return 0;
  }
  
@@ -77,6 +77,11 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
 +		snd_soc_component_write_field(component, WCD939X_HPH_REFBUFF_UHQA_CTL,
 +					      WCD939X_REFBUFF_UHQA_CTL_REFBUFN_IOUT_CTL, 1);
 +	}
++
++	/* crosstalk coefficients (stock: scale 0x1f, sec2/3 0x11/0x4f) */
++	snd_soc_component_write(component, sec_base + 0, 0x1f);
++	snd_soc_component_write(component, sec_base + 3, 0x4f);
++	snd_soc_component_write(component, sec_base + 2, 0x11);
 +
 +	if (!comp_en) {
 +		/* compander bypassed, gain from register */
@@ -126,11 +131,6 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
 +	else
 +		snd_soc_component_write_field(component, WCD939X_DIGITAL_CDC_COMP_CTL_0,
 +					      WCD939X_CDC_COMP_CTL_0_HPHL_COMP_EN, true);
-+
-+	/* crosstalk coefficients (stock: scale 0x1f, sec2/3 0x11/0x4f) */
-+	snd_soc_component_write(component, sec_base + 0, 0x1f);
-+	snd_soc_component_write(component, sec_base + 3, 0x4f);
-+	snd_soc_component_write(component, sec_base + 2, 0x11);
 +}
 +
 +static void wcd939x_hph_pcm_post_dac(struct snd_soc_component *component)
@@ -209,7 +209,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  static int wcd939x_codec_hphl_dac_event(struct snd_soc_dapm_widget *w,
  					struct snd_kcontrol *kcontrol,
  					int event)
-@@ -511,9 +672,12 @@
+@@ -508,9 +669,12 @@
  
  	switch (event) {
  	case SND_SOC_DAPM_PRE_PMU:
@@ -225,7 +225,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  
  		snd_soc_component_write_field(component, WCD939X_DIGITAL_CDC_HPH_GAIN_CTL,
  					      WCD939X_CDC_HPH_GAIN_CTL_HPHL_RX_EN, true);
-@@ -521,7 +685,9 @@
+@@ -518,7 +682,9 @@
  	case SND_SOC_DAPM_POST_PMU:
  		snd_soc_component_write_field(component, WCD939X_HPH_NEW_INT_RDAC_HD2_CTL_L,
  					      WCD939X_RDAC_HD2_CTL_L_HD2_RES_DIV_CTL_L, 0x1d);
@@ -236,7 +236,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  			snd_soc_component_write_field(component,
  						      WCD939X_DIGITAL_CDC_COMP_CTL_0,
  						      WCD939X_CDC_COMP_CTL_0_HPHL_COMP_EN,
-@@ -546,6 +712,8 @@
+@@ -543,6 +709,8 @@
  		}
  		break;
  	case SND_SOC_DAPM_POST_PMD:
@@ -245,7 +245,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  		snd_soc_component_write_field(component, WCD939X_HPH_NEW_INT_RDAC_HD2_CTL_L,
  					      WCD939X_RDAC_HD2_CTL_L_HD2_RES_DIV_CTL_L, 1);
  		snd_soc_component_write_field(component, WCD939X_DIGITAL_CDC_HPH_GAIN_CTL,
-@@ -568,9 +736,12 @@
+@@ -565,9 +733,12 @@
  
  	switch (event) {
  	case SND_SOC_DAPM_PRE_PMU:
@@ -261,7 +261,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  
  		snd_soc_component_write_field(component, WCD939X_DIGITAL_CDC_HPH_GAIN_CTL,
  					      WCD939X_CDC_HPH_GAIN_CTL_HPHR_RX_EN, true);
-@@ -578,7 +749,9 @@
+@@ -575,7 +746,9 @@
  	case SND_SOC_DAPM_POST_PMU:
  		snd_soc_component_write_field(component, WCD939X_HPH_NEW_INT_RDAC_HD2_CTL_R,
  					      WCD939X_RDAC_HD2_CTL_R_HD2_RES_DIV_CTL_R, 0x1d);
@@ -272,7 +272,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  			snd_soc_component_write_field(component,
  						      WCD939X_DIGITAL_CDC_COMP_CTL_0,
  						      WCD939X_CDC_COMP_CTL_0_HPHR_COMP_EN,
-@@ -602,6 +775,8 @@
+@@ -599,6 +772,8 @@
  		}
  		break;
  	case SND_SOC_DAPM_POST_PMD:
@@ -281,7 +281,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  		snd_soc_component_write_field(component, WCD939X_HPH_NEW_INT_RDAC_HD2_CTL_R,
  					      WCD939X_RDAC_HD2_CTL_R_HD2_RES_DIV_CTL_R, 1);
  		snd_soc_component_write_field(component, WCD939X_DIGITAL_CDC_HPH_GAIN_CTL,
-@@ -658,11 +833,15 @@
+@@ -655,11 +830,15 @@
  			snd_soc_component_write_field(component, WCD939X_LDOH_MODE,
  						      WCD939X_MODE_LDOH_EN, true);
  
@@ -298,7 +298,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  			snd_soc_component_write_field(component,
  					WCD939X_HPH_REFBUFF_LP_CTL,
  					WCD939X_REFBUFF_LP_CTL_PREREF_FILT_BYPASS, true);
-@@ -680,8 +859,10 @@
+@@ -677,8 +856,10 @@
  			usleep_range(2500, 2600); /* 2.5msec delay as per HW requirement */
  
  		set_bit(HPH_PA_DELAY, &wcd939x->status_mask);
@@ -311,7 +311,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  		break;
  	case SND_SOC_DAPM_POST_PMU:
  		/*
-@@ -695,8 +876,9 @@
+@@ -692,8 +873,9 @@
  			else
  				usleep_range(7000, 7100);
  
@@ -323,7 +323,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  				snd_soc_component_write_field(component,
  						WCD939X_HPH_REFBUFF_LP_CTL,
  						WCD939X_REFBUFF_LP_CTL_PREREF_FILT_BYPASS,
-@@ -711,10 +893,20 @@
+@@ -708,10 +890,20 @@
  						      WCD939X_RX_SUPPLIES_REGULATOR_MODE,
  						      true);
  
@@ -346,7 +346,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  		/*
  		 * 7ms sleep is required if compander is enabled as per
  		 * HW requirement. If compander is disabled, then
-@@ -752,6 +944,8 @@
+@@ -749,6 +941,8 @@
  					      WCD939X_HPH_HPHR_REF_ENABLE, false);
  		snd_soc_component_write_field(component, WCD939X_DIGITAL_PDM_WD_CTL1,
  					      WCD939X_PDM_WD_CTL1_PDM_WD_EN, 0);
@@ -355,7 +355,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  
  		wcd_clsh_ctrl_set_state(wcd939x->clsh_info, WCD_CLSH_EVENT_POST_PA,
  					WCD_CLSH_STATE_HPHR, hph_mode);
-@@ -780,11 +974,16 @@
+@@ -777,11 +971,16 @@
  		if (wcd939x->ldoh)
  			snd_soc_component_write_field(component, WCD939X_LDOH_MODE,
  						      WCD939X_MODE_LDOH_EN, true);
@@ -373,7 +373,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  			snd_soc_component_write_field(component,
  						WCD939X_HPH_REFBUFF_LP_CTL,
  						WCD939X_REFBUFF_LP_CTL_PREREF_FILT_BYPASS,
-@@ -803,8 +1002,10 @@
+@@ -800,8 +999,10 @@
  			usleep_range(2500, 2600); /* 2.5msec delay as per HW requirement */
  
  		set_bit(HPH_PA_DELAY, &wcd939x->status_mask);
@@ -386,7 +386,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  		break;
  	case SND_SOC_DAPM_POST_PMU:
  		/*
-@@ -817,8 +1018,9 @@
+@@ -814,8 +1015,9 @@
  				usleep_range(20000, 20100);
  			else
  				usleep_range(7000, 7100);
@@ -398,7 +398,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  				snd_soc_component_write_field(component,
  						WCD939X_HPH_REFBUFF_LP_CTL,
  						WCD939X_REFBUFF_LP_CTL_PREREF_FILT_BYPASS,
-@@ -832,10 +1034,20 @@
+@@ -829,10 +1031,20 @@
  			snd_soc_component_write_field(component, WCD939X_ANA_RX_SUPPLIES,
  						      WCD939X_RX_SUPPLIES_REGULATOR_MODE,
  						      true);
@@ -421,7 +421,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  		/*
  		 * 7ms sleep is required if compander is enabled as per
  		 * HW requirement. If compander is disabled, then
-@@ -871,6 +1083,8 @@
+@@ -868,6 +1080,8 @@
  					      WCD939X_HPH_HPHL_REF_ENABLE, false);
  		snd_soc_component_write_field(component, WCD939X_DIGITAL_PDM_WD_CTL0,
  					      WCD939X_PDM_WD_CTL0_PDM_WD_EN, 0);
@@ -430,7 +430,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  		wcd_clsh_ctrl_set_state(wcd939x->clsh_info, WCD_CLSH_EVENT_POST_PA,
  					WCD_CLSH_STATE_HPHL, hph_mode);
  		if (wcd939x->ldoh)
-@@ -1549,6 +1763,13 @@
+@@ -1546,6 +1760,13 @@
  	else
  		wcd939x->comp1_enable = value;
  
@@ -444,7 +444,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  	if (value)
  		wcd939x_connect_port(wcd, portidx, mc->reg, true);
  	else
-@@ -1557,6 +1778,31 @@
+@@ -1554,6 +1775,31 @@
  	return 1;
  }
  
@@ -476,7 +476,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  static int wcd939x_ldoh_get(struct snd_kcontrol *kcontrol,
  			    struct snd_ctl_elem_value *ucontrol)
  {
-@@ -1795,7 +2041,17 @@
+@@ -1792,7 +2038,17 @@
  	struct snd_soc_component *comp = snd_kcontrol_chip(kcontrol);
  	struct wcd939x_priv *wcd939x = snd_soc_component_get_drvdata(comp);
  	struct wcd939x_sdw_priv *wcd = wcd939x->sdw_priv[mixer->shift];
@@ -485,7 +485,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
 +	unsigned int portidx;
 +
 +	/* in HPH PCM mode the HPH stream rides the HIFI_PCM port */
-+	if (wcd939x->hph_pcm_enabled) {
++	if (wcd939x->hph_pcm_enabled && !wcd->is_tx) {
 +		if (ch_id == WCD939X_HPH_L)
 +			ch_id = WCD939X_HIFI_PCM_L;
 +		else if (ch_id == WCD939X_HPH_R)
@@ -495,7 +495,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  
  	ucontrol->value.integer.value[0] = wcd->port_enable[portidx] ? 1 : 0;
  
-@@ -1822,11 +2078,21 @@
+@@ -1819,11 +2075,21 @@
  	struct snd_soc_component *comp = snd_kcontrol_chip(kcontrol);
  	struct wcd939x_priv *wcd939x = snd_soc_component_get_drvdata(comp);
  	struct wcd939x_sdw_priv *wcd = wcd939x->sdw_priv[mixer->shift];
@@ -504,7 +504,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
 +	unsigned int portidx;
 +
 +	/* in HPH PCM mode the HPH stream rides the HIFI_PCM port */
-+	if (wcd939x->hph_pcm_enabled) {
++	if (wcd939x->hph_pcm_enabled && !wcd->is_tx) {
 +		if (ch_id == WCD939X_HPH_L)
 +			ch_id = WCD939X_HIFI_PCM_L;
 +		else if (ch_id == WCD939X_HPH_R)
@@ -519,7 +519,7 @@ Also set AUTO_DISABLE_DSD in E_CFG0 (stock runs 0x07).
  
  	return 1;
  }
-@@ -2533,6 +2799,9 @@
+@@ -2511,6 +2777,9 @@
  
  static const struct snd_kcontrol_new wcd939x_snd_controls[] = {
  	/* RX Path */

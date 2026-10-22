@@ -1,5 +1,5 @@
 From: Armada <noreply@armada.local>
-Subject: [PATCH] arm64: dts: qcom: odin3: enable DPU dithering, codec rail sleep modes and the SoCCP firmware
+Subject: [PATCH] arm64: dts: qcom: odin3: enable DPU dithering, codec rail sleep modes, the SoCCP firmware, the charge LED and the internal mic
 
 --- a/arch/arm64/boot/dts/qcom/cq8725s-ayn-odin3.dts
 +++ b/arch/arm64/boot/dts/qcom/cq8725s-ayn-odin3.dts
@@ -13,7 +13,7 @@ Subject: [PATCH] arm64: dts: qcom: odin3: enable DPU dithering, codec rail sleep
  	reset-gpios = <&tlmm 98 GPIO_ACTIVE_LOW>;
  
  	vddio-supply = <&vreg_l12b_1p8>;
-@@ -350,3 +353,44 @@
+@@ -350,3 +353,82 @@
  		};
  	};
  };
@@ -57,4 +57,42 @@ Subject: [PATCH] arm64: dts: qcom: odin3: enable DPU dithering, codec rail sleep
 +/* Replaces the bootloader's early SoCCP image, which blocks SoC deep sleep */
 +&remoteproc_soccp {
 +	firmware-name = "qcom/sm8750/ayn/odin3/soccp.mbn";
++};
++
++&pm8550_pwm {
++	multi-led {
++		color = <LED_COLOR_ID_RGB>;
++		function = LED_FUNCTION_CHARGING;
++		linux,default-trigger = "battery-charging-orange-full-green";
++
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		led@1 {
++			reg = <1>;
++			color = <LED_COLOR_ID_RED>;
++		};
++
++		led@2 {
++			reg = <2>;
++			color = <LED_COLOR_ID_GREEN>;
++		};
++
++		led@3 {
++			reg = <3>;
++			color = <LED_COLOR_ID_BLUE>;
++		};
++	};
++};
++
++/* wcd939x has no DMIC input widget; without one DAPM never powers DMIC3 */
++&{/sound} {
++	widgets = "Microphone", "Internal Mic";
++	audio-routing = "IN1_HPHL", "HPHL_OUT",
++			"IN2_HPHR", "HPHR_OUT",
++			"AMIC2", "MIC BIAS2",
++			"TX SWR_INPUT1", "ADC2_OUTPUT",
++			"DMIC3", "Internal Mic",
++			"DMIC3", "MIC BIAS3",
++			"TX SWR_INPUT6", "DMIC3_OUTPUT";
 +};

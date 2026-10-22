@@ -236,6 +236,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0060-ASoC-qcom-sc8280xp-enable-MI2S-bit-clock-on-BE-startup.patch
 0072-ASoC-lpass-rx-macro-add-HPH-PCM-mode.patch
 0073-ASoC-wcd939x-add-HPH-PCM-HiFi-mode.patch
+0081-ASoC-wcd939x-fix-headphone-analog-volume-controls.patch
 0074-soundwire-qcom-PCM-data-port-format-enable.patch
 0075-ASoC-wsa884x-preserve-Pocket-S2-compander-gain.patch
 0612-ROCKNIX-odin3-q6apm-start-mi2s-port-at-prepare.patch
@@ -258,6 +259,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0561-ASoC-codecs-lpass-rx-macro-switch-to-pm-clock-framework.patch
 0562-ASoC-codecs-lpass-tx-rx-macro-check-clk-set-rate-return-value.patch
 0563-ASoC-codecs-lpass-macro-force-runtime-suspend-across-system-sleep.patch
+0080-ASoC-codecs-lpass-tx-macro-track-every-active-decimator.patch
 0564-soundwire-qcom-force-runtime-suspend-across-system-sleep.patch
 0565-pinctrl-qcom-sm8650-lpass-lpi-force-runtime-suspend-across-system-sleep.patch
 
