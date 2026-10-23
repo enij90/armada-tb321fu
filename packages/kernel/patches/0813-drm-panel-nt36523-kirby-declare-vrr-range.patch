@@ -7,9 +7,9 @@ mode down to 30 Hz confirms.  Declare a VRR-capable monitor range so the
 DPU AVR block (patch 0107) can hold the vertical front porch between
 commits instead of scanning out repeated frames at the fixed refresh rate.
 
-The floor is 30 Hz on the BOE panel, the lowest rate of the stock dfps
-list: 30-fps game output then runs at its own rate instead of having
-gamescope repeat every frame. On the CSOT panel a 40 Hz floor made the display
+The floor is 40 Hz on the BOE panel: at 30 Hz, the lowest rate of the
+stock dfps list, an idle Steam menu once showed an icon and one quarter of
+the screen flashing in wrong colours. On the CSOT panel a 40 Hz floor made the display
 glitch and become unresponsive (issue #5); it gets a 60 Hz floor, its
 lowest stock mode, until it can be characterized on hardware.
 
@@ -35,7 +35,7 @@ lowest stock mode, until it can be characterized on hardware.
  	.is_dual_dsi = true,
  	.has_dsc = true,
  	.display_on_after_dsc = true,	/* reuses kirby_csot_display_on_sequence (identical) */
-+	.vrr_min_hz = 30,
++	.vrr_min_hz = 40,
  };
  
  static const struct panel_desc j606f_boe_desc = {

@@ -13,8 +13,7 @@ It is not supported by the Armada project: please report problems here, not upst
 ## Supported hardware: BOE and CSOT panels
 
 The TB321FU ships with two different display panels: **BOE** and **CSOT**. Both work.
-**CSOT** needs its own boot entry and has no variable refresh rate yet (see
-[CSOT panel](#csot-panel)).
+**CSOT** needs its own boot entry (see [CSOT panel](#csot-panel)).
 
 Check your panel **before doing anything**, from stock Android, with USB debugging enabled
 (no root needed):
@@ -48,7 +47,7 @@ adb shell getprop ro.vendor.display.paneltype
 | Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
 | Adaptive brightness (light sensor) | ✅ |
 | Cameras: 3 via libcamera (image quality not tuned yet) | ✅ |
-| CSOT panel (no VRR yet), see below | ✅ |
+| CSOT panel, see below | ✅ |
 
 ### Legion G9 controller
 
@@ -74,9 +73,10 @@ entry a CSOT unit shows only a black screen after GRUB. To try it:
    Desktop Mode (or connect over SSH) and run `sudo tb321fu-panel csot`.
    `sudo tb321fu-panel boe` goes back.
 
-Confirmed working, touch included, on a CSOT unit. Variable refresh rate is off on this
-panel for now: with it the screen glitched and hardly responded. Reports from other CSOT
-units are welcome.
+Confirmed working, touch included, on a CSOT unit. Since this update it runs up to 165 Hz,
+with variable refresh rate from 60 to 165 Hz (lower rates made the screen glitch). The
+165 Hz modes and VRR have not been tested on a CSOT unit yet: reports are welcome, and if
+the screen misbehaves, turn VRR off in Steam's display settings.
 
 ### Battery
 
@@ -87,60 +87,19 @@ units are welcome.
 
 ## Recent changes
 
-- **Charging:** a charger on the long-side USB-C port charges again. In the previous image
-  the tablet did not see it, and could restart when it was plugged in.
-- **Speakers:** the crackle in the first sounds after boot or after sleep should be gone:
-  the speaker amplifiers now get their clock before they power on.
-- **CSOT panel:** confirmed working. Variable refresh rate is off on it, because it made
-  the screen glitch.
-- **Sound over USB-C is off for now:** it shared a path with the tablet's own sound, and
-  could leave the tablet without any sound after a while. It comes back once that is fixed.
-- **Standby:** the tablet now sleeps much deeper: overnight it uses about half the battery
-  it did. The sensors stop while it sleeps, Wi-Fi powers off and on again cleanly, and an
-  app that leaves sound open no longer keeps the audio processor awake (part of the work
-  comes from Armada's SM8750 sleep change).
-- **Bluetooth:** the radio now loads this tablet's own settings from its Android partition.
-  Pair devices again after the update.
-- **Sound over USB-C:** a TV or monitor on USB-C now plays the sound too.
-- **Volume:** the speaker volume steps are even across the whole slider.
-- **Charging:** Steam shows the tablet as charging, with the time to full, instead of
-  discharging.
-- **Cameras:** in low light the main camera slows down to 30 fps to take in more light,
-  instead of staying at 60 fps with a dark, noisy picture.
-- **Steam Remote Play:** colours match the host (the picture was washed out and bluish).
-- **Legion G9:** the controller keeps USB when a charger or hub is plugged into the other
-  port, in whatever order.
-- **External display:** a TV or monitor on USB-C now shows Game Mode, and becomes the main
-  screen while it is connected. Sound over USB-C is not there yet.
-- **Brightness:** the whole slider changes the light, not only its upper half, and the
-  lowest step is darker, for use in the dark.
-- **Clock:** the time is right from boot, also without network. Before, every boot started
-  on 14 September until the network time arrived, and files created in the meantime were
-  later removed as old: this made the performance overlay use CPU even when hidden and
-  Decky disappear after a Steam restart.
-- **Decky Loader** runs natively instead of through the x86-64 emulator (from Armada's
-  pending change by ouroboros420).
-- **Logs:** a message repeated five times a second by the audio DSP is gone, so the system
-  log keeps its history (fix by GUF296).
-- **Legion G9:** the light strips are restored at boot, after sleep and after the controller
-  reconnects.
-- **Variable refresh rate (VRR):** the display follows the game's frame rate between 40 and
-  165 Hz. Turn it on in the Quick Access menu. At rest the display drops to
-  40 Hz, which saves about half a watt. Two fixes to Armada's VRR patches were needed for
-  this tablet's display, which is driven by two DSI links with compression.
-- **Adaptive brightness:** the light sensor now drives Steam's adaptive brightness
-  (Settings → Display).
-- **Upstream Armada:** merged the latest changes, among them the Decky Quick Access
-  alignment and "Switch to Desktop" on the first boot.
-- **Display:** the seam between the two halves of a rotated image is fixed: no more doubled
-  line. The display controller rotates the image by default instead of the GPU shader, which
-  uses less power in games.
-- **Cameras:** the three cameras work through libcamera, so apps that use PipeWire or
-  libcamera can see them. Depending on the unit, the main rear camera uses one of two
-  sensors, OmniVision OV13B10 or GalaxyCore GC13A0, and the tablet uses whichever one it
-  finds. Only the OV13B10 has been tested: the GC13A0 driver (from GUF296) is included but
-  untested, reports from units with that sensor are welcome.
-- **Steam Remote Play** (client) decodes video in hardware (iris) and shows the right colours.
+This update:
+
+- **Speakers:** much less crackle right after boot (audio buffer doubled to 80 ms).
+- **CSOT panel:** up to 165 Hz, with variable refresh rate from 60 Hz. Untested on a CSOT
+  unit, see [CSOT panel](#csot-panel).
+- **Power button in Desktop Mode:** the tablet sleeps right away, not after about 25 s.
+- **Steam Remote Play:** lower-latency video decoding, from Armada.
+- **Armada updates** up to October 22.
+
+Previous update (October 20): a charger on the long-side USB-C port charges again and the
+Legion G9 stays connected when it goes in, fewer speaker pops after boot and sleep, CSOT
+panel confirmed working, sound over USB-C turned off for now. Older changes are listed in
+the [releases](https://github.com/enij90/armada-tb321fu/releases).
 
 ## Known issues
 
@@ -148,9 +107,11 @@ units are welcome.
   starts normally.
 - Camera image quality is not tuned yet: the second rear camera is a macro camera and is
   blurry at a distance, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
-- Sound over USB-C (to a TV or monitor) is off for now, see recent changes.
-- Legion G9 with a charger on the long side: plug the G9 first. If the charger goes in
-  first, the controller may not be detected: unplug it and plug it in again.
+- Sound over USB-C (to a TV or monitor) is off for now: it shared a path with the tablet's
+  own sound and could leave the tablet without sound after a while.
+- Steam's battery charge limit (Settings → Power) is new on this tablet and not fully
+  tested: after a restart the tablet may charge to 100% again, and after setting the limit
+  back to 100% it may only start charging below 75%. A restart clears that.
 - Bluetooth is still work in progress: Steam's device list empties after a while (turn
   Bluetooth off and on to search again), and phone calls routed to the tablet make the
   radio restart.
