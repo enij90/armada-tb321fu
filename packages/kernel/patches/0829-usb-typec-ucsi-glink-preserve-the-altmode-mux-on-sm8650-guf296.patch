@@ -7,7 +7,7 @@ the host role when the tablet powers a USB partner, and pmic_glink UCSI
 handles the audio accessory port selection.
 
 Taken from https://github.com/GUF296/linux branch TB321FU-7.1.1
-(5df8e852e), via hashtagbasit/SteamOS-ARM-Port (0012, UCSI files only).
+(5df8e852e), UCSI files only.
 ---
 --- a/drivers/usb/typec/ucsi/psy.c	2026-10-12 20:31:30.189216537 +0200
 +++ b/drivers/usb/typec/ucsi/psy.c	2026-10-12 20:31:30.152470357 +0200

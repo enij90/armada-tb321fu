@@ -7,8 +7,7 @@ UPower takes the sign over the charging status, so a charging tablet was
 shown as discharging, with a time to empty in Steam instead of a time to
 full. Invert it on this machine only.
 
-Based on GUF296's fix (github.com/GUF296/linux, TB321FU-7.1.1), found through
-hashtagbasit/SteamOS-ARM-Port (0014), which applies it to every SM8650.
+Based on GUF296's fix (github.com/GUF296/linux, TB321FU-7.1.1).
 ---
 --- a/drivers/power/supply/qcom_battmgr.c	2026-10-13 09:20:48.744607384 +0200
 +++ b/drivers/power/supply/qcom_battmgr.c	2026-10-13 09:21:22.685195172 +0200
