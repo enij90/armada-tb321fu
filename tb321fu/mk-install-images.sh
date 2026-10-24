@@ -64,7 +64,12 @@ ostree config --repo="$R" set sysroot.bootloader none
 ostree config --repo="$R" set sysroot.bootprefix true
 ostree config --repo="$R" set sysroot.readonly true
 ostree admin os-init --sysroot="$T" default
-ostree pull-local --untrusted --repo="$R" "$SRC_REPO" "$COMMIT"
+# Pull the ostree-container refs (image + blobs) alongside the commit, so the
+# installed system is recognized as a container image and `bootc switch`/update
+# works from a fresh flash. Without them bootc fails with
+# "Missing base image ref ostree/container/blob/…" (issue #4).
+mapfile -t CREFS < <(ostree refs --repo="$SRC_REPO" | grep '^ostree/container/' || true)
+ostree pull-local --untrusted --repo="$R" "$SRC_REPO" "$COMMIT" "${CREFS[@]}"
 ostree fsck --repo="$R" >/dev/null
 
 log "kernel arguments from the image (usr/lib/bootc/kargs.d, as armada-installer)"
