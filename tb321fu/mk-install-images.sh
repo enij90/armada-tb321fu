@@ -122,6 +122,23 @@ cp -r "$W/sfat-src/boot/grub/arm64-efi" "$S/boot/grub/"
 cp "$T$LINUX" "$S/Image"
 cp "$T$INITRD" "$S/initramfs.img"
 cp "$DTB" "$S/dtb/sm8650-lenovo-tb321fu.dtb"
+# "No DisplayPort (test)" variant of each panel's DTB: the same tree with the DP
+# controller disabled, offered as an extra GRUB entry. On some units the panel
+# stays blank at boot while the DP controller waits for the USB-C redriver; this
+# entry rules that out. Needs fdtput (dtc); skipped with a warning if absent.
+DP_NODE=/soc@0/display-subsystem@ae00000/displayport-controller@af54000
+nodp_dtb() { cp "$1" "$2" && fdtput -t s "$2" "$DP_NODE" status disabled; }
+nodp_entry() { # label dtb-basename
+    printf 'menuentry "Armada %s (%s)" {\n    devicetree /dtb/%s\n    linux /Image %s %s\n    initrd /initramfs.img\n}\n' \
+        "$VERSION" "$1" "$2" "$OPTIONS" "$EXTRA_KARGS"
+}
+NODP_ENTRY=""
+if command -v fdtput >/dev/null; then
+    nodp_dtb "$DTB" "$S/dtb/sm8650-lenovo-tb321fu-nodp.dtb"
+    NODP_ENTRY=$(nodp_entry "no DisplayPort, test" sm8650-lenovo-tb321fu-nodp.dtb)
+else
+    log "fdtput not found: skipping the no-DisplayPort test entries"
+fi
 CSOT_ENTRY=""
 if [ -n "$DTB_CSOT" ]; then
     cp "$DTB_CSOT" "$S/dtb/sm8650-lenovo-tb321fu-csot.dtb"
@@ -131,6 +148,12 @@ if [ -n "$DTB_CSOT" ]; then
     initrd /initramfs.img
 }
 "
+    if command -v fdtput >/dev/null; then
+        nodp_dtb "$DTB_CSOT" "$S/dtb/sm8650-lenovo-tb321fu-csot-nodp.dtb"
+        CSOT_ENTRY="${CSOT_ENTRY}
+$(nodp_entry "CSOT panel, no DisplayPort, test" sm8650-lenovo-tb321fu-csot-nodp.dtb)
+"
+    fi
 fi
 cat > "$S/boot/grub/grub.cfg" <<EOF
 set timeout=3
@@ -144,6 +167,8 @@ menuentry "Armada $VERSION" {
     linux /Image $OPTIONS $EXTRA_KARGS
     initrd /initramfs.img
 }
+
+${NODP_ENTRY}
 
 ${CSOT_ENTRY}
 menuentry "Power off" {

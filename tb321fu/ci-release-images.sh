@@ -11,7 +11,7 @@ set -euxo pipefail
 : "${IMAGE:?}" "${TEMPLATE_RELEASE:?}"
 
 dnf -y install rpm-ostree ostree skopeo btrfs-progs dosfstools android-tools \
-    util-linux python3 curl coreutils compsize attr
+    util-linux python3 curl coreutils compsize attr dtc
 df -h /var/tmp /w
 
 repo_url=https://github.com/enij90/armada-tb321fu
