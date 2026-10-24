@@ -109,9 +109,9 @@ the [releases](https://github.com/enij90/armada-tb321fu/releases).
   blurry at a distance, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
 - Sound over USB-C (to a TV or monitor) is off for now: it shared a path with the tablet's
   own sound and could leave the tablet without sound after a while.
-- Steam's battery charge limit (Settings → Power) is new on this tablet and not fully
-  tested: after a restart the tablet may charge to 100% again, and after setting the limit
-  back to 100% it may only start charging below 75%. A restart clears that.
+- Steam's battery charge limit (Settings → Power): when you change it, the level where
+  charging starts again is only updated at the next restart. While charging is held at the
+  limit, Steam still shows the tablet as charging.
 - Bluetooth is still work in progress: Steam's device list empties after a while (turn
   Bluetooth off and on to search again), and phone calls routed to the tablet make the
   radio restart.

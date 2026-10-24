@@ -19,6 +19,15 @@ device        = "lenovo_legion_tab"
 variant       = "LegionTabGen3"
 friendly_name = "Lenovo Legion Tab Gen 3"
 
+# The TB321FU boots through a UEFI (GUF296) that publishes SMBIOS, and
+# steamos-manager matches DMI before the device tree when DMI exists.
+[[device]]
+dmi.sys_vendor   = "Lenovo"
+dmi.product_name = "QRD"
+device        = "lenovo_legion_tab"
+variant       = "LegionTabGen3"
+friendly_name = "Lenovo Legion Tab Gen 3"
+
 # armada-powerd owns the governor and serves CpuScaling1 over remotes.d.
 [cpu_scaling]
 driver = "none"
