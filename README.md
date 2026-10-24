@@ -93,6 +93,7 @@ This update:
 - **CSOT panel:** up to 165 Hz, with variable refresh rate from 60 Hz. Untested on a CSOT
   unit, see [CSOT panel](#csot-panel).
 - **Power button in Desktop Mode:** the tablet sleeps right away, not after about 25 s.
+- **Battery charge limit:** Steam's charge limit (Settings → Power) now appears and works.
 - **Steam Remote Play:** lower-latency video decoding, from Armada.
 - **Armada updates** up to October 22.
 
@@ -197,6 +198,9 @@ little longer. Then you are in Steam's Game Mode.
   The partitions are already written.
 - **A fastboot command fails halfway:** run `fastboot reboot bootloader`, wait for the tablet
   to come back, then repeat only the failed command.
+- **The screen stays blank at boot:** at the GRUB menu, pick the **"no DisplayPort, test"**
+  entry for your panel. On some units the DisplayPort controller holds the display back while
+  it waits for the USB-C port.
 
 ### Going back to Android
 
