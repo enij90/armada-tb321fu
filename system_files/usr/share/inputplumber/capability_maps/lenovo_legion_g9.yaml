@@ -121,6 +121,8 @@ mapping:
       gamepad:
         button: LeftBumper
 
+  # The back paddles only send these with the patched G9 firmware
+  # (github.com/enij90/legion-g9-firmware); on the stock one they never fire.
   - name: Right Paddle
     source_events:
       - evdev:
@@ -140,6 +142,37 @@ mapping:
     target_event:
       gamepad:
         button: LeftPaddle1
+
+  # Left bottom paddle: HID button 16, renamed by 71-legion-g9-paddles.hwdb.
+  - name: Left Paddle 2
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: BTN_TRIGGER_HAPPY1
+          value_type: button
+    target_event:
+      gamepad:
+        button: LeftPaddle2
+
+  - name: Right Paddle 2
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: BTN_TRIGGER_HAPPY2
+          value_type: button
+    target_event:
+      gamepad:
+        button: RightPaddle2
+
+  - name: M button
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: BTN_TRIGGER_HAPPY3
+          value_type: button
+    target_event:
+      gamepad:
+        button: QuickAccess
 
   - name: Right Stick
     source_events:

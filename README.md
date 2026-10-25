@@ -61,12 +61,15 @@ adb shell getprop ro.vendor.display.paneltype
 - **Custom G9 firmware (experimental):** my
   [patched G9 firmware](https://github.com/enij90/legion-g9-firmware) lets each of the 10 LEDs be
   set on its own. With my build of Colores, each LED then follows its own piece of the screen
-  edge instead of one color per strip. Only for the original G9 (2025); the stock firmware can be
-  flashed back at any time.
-- The four **back buttons** cannot be used as separate buttons: the controller firmware
-  reports each one as one of the other buttons. To change it on the controller, press
-  **M** together with the back button, then the button it should send (Lenovo's Android
-  app can do it too). The M button is handled by the firmware only and cannot be mapped.
+  edge instead of one color per strip. It also turns the four back buttons into buttons of
+  their own: Steam sees them as L4, R4, L5 and R5 (leave them unmapped on the controller),
+  and the M button opens the Quick Access menu. Only for the original G9 (2025); the stock
+  firmware can be flashed back at any time.
+- With the stock firmware the four **back buttons** cannot be used as separate buttons: the
+  controller reports each one as one of the other buttons. To change it on the controller,
+  press **M** together with the back button, then the button it should send (Lenovo's
+  Android app can do it too). The M button is handled by the firmware only and cannot be
+  mapped.
 
 ### CSOT panel
 
