@@ -56,6 +56,13 @@ adb shell getprop ro.vendor.display.paneltype
   another button). Holding it alone for a few seconds turns the controller off (firmware).
 - The volume shortcuts of the controller's firmware are off: use Steam's.
 - The **light strips** can be set from Armada Control.
+  [My build of Colores](https://github.com/enij90/decky-colores/releases/latest) (Decky plugin)
+  can also make them follow the screen (Ambilight).
+- **Custom G9 firmware (experimental):** my
+  [patched G9 firmware](https://github.com/enij90/legion-g9-firmware) lets each of the 10 LEDs be
+  set on its own. With my build of Colores, each LED then follows its own piece of the screen
+  edge instead of one color per strip. Only for the original G9 (2025); the stock firmware can be
+  flashed back at any time.
 - The four **back buttons** cannot be used as separate buttons: the controller firmware
   reports each one as one of the other buttons. To change it on the controller, press
   **M** together with the back button, then the button it should send (Lenovo's Android
