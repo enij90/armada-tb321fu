@@ -7,6 +7,11 @@ the probe fails reading the chip ID (reported in enij90/armada-tb321fu#9,
 GPIO 127 for 0x5a and 119 for 0x5b as in the Android device tree). Take
 an optional "reset" GPIO and pulse it before reading the chip ID.
 
+A reset also clears bit 5 of PLAYCFG1, which the bootloader sets (0x31;
+Android leaves 0x2f), and with it clear the motor is not driven at all:
+on a TB321FU, 0x11 and 0x0f gave nothing, 0x31 and 0x2f vibrate. Set it
+with the rest of the init profile, keeping the boost voltage bits.
+
 A full-strength effect used gain 0xff. On the TB321FU 0xc0 and 0xff feel
 the same (the motor is saturated, it only gets louder) and Android uses
 0x80, which also felt nicer in a side by side test. Make 0x80 the
@@ -15,7 +20,21 @@ default and add a gain_ceiling module parameter.
 ---
 --- a/drivers/input/misc/aw86937-y700.c
 +++ b/drivers/input/misc/aw86937-y700.c
-@@ -14,6 +14,7 @@
+@@ -3,10 +3,9 @@
+  * Lenovo Y700 AW86937 haptics driver.
+  *
+  * This is a minimal Linux-native input force-feedback driver for the dual
+- * AW86937-class haptic ICs used in the Lenovo Y700. It intentionally keeps
+- * the chip's boot-time boost register value untouched; AB005/AB006 proved
+- * playback is safe with the default PLAYCFG1 value, while the AW86937 boost
+- * bit mapping has not yet been independently validated.
++ * AW86937-class haptic ICs used in the Lenovo Y700. It keeps the boost
++ * voltage the bootloader left in PLAYCFG1 and only sets the bit the motor
++ * needs, which a reset clears.
+  */
+ 
+ #include <linux/bitfield.h>
+@@ -14,6 +13,7 @@
  #include <linux/delay.h>
  #include <linux/device.h>
  #include <linux/firmware.h>
@@ -23,7 +42,16 @@ default and add a gain_ceiling module parameter.
  #include <linux/i2c.h>
  #include <linux/input.h>
  #include <linux/list.h>
-@@ -89,9 +90,17 @@
+@@ -27,6 +27,8 @@
+ 
+ #define AW86937_SYSINT_REG			0x02
+ #define AW86937_PLAYCFG1_REG			0x06
++/* Clear after a reset: the motor is not driven until it is set. */
++#define AW86937_PLAYCFG1_DRIVE_EN		BIT(5)
+ #define AW86937_PLAYCFG2_REG			0x07
+ #define AW86937_PLAYCFG3_REG			0x08
+ #define AW86937_PLAYCFG3_AUTO_BST_MASK		BIT(4)
+@@ -89,9 +91,17 @@
  #define AW86937_MIN_DURATION_MS			5
  #define AW86937_MAX_DURATION_MS			10000
  #define AW86937_GAIN_CEILING_MAX		0xff
@@ -42,7 +70,16 @@ default and add a gain_ceiling module parameter.
  struct aw86937_y700 {
  	struct device *dev;
  	struct input_dev *input_dev;
-@@ -752,7 +761,8 @@
+@@ -155,6 +165,8 @@
+ };
+ 
+ static const struct aw86937_y700_reg_init aw86937_y700_android_profile[] = {
++	{ AW86937_PLAYCFG1_REG, AW86937_PLAYCFG1_DRIVE_EN,
++	  AW86937_PLAYCFG1_DRIVE_EN },
+ 	{ AW86937_SYSCTRL4_REG, AW86937_SYSCTRL4_GAIN_BYPASS_MASK,
+ 	  AW86937_SYSCTRL4_GAIN_BYPASS_MASK },
+ 	{ AW86937_D2SCFG_REG, 0x0f, 0x04 },
+@@ -752,7 +764,8 @@
  				    effect->u.rumble.weak_magnitude);
  		}
  		if (level) {
@@ -52,7 +89,7 @@ default and add a gain_ceiling module parameter.
  			if (!gain)
  				gain = 1;
  
-@@ -804,6 +814,7 @@
+@@ -804,6 +817,7 @@
  static int aw86937_y700_probe(struct i2c_client *client)
  {
  	struct aw86937_y700 *haptics;
@@ -60,7 +97,7 @@ default and add a gain_ceiling module parameter.
  	unsigned int hi, lo, playcfg1;
  	int err;
  
-@@ -823,6 +834,20 @@
+@@ -823,6 +837,20 @@
  		return dev_err_probe(&client->dev, PTR_ERR(haptics->regmap),
  				     "failed to allocate regmap\n");
  
@@ -81,7 +118,7 @@ default and add a gain_ceiling module parameter.
  	err = regmap_read(haptics->regmap, AW86937_CHIPIDH_REG, &hi);
  	if (err)
  		return dev_err_probe(&client->dev, err,
-@@ -882,7 +907,7 @@
+@@ -882,7 +910,7 @@
  	dev_info(&client->dev,
  		 "AW86937 haptics ready chip_id=0x%04x playcfg1=0x%02x pwm_mode=%u gain_ceiling=0x%02x input=%s\n",
  		 haptics->chip_id, playcfg1, AW86937_PWM_MODE_DEFAULT,
