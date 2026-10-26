@@ -1,5 +1,7 @@
 # Armada on the Lenovo Legion Tab Gen 3 (TB321FU) — experimental
 
+[![Discord: Armada LegionTab3](https://img.shields.io/badge/Discord-Armada%20LegionTab3-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/vdGuWa6sUK)
+
 This is an **unofficial, experimental** port of [Armada](https://github.com/armada-os/armada)
 to the **Lenovo Legion Tab Gen 3 / Legion Y700 (2025), model TB321FU** (Qualcomm Snapdragon 8 Gen 3, SM8650).
 It is not supported by the Armada project: please report problems here, not upstream.
@@ -10,27 +12,12 @@ It is not supported by the Armada project: please report problems here, not upst
 > alongside Armada may be possible, but it is not covered here.)
 > You can always go back to stock Android with Lenovo's official rescue tool (LMSA).
 
-## Supported hardware: BOE and CSOT panels
-
-The TB321FU ships with two different display panels: **BOE** and **CSOT**. Both work.
-**CSOT** needs its own boot entry (see [CSOT panel](#csot-panel)).
-
-Check your panel **before doing anything**, from stock Android, with USB debugging enabled
-(no root needed):
-
-```bash
-adb shell getprop ro.vendor.display.paneltype
-```
-
-- `1` → **BOE**: supported.
-- anything else, or empty → probably **CSOT**: read [CSOT panel](#csot-panel) first.
-
 ## Status
 
 | Feature | Status |
 | --- | --- |
-| Display, 1600×2560 BOE, 60/90/120/144/165 Hz, landscape | ✅ |
-| Variable refresh rate (VRR), 40–165 Hz, BOE panel | ✅ |
+| Display, 1600×2560, 60/90/120/144/165 Hz, landscape, BOE or CSOT panel | ✅ |
+| Variable refresh rate (VRR), 40–165 Hz (60–165 Hz on CSOT) | ✅ |
 | Touchscreen | ✅ |
 | GPU (Adreno 750, Turnip/Freedreno) | ✅ |
 | Hardware video decoding (iris), also in Steam Remote Play | ✅ |
@@ -47,7 +34,6 @@ adb shell getprop ro.vendor.display.paneltype
 | Sensors (accelerometer, gyroscope, light); gyro available to Steam Input | ✅ |
 | Adaptive brightness (light sensor) | ✅ |
 | Cameras: 3 via libcamera (image quality not tuned yet) | ✅ |
-| CSOT panel, see below | ✅ |
 
 ### Legion G9 controller
 
@@ -65,28 +51,9 @@ adb shell getprop ro.vendor.display.paneltype
   their own: Steam sees them as L4, R4, L5 and R5 (leave them unmapped on the controller),
   and the M button opens the Quick Access menu. Only for the original G9 (2025); the stock
   firmware can be flashed back at any time.
-- With the stock firmware the four **back buttons** cannot be used as separate buttons: the
-  controller reports each one as one of the other buttons. To change it on the controller,
-  press **M** together with the back button, then the button it should send (Lenovo's
-  Android app can do it too). The M button is handled by the firmware only and cannot be
-  mapped.
-
-### CSOT panel
-
-Some units have a CSOT panel instead of the BOE one (on Android,
-`getprop ro.vendor.display.paneltype` gives 1 on BOE units). With the default
-entry a CSOT unit shows only a black screen after GRUB. To try it:
-
-1. In the GRUB menu (3 seconds after the Lenovo logo), pick the entry ending in
-   **(CSOT panel)**.
-2. If Game Mode comes up and touch works, make it the default: open a terminal in
-   Desktop Mode (or connect over SSH) and run `sudo tb321fu-panel csot`.
-   `sudo tb321fu-panel boe` goes back.
-
-Confirmed working, touch included, on a CSOT unit. Since this update it runs up to 165 Hz,
-with variable refresh rate from 60 to 165 Hz (lower rates made the screen glitch). The
-165 Hz modes and VRR have not been tested on a CSOT unit yet: reports are welcome, and if
-the screen misbehaves, turn VRR off in Steam's display settings.
+- With the stock firmware the **back buttons** can only repeat other buttons: hold **M**,
+  press the back button, then the button it should send (or use Lenovo's Android app). The
+  custom firmware above makes them buttons of their own.
 
 ### Battery
 
@@ -99,21 +66,26 @@ the screen misbehaves, turn VRR off in Steam's display settings.
 
 This update:
 
-- **Speakers:** much less crackle right after boot (audio buffer doubled to 80 ms).
-- **CSOT panel:** up to 165 Hz, with variable refresh rate from 60 Hz. Untested on a CSOT
-  unit, see [CSOT panel](#csot-panel).
-- **Power button in Desktop Mode:** the tablet sleeps right away, not after about 25 s.
-- **Battery charge limit:** Steam's charge limit (Settings → Power) now appears and works.
-- **Steam Remote Play:** lower-latency video decoding, from Armada.
-- **Armada updates** up to October 22.
+- **Speakers:** a sound after a pause no longer loses its first half second.
+- **Vibration:** on tablets where one of the two motors never started, both should now work
+  ([#9](https://github.com/enij90/armada-tb321fu/issues/9)). Full-strength rumble is a bit
+  softer, as on Android (gain 0x80 instead of 0xff); it can be changed in
+  `/sys/module/aw86937_y700/parameters/gain_ceiling` (1-255).
+- **Legion G9 with the custom firmware:** the four back buttons work as L4, R4, L5 and R5
+  in Steam, and the M button opens the Quick Access menu (see
+  [Legion G9 controller](#legion-g9-controller)).
 
-Previous update (October 20): a charger on the long-side USB-C port charges again and the
-Legion G9 stays connected when it goes in, fewer speaker pops after boot and sleep, CSOT
-panel confirmed working, sound over USB-C turned off for now. Older changes are listed in
-the [releases](https://github.com/enij90/armada-tb321fu/releases).
+Previous update (October 24): speakers with much less crackle after boot, CSOT panel up to
+165 Hz with variable refresh rate, the power button sleeps right away in Desktop Mode,
+Steam's battery charge limit works, faster Steam Remote Play decoding, Armada updates up to
+October 22. Older changes are listed in the
+[releases](https://github.com/enij90/armada-tb321fu/releases).
 
 ## Known issues
 
+- CSOT panel: the 165 Hz modes and variable refresh rate have not been tested on a CSOT
+  unit yet. Reports are welcome; if the screen misbehaves, turn VRR off in Steam's display
+  settings.
 - Sometimes, after GRUB, the tablet restarts once or twice before booting. It then
   starts normally.
 - Camera image quality is not tuned yet: the second rear camera is a macro camera and is
@@ -133,7 +105,9 @@ You start from the tablet as it comes from the factory, running Lenovo's Android
 
 What you will need:
 
-- the tablet, charged (check the panel first, see above);
+- the tablet, charged and updated to the latest Android version through its system update.
+  Armada is tested on **ZUI 17.5.10.319** (ROW, the global version), the latest at the time
+  of writing; other versions, including the Chinese (CN) ones, are untested;
 - a PC (Windows, Linux or macOS) with Android's
   [platform-tools](https://developer.android.com/tools/releases/platform-tools) (`adb`, `fastboot`)
   and a USB-C cable;
@@ -195,6 +169,13 @@ fastboot reboot
 Lenovo logo → GRUB → "Preparing Armada" → Wi-Fi and Steam setup. The first boot takes a
 little longer. Then you are in Steam's Game Mode.
 
+- **Display panel:** the TB321FU comes with a BOE or a CSOT panel, and the default boot
+  entry is for BOE. If the screen stays black after GRUB, restart and pick the entry
+  ending in **(CSOT panel)** in the GRUB menu (3 seconds after the Lenovo logo). If Game
+  Mode comes up and touch works, make it the default from a terminal in Desktop Mode (or
+  over SSH) with `sudo tb321fu-panel csot`; `sudo tb321fu-panel boe` goes back. To know
+  your panel beforehand, run `adb shell getprop ro.vendor.display.paneltype` on stock
+  Android: `1` is BOE.
 - Desktop user: `armada`, password `armada`. Change it (`passwd` in a terminal in desktop mode).
 - SSH is off by default; you can turn it on in desktop mode → **Armada Tools**.
 - System updates come through Steam (Settings → System, software updates). They download in
