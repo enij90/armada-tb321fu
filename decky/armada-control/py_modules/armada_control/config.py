@@ -1,14 +1,15 @@
 from .controller import CONTROLLER_TYPES, controller_type, inputplumber_targets
-from .power import factory_power_defaults, parse_power
+from .power import factory_power_defaults, parse_power, resolve_limits
 from .rgb import rgb_supported
 from .steam import installed_games
 from .system import (
-    abl_auto_enabled,
     abl_version,
     bottom_screen_brightness,
     bottom_screen_active,
     bottom_screen_enabled,
     device_env,
+    freq_limits,
+    gyro_state,
     mtp_enabled,
     native_resolution,
     os_version,
@@ -32,17 +33,20 @@ def build_config(include_games=True):
     fex_contract = load_fex_contract()
     env = device_env()
     secondary_brightness = bottom_screen_brightness()
-    power = parse_power()
+    limits = freq_limits(env)
+    soc = env.get("ARMADA_SOC_CLASS", "")
+    power = resolve_limits(parse_power(), limits, soc)
     return {
         "power": power,
-        "powerDefaults": factory_power_defaults(),
+        "powerDefaults": resolve_limits(factory_power_defaults(), limits, soc),
+        "freqLimits": {key: limits[key] for key in ("gpuMhz", "gpuStockMaxMhz", "cpuPolicies", "cpuTopology")},
         "tweaks": load_tweaks(),
         "installedGames": installed_games() if include_games else [],
         "fexProfiles": fex_profile_labels(fex_contract),
         "turnipDrivers": turnip_drivers(),
         "envPresets": load_env_presets(),
         "perf": perf_info(),
-        "cpuDeviceClass": env.get("ARMADA_SOC_CLASS", ""),
+        "cpuDeviceClass": soc,
         "rgbSupported": rgb_supported(),
         "protonDefaults": [
             default.strip()
@@ -51,7 +55,6 @@ def build_config(include_games=True):
         ],
         "osVersion": os_version(),
         "ablVersion": abl_version(),
-        "ablAutoEnabled": abl_auto_enabled(),
         "bottomScreenSupported": bool(
             env.get("ARMADA_SECONDARY_CONNECTOR") and env.get("ARMADA_SECONDARY_TOUCHSCREEN")
         ),
@@ -63,6 +66,7 @@ def build_config(include_games=True):
         "sshEnabled": ssh_enabled(),
         "swipeGesturesEnabled": swipe_gestures_enabled(),
         "nativeResolution": native_resolution(),
+        "gyro": gyro_state(),
         "mtpEnabled": mtp_enabled(),
         "desktopMode": desktop_mode(),
         "desktopModes": desktop_modes(),

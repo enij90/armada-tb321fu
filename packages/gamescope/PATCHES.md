@@ -56,13 +56,17 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0027-steamcompmgr-elapsed-time-fps-limiter.patch`
   source: armada
-- `patches/0028-improve-frame-pacing.patch`
-  source: https://github.com/ValveSoftware/gamescope/pull/2417
-- `patches/0029-wlserver-only-take-an-edge-swipe-that-starts-at-the-edge.patch`
+- `patches/0029-drm-mirror-internal-screen-sleep-to-the-lease-companion.patch`
   source: armada
-- `patches/0030-ime-type-any-single-character-on-its-real-key.patch`
+- `patches/0030-drm-lock-the-lease-companion-with-the-broker.patch`
   source: armada
-- `patches/0031-edid-clamp-synthetic-pixel-clock-above-the-dtd-limit.patch`
+- `patches/0031-drm-wait-for-the-lock-state-before-lighting-the-companion.patch`
   source: armada
-- `patches/0032-pipewire-report-a-missing-capture-buffer-once-a-minute.patch`
+- `patches/0080-wlserver-only-take-an-edge-swipe-that-starts-at-the-edge.patch`
+  source: armada
+- `patches/0081-ime-type-any-single-character-on-its-real-key.patch`
+  source: armada
+- `patches/0082-edid-clamp-synthetic-pixel-clock-above-the-dtd-limit.patch`
+  source: armada
+- `patches/0083-pipewire-report-a-missing-capture-buffer-once-a-minute.patch`
   source: armada

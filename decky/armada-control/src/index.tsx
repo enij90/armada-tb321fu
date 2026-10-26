@@ -11,6 +11,8 @@ import {
   sweepInstalledGames,
 } from "./lib/steamCompat";
 import { factoryDefaultTransition } from "./lib/protonPolicy";
+import { registerLockWatcher } from "./lib/lockWatcher";
+import { registerLowPowerDownloadEntry } from "./lib/lowPowerDownloads";
 
 // Gamescope's edge swipes toggle the Steam menus, so a drag inside an open
 // side menu (a quick access slider moved toward the edge) would close it:
@@ -36,6 +38,8 @@ function watchSideMenus(): () => void {
 export default definePlugin(() => {
   let unregisterDownloadWatcher = () => {};
   const stopWatchingSideMenus = watchSideMenus();
+  const unregisterLockWatcher = registerLockWatcher();
+  const unregisterLowPowerDownloadEntry = registerLowPowerDownloadEntry();
   const persistHandledGames = () => {
     saveCompatApplied(handledGameAppids()).catch(() => {});
   };
@@ -96,6 +100,8 @@ export default definePlugin(() => {
       cancelled = true;
       unregisterDownloadWatcher();
       stopWatchingSideMenus();
+      unregisterLockWatcher();
+      unregisterLowPowerDownloadEntry();
     },
     icon: (
       <svg
