@@ -280,6 +280,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0815-drm-msm-dpu-set-dsi-avr-on-all-bonded-tiles.patch
 0816-input-misc-add-aw86937-y700-haptics-guf296.patch
 0817-input-misc-aw86937-y700-stop-a-ram-effect-without-waiting.patch
+0840-input-misc-aw86937-y700-release-the-reset-line-and-lower-the-default-gain.patch
 0818-drm-msm-dpu-preload-seven-pixels-in-qseed4-behind-the-inline-rotator.patch
 0820-regulator-add-wl2868c-camera-ldo-guf296.patch
 0821-media-i2c-add-gc13a0-sensor-guf296.patch

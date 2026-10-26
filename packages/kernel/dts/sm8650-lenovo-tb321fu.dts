@@ -753,12 +753,16 @@
 		compatible = "lenovo,tb321fu-aw86937", "awinic,aw86937";
 		reg = <0x5a>;
 		label = "aw86937-haptics-left";
+		/* Not every bootloader releases it (patch 0840) */
+		reset-gpios = <&tlmm 127 GPIO_ACTIVE_LOW>;
 	};
 
 	haptics-right@5b {
 		compatible = "lenovo,tb321fu-aw86937", "awinic,aw86937";
 		reg = <0x5b>;
 		label = "aw86937-haptics-right";
+		/* Not every bootloader releases it (patch 0840) */
+		reset-gpios = <&tlmm 119 GPIO_ACTIVE_LOW>;
 	};
 };
 
