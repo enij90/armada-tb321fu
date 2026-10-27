@@ -340,6 +340,7 @@ CONFIG_USB_NET_RNDIS_HOST=m              # Android USB tethering
 # ============== Bluetooth peripherals ==============
 CONFIG_BT_LE=y
 CONFIG_BT_RFCOMM=m
+CONFIG_BT_BNEP=m
 
 # ============== Waydroid ==============
 CONFIG_ANDROID_BINDER_IPC=y

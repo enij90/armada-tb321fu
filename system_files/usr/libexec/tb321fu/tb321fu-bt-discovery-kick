@@ -2,15 +2,16 @@
 # Lenovo TB321FU: Steam turns Bluetooth on with rfkill unblock and asks for
 # discovery at once, while the WCN7850 is still loading its firmware (~2 s).
 # BlueZ answers NotReady and Steam never retries, so its device list stays
-# empty. When an adapter powers on and nobody is discovering, run a short
-# discovery so the list fills.
+# empty. When an adapter powers on and nobody is discovering, run a discovery
+# so the list fills. BlueZ drops unpaired devices 30 s after the last
+# discovery stops, so it lasts long enough to pick a device.
 import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
 ADAPTER = "org.bluez.Adapter1"
 KICK_DELAY_MS = 1500
-DISCOVERY_S = 20
+DISCOVERY_S = 120
 
 bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
 pending = {}
