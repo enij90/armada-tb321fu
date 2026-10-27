@@ -1,5 +1,5 @@
 import { call } from "@decky/api";
-import type { CalibrationState, CompatAppliedState, Config, CurvesState, FanCurve, FanSettings, InstalledGame, PowerConfig, RgbConfig, Tweaks } from "./types";
+import type { CalibrationState, CompatAppliedState, Config, CurvesState, FanCurve, FanSettings, InstalledGame, PanelAttr, PanelCalibration, PanelRate, PanelStep, PowerConfig, RgbConfig, Tweaks } from "./types";
 
 export const getConfig = () => call<[], Config>("get_config");
 export const getInstalledGames = () => call<[], InstalledGame[]>("get_installed_games");
@@ -21,6 +21,13 @@ export const suspendSwipeGestures = (suspended: boolean) => call<[boolean], bool
 export const setSshEnabled = (enabled: boolean) => call<[boolean], boolean>("set_ssh_enabled", enabled);
 export const setGyroEnabled = (enabled: boolean) => call<[boolean], boolean>("set_gyro_enabled", enabled);
 export const setMtpEnabled = (enabled: boolean) => call<[boolean], boolean>("set_mtp_enabled", enabled);
+export const getPanelCalibration = () => call<[], PanelCalibration>("get_panel_calibration");
+export const getPanelRate = () => call<[], PanelRate>("get_panel_rate");
+export const calibratePanel = () => call<[], { value: number; hz: number }>("calibrate_panel");
+export const stepPanel = (attr: PanelAttr, direction: "faster" | "slower") =>
+  call<[PanelAttr, string], PanelStep>("step_panel", attr, direction);
+export const setPanel = (attr: PanelAttr, value: number) => call<[PanelAttr, number], boolean>("set_panel", attr, value);
+export const savePanel = (attr: PanelAttr) => call<[PanelAttr], { saved: number | null }>("save_panel", attr);
 export const setBottomScreenEnabled = (enabled: boolean) => call<[boolean], boolean>("set_bottom_screen_enabled", enabled);
 export const setBottomScreenBrightness = (brightness: number) => call<[number], number>("set_bottom_screen_brightness", brightness);
 export const getBottomScreenActive = () => call<[], boolean>("get_bottom_screen_active");

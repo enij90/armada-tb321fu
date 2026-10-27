@@ -1,0 +1,140 @@
+From 7daae3735e5d2691f1392ebd1effa90b56be4cfb Mon Sep 17 00:00:00 2001
+From: Armada <noreply@armada.local>
+Date: Thu, 22 Oct 2026 03:02:21 +0000
+Subject: [PATCH] drm/panel: icna35xx: serialise live frame-length writes
+
+The frame_len_120/frame_len_60 sysfs stores send a page select, B3 and a
+page restore while the panel is streaming. A backlight update or a
+disable can run at the same time and land its DCS write between them,
+on the wrong command page.
+
+Take one mutex around the enabled flag, the backlight write, the
+frame-length show and store, and the B3 write in the init sequence,
+which reads the same values. Restore the command page and the cached
+value when the B3 write fails, and report the error.
+---
+ .../gpu/drm/panel/panel-chipone-icna35xx.c    | 35 ++++++++++++++++---
+ 1 file changed, 30 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/gpu/drm/panel/panel-chipone-icna35xx.c b/drivers/gpu/drm/panel/panel-chipone-icna35xx.c
+index 95e55f4..dd18c57 100644
+--- a/drivers/gpu/drm/panel/panel-chipone-icna35xx.c
++++ b/drivers/gpu/drm/panel/panel-chipone-icna35xx.c
+@@ -34,6 +34,8 @@ struct panel_info {
+ 	struct regulator_bulk_data *supplies;
+ 	struct backlight_device *backlight;
+ 	struct drm_panel_bl_levels bl_levels;
++	/* Serialises DSI command sequences sent outside the atomic commit. */
++	struct mutex lock;
+ 	bool enabled;
+ 
+ 	int vrefresh;
+@@ -250,7 +252,8 @@ static int icna3520_init_sequence(struct panel_info *pinfo)
+ 	mipi_dsi_msleep(&dsi_ctx, 120);
+ 
+ 	pinfo->vrefresh = cur_vrefresh;
+-	icna3520_set_frame_len(&dsi_ctx, pinfo);
++	scoped_guard(mutex, &pinfo->lock)
++		icna3520_set_frame_len(&dsi_ctx, pinfo);
+ 
+ 	mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0x9F, 0x01);
+ 	mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0xB2, 0x00);
+@@ -610,7 +613,9 @@ static int icna35xx_disable(struct drm_panel *panel)
+ 	struct panel_info *pinfo = to_panel_info(panel);
+ 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = pinfo->dsi };
+ 
++	mutex_lock(&pinfo->lock);
+ 	pinfo->enabled = false;
++	mutex_unlock(&pinfo->lock);
+ 
+ 	pinfo->dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+ 
+@@ -688,7 +693,9 @@ static int icna35xx_enable(struct drm_panel *panel)
+ {
+ 	struct panel_info *pinfo = to_panel_info(panel);
+ 
++	mutex_lock(&pinfo->lock);
+ 	pinfo->enabled = true;
++	mutex_unlock(&pinfo->lock);
+ 
+ 	return 0;
+ }
+@@ -717,6 +724,8 @@ static int icna35xx_bl_update_status(struct backlight_device *bl)
+ 	 * is cached by the backlight core and re-applied from init_sequence()
+ 	 * on every prepare(), so skipping the write while disabled is safe.
+ 	 */
++	guard(mutex)(&pinfo->lock);
++
+ 	if (!pinfo->enabled)
+ 		return 0;
+ 
+@@ -761,7 +770,7 @@ static ssize_t icna3520_frame_len_store(struct device *dev, u16 *frame_len,
+ {
+ 	struct panel_info *pinfo = dev_get_drvdata(dev);
+ 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = pinfo->dsi };
+-	u16 val;
++	u16 val, old;
+ 	int ret;
+ 
+ 	ret = kstrtou16(buf, 0, &val);
+@@ -771,6 +780,9 @@ static ssize_t icna3520_frame_len_store(struct device *dev, u16 *frame_len,
+ 	if (val < min || val > max)
+ 		return -EINVAL;
+ 
++	guard(mutex)(&pinfo->lock);
++
++	old = *frame_len;
+ 	*frame_len = val;
+ 
+ 	if (!pinfo->enabled || pinfo->vrefresh != vrefresh)
+@@ -778,13 +790,18 @@ static ssize_t icna3520_frame_len_store(struct device *dev, u16 *frame_len,
+ 
+ 	pinfo->dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+ 	icna3520_set_frame_len(&dsi_ctx, pinfo);
++	ret = dsi_ctx.accum_err;
++	/* Restore the command page even if the B3 write failed. */
++	dsi_ctx.accum_err = 0;
+ 	mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0x9F, 0x0D);
+ 	pinfo->dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+ 
+-	if (dsi_ctx.accum_err)
+-		return dsi_ctx.accum_err;
++	if (ret) {
++		*frame_len = old;
++		return ret;
++	}
+ 
+-	return count;
++	return dsi_ctx.accum_err ?: count;
+ }
+ 
+ static ssize_t frame_len_120_show(struct device *dev,
+@@ -792,6 +809,8 @@ static ssize_t frame_len_120_show(struct device *dev,
+ {
+ 	struct panel_info *pinfo = dev_get_drvdata(dev);
+ 
++	guard(mutex)(&pinfo->lock);
++
+ 	return sysfs_emit(buf, "%u\n", pinfo->frame_len_120);
+ }
+ 
+@@ -811,6 +830,8 @@ static ssize_t frame_len_60_show(struct device *dev,
+ {
+ 	struct panel_info *pinfo = dev_get_drvdata(dev);
+ 
++	guard(mutex)(&pinfo->lock);
++
+ 	return sysfs_emit(buf, "%u\n", pinfo->frame_len_60);
+ }
+ 
+@@ -847,6 +868,10 @@ static int icna35xx_probe(struct mipi_dsi_device *dsi)
+ 	if (IS_ERR(pinfo))
+ 		return PTR_ERR(pinfo);
+ 
++	ret = devm_mutex_init(dev, &pinfo->lock);
++	if (ret)
++		return ret;
++
+ 	ret = devm_regulator_bulk_get_const(dev, ARRAY_SIZE(panel_supplies),
+ 	panel_supplies, &pinfo->supplies);
+ 	if (ret < 0){

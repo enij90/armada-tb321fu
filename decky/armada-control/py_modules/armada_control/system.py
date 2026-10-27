@@ -1,3 +1,4 @@
+import json
 import os
 import shlex
 import subprocess
@@ -14,6 +15,7 @@ SLEEP_DEBUG_MODULE = Path("/usr/lib/armada/armada_sleep_debug.py")
 SLEEP_LOG_HOOK_SOURCE = Path(__file__).with_name("sleep_debug_hook.sh")
 SLEEP_LOG_HOOK = Path("/etc/armada/sleep-debug-hook")
 SLEEP_LOG_DROPIN = Path("/etc/systemd/system/systemd-suspend.service.d/90-armada-sleep-debug.conf")
+PANEL_CALIBRATION = "/usr/libexec/armada/panel-calibration"
 SLEEP_MODE_LABELS = {
     "s2idle": "Native",
     "fake": "Fake",
@@ -148,6 +150,39 @@ def set_ssh_enabled(enabled):
 
 def set_mtp_enabled(enabled):
     return bool(call("set_mtp_enabled", enabled=bool(enabled)).get("enabled"))
+
+
+def panel_tool(mode, *args, timeout=5):
+    proc = run_cmd([PANEL_CALIBRATION, mode, *args], timeout=timeout)
+    if proc is None or proc.returncode != 0:
+        raise RuntimeError(f"panel-calibration {mode} failed")
+    return json.loads(proc.stdout) if proc.stdout.strip() else None
+
+
+def panel_calibration():
+    return panel_tool("status")
+
+
+def panel_rate():
+    return panel_tool("rate")
+
+
+def step_panel(attr, direction):
+    return panel_tool("step", attr, direction)
+
+
+def set_panel(attr, value):
+    panel_tool("set", attr, str(int(value)))
+    return True
+
+
+def save_panel(attr):
+    return panel_tool("save", attr)
+
+
+def calibrate_panel():
+    # A run is about a dozen 1 s readings at worst.
+    return panel_tool("calibrate", timeout=60)
 
 
 def bottom_screen_enabled():

@@ -1,0 +1,29 @@
+From: virtudude <virtudude@protonmail.com>
+Subject: [PATCH] steamcompmgr: use the exact rate for refresh-only requests
+
+Steam's refresh rate slider asks for a rate with ONLY_CHANGE_REFRESH_RATE,
+but the rate is still picked by refresh doubling: the highest supported rate
+that is a multiple of the request. On a panel with only 60 and 120 Hz, 60
+becomes 120. Use the requested rate when the connector supports it. Frame
+limit requests keep doubling.
+
+---
+diff --git a/src/steamcompmgr.cpp b/src/steamcompmgr.cpp
+index 373d697..1f9f0d3 100644
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -1290,6 +1290,14 @@ static void _update_app_target_refresh_cycle()
+ 	{
+ 		auto rates = GetBackend()->GetCurrentConnector()->GetValidDynamicRefreshRates();
+ 
++		// A refresh-only request names a rate, not a frame cap: don't double it.
++		if ( !g_nCombinedAppRefreshCycleChangeFPS[ type ] &&
++			std::find( rates.begin(), rates.end(), uint32_t( target_fps ) ) != rates.end() )
++		{
++			g_nDynamicRefreshRate[ type ] = target_fps;
++			return;
++		}
++
+ 		// Find highest mode to do refresh doubling with.
+ 		for ( auto rate = rates.rbegin(); rate != rates.rend(); rate++ )
+ 		{

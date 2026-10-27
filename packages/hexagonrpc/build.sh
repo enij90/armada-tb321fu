@@ -71,7 +71,7 @@ grep -q '^Release:.*armada' "${SPEC}" || {
   exit 1
 }
 
-# The sns_registry patch targets the commit before v0.5.0 and needs fuzz.
+# The suckbluefrog patches target the commit before v0.5.0 and need fuzz.
 sed -i '1i %global _default_patch_fuzz 2' "${SPEC}"
 
 # Fail in case spec is invalid

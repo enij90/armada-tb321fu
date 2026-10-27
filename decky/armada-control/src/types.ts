@@ -220,3 +220,24 @@ export interface CurvesState {
   // Live marker instead polls get_current_temp (see hooks/useCurrentTemp).
   currentTemp: number | null;
 }
+
+export type PanelAttr = "frame_len_120" | "frame_len_60";
+export type PanelValues = Record<PanelAttr, number | null>;
+
+export interface PanelCalibration {
+  supported: boolean;
+  saved?: PanelValues;
+  live?: PanelValues;
+  defaults?: PanelValues;
+}
+
+export interface PanelRate {
+  hz: number | null;
+  attr: PanelAttr | null;
+}
+
+export interface PanelStep {
+  value: number;
+  hz: number | null;
+  limit: "range" | null;
+}

@@ -14,10 +14,15 @@ Subject: [PATCH] arm64: dts: qcom: pocket-fit: dedicated sound card and controll
  &mdss_dsi0 {
  	status = "okay";
  	vdda-supply = <&vreg_l3i_1p2>;
-@@ -86,3 +90,9 @@
+@@ -86,3 +90,14 @@
  		status = "okay";
  	};
  };
++
++&remoteproc_adsp {
++	firmware-name = "qcom/sm8650/konkr/pf/adsp.mbn",
++			"qcom/sm8650/konkr/pf/adsp_dtb.mbn";
++};
 +
 +&uart13 {
 +	mcu {

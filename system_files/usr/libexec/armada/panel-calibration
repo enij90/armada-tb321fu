@@ -1,0 +1,432 @@
+#!/usr/bin/env python3
+"""Tune command-mode panels' DDIC frame length (frame_len_120/60 on the DSI
+device) so they refresh at their nominal rate; saved in /etc/armada/panel.conf.
+
+  panel-calibration apply                    apply saved values (at boot)
+  panel-calibration calibrate                tune the active mode live, unsaved
+  panel-calibration step ATTR faster|slower  move ATTR one value and measure
+  panel-calibration set ATTR VALUE           write ATTR live, unsaved
+  panel-calibration save ATTR                save ATTR's live value
+  panel-calibration status                   saved, live and default values
+  panel-calibration rate                     measure the current refresh rate
+"""
+import ctypes
+import fcntl
+import glob
+import json
+import os
+import shlex
+import struct
+import subprocess
+import sys
+import time
+
+CONFIG = "/etc/armada/panel.conf"
+DEFAULTS = "/run/armada/panel-defaults.json"
+ATTRS = ("frame_len_120", "frame_len_60")
+DRM_IOCTL_WAIT_VBLANK = 0xC018643A
+DRM_IOCTL_MODE_GETRESOURCES = 0xC04064A0
+DRM_IOCTL_MODE_GETENCODER = 0xC01464A6
+DRM_IOCTL_MODE_GETCONNECTOR = 0xC05064A7
+MODEINFO_SIZE = 68
+VBLANK_RELATIVE = 0x1
+VBLANK_SECONDARY = 0x20000000
+# The panel's own rate wanders ~0.03 Hz over seconds, so longer samples barely help.
+MEASURE_S = 1.0
+PROBE_STEP = 20
+# Land between 0.01% and 0.08% above nominal: below nominal drops frames, and
+# the ICNA3520 turns the picture gray past ~0.11% (120.13 Hz).
+MARGIN = 0.0001
+CEILING = 0.0008
+STABLE_HZ = 0.1
+# A pipe whose rate moved less than this with the probe is not the panel's.
+MIN_SHIFT_HZ = 0.2
+
+
+def controls():
+    return sorted(os.path.dirname(p) for p in glob.glob("/sys/bus/mipi-dsi/devices/*/frame_len_120"))
+
+
+def panel_id(ctrl):
+    """The panel's first compatible, so a value never carries to another panel."""
+    try:
+        with open(os.path.join(ctrl, "of_node", "compatible"), "rb") as f:
+            compatible = f.read().split(b"\0")[0].decode()
+    except OSError:
+        compatible = "unknown"
+    return "".join(c if c.isalnum() else "_" for c in compatible).upper()
+
+
+def read_config():
+    values = {}
+    try:
+        with open(CONFIG, encoding="utf-8") as f:
+            for line in f:
+                key, sep, value = line.strip().partition("=")
+                if sep and key.startswith("ARMADA_PANEL_") and value.isdigit():
+                    values[key] = int(value)
+    except OSError:
+        pass
+    return values
+
+
+def write_config(values):
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    tmp = CONFIG + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        for key in sorted(values):
+            f.write(f"{key}={values[key]}\n")
+    os.replace(tmp, CONFIG)
+
+
+def primary_connector():
+    out = subprocess.run(["/usr/libexec/armada/device-env"], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        key, _, value = line.partition("=")
+        if key == "ARMADA_PRIMARY_CONNECTOR" and value:
+            return shlex.split(value)[0]
+    raise OSError("no primary connector")
+
+
+def open_card():
+    """msm is not always card0."""
+    for path in glob.glob(f"/sys/class/drm/card*-{primary_connector()}"):
+        try:
+            with open(os.path.join(path, "connector_id")) as f:
+                connector_id = int(f.read())
+        except (OSError, ValueError):
+            continue
+        card = os.path.basename(path).split("-")[0]
+        return os.open(f"/dev/dri/{card}", os.O_RDWR), connector_id
+    raise OSError("no panel connector")
+
+
+def panel_pipe(fd, connector_id):
+    """The CRTC index driving the panel, or None when it is off."""
+    # One mode slot: with no slots the kernel would reprobe the connector.
+    modes = bytearray(MODEINFO_SIZE)
+    buf = bytearray(struct.pack("QQQQ12I", 0, address(modes), 0, 0, 1, 0, 0, 0,
+                                connector_id, 0, 0, 0, 0, 0, 0, 0))
+    fcntl.ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, buf)
+    encoder_id = struct.unpack_from("I", buf, 44)[0]
+    if not encoder_id:
+        return None
+    buf = bytearray(struct.pack("5I", encoder_id, 0, 0, 0, 0))
+    fcntl.ioctl(fd, DRM_IOCTL_MODE_GETENCODER, buf)
+    crtc_id = struct.unpack_from("I", buf, 8)[0]
+    if not crtc_id:
+        return None
+    buf = bytearray(struct.pack("QQQQ8I", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+    fcntl.ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, buf)
+    count = struct.unpack_from("I", buf, 36)[0]
+    crtcs = bytearray(4 * count)
+    buf = bytearray(struct.pack("QQQQ8I", 0, address(crtcs), 0, 0, 0, count, 0, 0, 0, 0, 0, 0))
+    fcntl.ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, buf)
+    ids = list(struct.unpack(f"{count}I", crtcs))
+    return ids.index(crtc_id) if crtc_id in ids else None
+
+
+def address(buffer):
+    return ctypes.addressof(ctypes.c_char.from_buffer(buffer))
+
+
+def config_key(ctrl, attr):
+    return f"ARMADA_PANEL_{panel_id(ctrl)}_{attr.upper()}"
+
+
+def read_attr(ctrl, attr):
+    with open(os.path.join(ctrl, attr), encoding="utf-8") as f:
+        return int(f.read().strip())
+
+
+def write_attr(ctrl, attr, value):
+    with open(os.path.join(ctrl, attr), "w", encoding="utf-8") as f:
+        f.write(f"{value}\n")
+
+
+def wait_vblank(fd, pipe):
+    flags = VBLANK_RELATIVE
+    if pipe == 1:
+        flags |= VBLANK_SECONDARY
+    elif pipe > 1:
+        flags |= (pipe << 1) & 0x3E
+    buf = bytearray(struct.pack("IIqq", flags, 1, 0, 0))
+    fcntl.ioctl(fd, DRM_IOCTL_WAIT_VBLANK, buf)
+    _, seq, sec, usec = struct.unpack("IIqq", buf)
+    return seq, sec + usec / 1e6
+
+
+def measure(fd, pipe, seconds=MEASURE_S):
+    """Rate from vblank sequence numbers, which do not skip like timestamps."""
+    s0, t0 = wait_vblank(fd, pipe)
+    s1, t1 = s0, t0
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        s1, t1 = wait_vblank(fd, pipe)
+    if t1 <= t0:
+        raise OSError("no vblanks")
+    return (s1 - s0) / (t1 - t0)
+
+
+def solve(points, target):
+    """Value whose rate is the smallest at or above target.
+
+    1 / rate is linear in the value: 1 / rate = (N + value) / K.
+    """
+    (v0, r0), (v1, r1) = points
+    slope = (1 / r1 - 1 / r0) / (v1 - v0)
+    intercept = 1 / r0 - slope * v0
+    exact = (1 / target - intercept) / slope
+    candidates = [int(exact) - 1, int(exact), int(exact) + 1, int(exact) + 2]
+    above = [v for v in candidates if 1 / (intercept + slope * v) >= target]
+    return min(above, key=lambda v: 1 / (intercept + slope * v))
+
+
+def probe_panel(fd, ctrl, attr, pipe, before):
+    """Probe the attribute from its rate before and return (base, base rate,
+    probe, probe rate), None when the rate did not follow, or False when the
+    value is locked."""
+    base = read_attr(ctrl, attr)
+    for probe in (base - PROBE_STEP, base + PROBE_STEP):
+        try:
+            write_attr(ctrl, attr, probe)
+        except OSError:
+            continue
+        try:
+            after = measure(fd, pipe)
+        finally:
+            write_attr(ctrl, attr, base)
+        if abs(after - before) < MIN_SHIFT_HZ:
+            return None
+        # A mode switch during the probe also moves the rate; it does not come back.
+        if abs(measure(fd, pipe) - before) > MIN_SHIFT_HZ / 2:
+            return None
+        return base, before, probe, after
+    return False
+
+
+def converge(fd, ctrl, attr, pipe, value, faster, target, ceiling, nominal):
+    """Nudge from the model's answer into [target, ceiling], or to the closest
+    the panel's range allows while still at nominal."""
+    best = (None, None)
+    for _ in range(8):
+        try:
+            write_attr(ctrl, attr, value)
+        except OSError:
+            # Past the panel's limit.
+            if best[0] is not None:
+                return best
+            value -= faster
+            continue
+        rate = measure(fd, pipe)
+        if rate < target:
+            if rate >= nominal:
+                best = (value, rate)
+            value += faster
+        elif rate > ceiling:
+            value -= faster
+        else:
+            return value, rate
+    return best
+
+
+def calibrate(ctrl):
+    """(value, rate) when calibrated, otherwise why not."""
+    try:
+        fd, connector_id = open_card()
+    except OSError:
+        return "The display is off."
+    try:
+        return calibrate_pipe(fd, ctrl, connector_id)
+    except OSError:
+        # A pipe went away mid-run (DPMS or a modeset); the probe was restored.
+        return "The display went off during calibration."
+    finally:
+        os.close(fd)
+
+
+def calibrate_pipe(fd, ctrl, connector_id):
+    pipe = panel_pipe(fd, connector_id)
+    if pipe is None:
+        return "The display is off."
+    first = measure(fd, pipe)
+    rate = measure(fd, pipe)
+    # Right after boot the compositor is still taking over the display.
+    if abs(rate - first) > STABLE_HZ:
+        return "The display is not steady."
+    attr, nominal = mode_of(rate)
+    if attr is None:
+        return "The active refresh mode cannot be calibrated."
+    found = probe_panel(fd, ctrl, attr, pipe, rate)
+    if found is None:
+        return "The panel did not respond to calibration."
+    if found is False:
+        return "This refresh mode cannot be adjusted on this panel."
+    base, base_rate, probe, probe_rate = found
+    target = nominal * (1 + MARGIN)
+    value = solve([(base, base_rate), (probe, probe_rate)], target)
+    faster = 1 if (probe_rate - base_rate) / (probe - base) > 0 else -1
+    result, rate = None, None
+    try:
+        result, rate = converge(fd, ctrl, attr, pipe, value, faster, target,
+                                nominal * (1 + CEILING), nominal)
+    finally:
+        write_attr(ctrl, attr, result if result is not None else base)
+    if result is None:
+        return "The panel did not reach the target rate."
+    return result, rate
+
+
+def mode_of(rate):
+    for attr, target in (("frame_len_120", 120.0), ("frame_len_60", 60.0)):
+        if abs(rate - target) < 5:
+            return attr, target
+    return None, None
+
+
+def current_rate():
+    try:
+        fd, connector_id = open_card()
+    except OSError:
+        return None
+    try:
+        pipe = panel_pipe(fd, connector_id)
+        return None if pipe is None else measure(fd, pipe)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def report_rate():
+    hz = current_rate()
+    print(json.dumps({"hz": round(hz, 2) if hz else None, "attr": mode_of(hz)[0] if hz else None}))
+
+
+def read_defaults():
+    try:
+        with open(DEFAULTS, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def record_defaults(ctrl):
+    """Before the first apply of a boot the panel holds its driver defaults."""
+    if os.path.exists(DEFAULTS):
+        return
+    defaults = {}
+    for attr in ATTRS:
+        try:
+            defaults[attr] = read_attr(ctrl, attr)
+        except (OSError, ValueError):
+            pass
+    os.makedirs(os.path.dirname(DEFAULTS), exist_ok=True)
+    with open(DEFAULTS, "w", encoding="utf-8") as f:
+        json.dump(defaults, f)
+
+
+def live_values(ctrl):
+    live = {}
+    for attr in ATTRS:
+        try:
+            live[attr] = read_attr(ctrl, attr)
+        except (OSError, ValueError):
+            live[attr] = None
+    return live
+
+
+def status(ctrl, values):
+    defaults = read_defaults()
+    print(json.dumps({
+        "supported": True,
+        "saved": {attr: values.get(config_key(ctrl, attr)) for attr in ATTRS},
+        "live": live_values(ctrl),
+        "defaults": {attr: defaults.get(attr) for attr in ATTRS},
+    }))
+
+
+def step(ctrl, attr, direction):
+    """A lower frame length is a faster refresh. No ceiling here: manual steps
+    are how a gray picture or a bad automatic result gets fixed."""
+    value = read_attr(ctrl, attr)
+    new = value - 1 if direction == "faster" else value + 1
+    limit = None
+    try:
+        write_attr(ctrl, attr, new)
+    except OSError:
+        new, limit = value, "range"
+    hz = current_rate()
+    print(json.dumps({"value": new, "hz": round(hz, 2) if hz else None, "limit": limit}))
+
+
+def save(ctrl, values, attr):
+    """Save the live value; the driver default is the same as not calibrated."""
+    value = read_attr(ctrl, attr)
+    key = config_key(ctrl, attr)
+    if value == read_defaults().get(attr):
+        values.pop(key, None)
+    else:
+        values[key] = value
+    write_config(values)
+    print(json.dumps({"saved": values.get(key)}))
+
+
+def apply(ctrl, values):
+    record_defaults(ctrl)
+    for attr in ATTRS:
+        value = values.get(config_key(ctrl, attr))
+        if value is None:
+            continue
+        try:
+            write_attr(ctrl, attr, value)
+        except OSError:
+            # Out of range for this panel; the driver default stays.
+            pass
+
+
+def main(argv):
+    mode = argv[1] if len(argv) > 1 else "apply"
+    args = argv[2:]
+    usage = {"apply": 0, "calibrate": 0, "status": 0, "rate": 0, "step": 2, "set": 2, "save": 1}
+    if usage.get(mode) != len(args) or (args and args[0] not in ATTRS) \
+            or (mode == "step" and args[1] not in ("faster", "slower")) \
+            or (mode == "set" and not args[1].isdigit()):
+        print(__doc__, file=sys.stderr)
+        return 2
+    ctrls = controls()
+    if not ctrls:
+        if mode == "status":
+            print(json.dumps({"supported": False}))
+        elif mode == "rate":
+            print(json.dumps({"hz": None, "attr": None}))
+        return 0
+    ctrl = ctrls[0]
+    values = read_config()
+    if mode == "status":
+        status(ctrl, values)
+    elif mode == "rate":
+        report_rate()
+    elif mode == "apply":
+        apply(ctrl, values)
+    elif mode == "step":
+        step(ctrl, args[0], args[1])
+    elif mode == "set":
+        try:
+            write_attr(ctrl, args[0], int(args[1]))
+        except OSError:
+            print("value out of range", file=sys.stderr)
+            return 1
+    elif mode == "save":
+        save(ctrl, values, args[0])
+    else:
+        result = calibrate(ctrl)
+        if isinstance(result, str):
+            print(result, file=sys.stderr)
+            return 1
+        print(json.dumps({"value": result[0], "hz": round(result[1], 3)}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

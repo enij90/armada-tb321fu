@@ -6,6 +6,10 @@ file requests from `/usr/share/armada/ssc/<device id>/`, which this package
 unpacks from `data/<device id>.tar.gz`. A board supports gyro when its
 archive exists.
 
+The ADSP writes a few bookkeeping files at boot, so `armada-ssc` serves a
+fresh copy of that directory from `/run/armada/ssc`. Every boot starts from
+the shipped data.
+
 Each archive is a straight copy from the board's stock Android partitions:
 
 | Archive path | Android source |

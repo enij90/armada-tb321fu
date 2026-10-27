@@ -1,10 +1,11 @@
-From 9691f51a6287d33eb6dd3d694905f86e2c5b721f Mon Sep 17 00:00:00 2001
+From 5c65b62204ca34081cc5e93b429e01860f0206fd Mon Sep 17 00:00:00 2001
 From: Radical <radical@radical.fun>
 Date: Sun, 13 Sep 2026 21:36:48 +0200
 Subject: [PATCH] feat(Hardware Support): enable SSC gyro and accel
 
 Add the FastRPC IMU source with each board's mount matrix and turn on
-gyro auto calibration for: AYN Odin 2 family, AYN Odin 3, AYN Thor.
+gyro auto calibration for: AYN Odin 2 family, AYN Odin 3, AYN Thor,
+KONKR Pocket FIT, Retroid Pocket Nova.
 
 Co-authored-by: virtudude <virtudude@protonmail.com>
 Assisted-by: LLM
@@ -12,7 +13,9 @@ Assisted-by: LLM
  .../usr/share/inputplumber/devices/50-ayn_odin2.yaml | 12 ++++++++++++
  .../usr/share/inputplumber/devices/50-ayn_odin3.yaml | 12 ++++++++++++
  .../usr/share/inputplumber/devices/50-ayn_thor.yaml  | 12 ++++++++++++
- 3 files changed, 36 insertions(+)
+ .../inputplumber/devices/50-konkr_pocket_fit.yaml    | 12 ++++++++++++
+ .../inputplumber/devices/50-retroid_pocket_nova.yaml | 12 ++++++++++++
+ 5 files changed, 60 insertions(+)
 
 diff --git a/rootfs/usr/share/inputplumber/devices/50-ayn_odin2.yaml b/rootfs/usr/share/inputplumber/devices/50-ayn_odin2.yaml
 index a9beeb5..57ac009 100644
@@ -80,6 +83,52 @@ index 1844aee..9382c75 100644
 +
  target_devices:
    - xbox-elite
+diff --git a/rootfs/usr/share/inputplumber/devices/50-konkr_pocket_fit.yaml b/rootfs/usr/share/inputplumber/devices/50-konkr_pocket_fit.yaml
+index aa5978c..9bbc59d 100644
+--- a/rootfs/usr/share/inputplumber/devices/50-konkr_pocket_fit.yaml
++++ b/rootfs/usr/share/inputplumber/devices/50-konkr_pocket_fit.yaml
+@@ -50,6 +50,18 @@ source_devices:
+           name: KONKR System Buttons
+           handler: event*
+ 
++    - group: imu
++      fastrpc:
++          name: fastrpc-adsp
++      config:
++          imu:
++              # ICM-4x6xx orientation
++              mount_matrix:
++                  x: [0, -1, 0]
++                  y: [0, 0, 1]
++                  z: [-1, 0, 0]
++              gyro_auto_calibration: true
++
+ target_devices:
+     - xbox-elite
+     - keyboard
+diff --git a/rootfs/usr/share/inputplumber/devices/50-retroid_pocket_nova.yaml b/rootfs/usr/share/inputplumber/devices/50-retroid_pocket_nova.yaml
+index 3648820..1a55c7e 100644
+--- a/rootfs/usr/share/inputplumber/devices/50-retroid_pocket_nova.yaml
++++ b/rootfs/usr/share/inputplumber/devices/50-retroid_pocket_nova.yaml
+@@ -30,6 +30,18 @@ source_devices:
+       phys_path: gpio-keys/input0
+       handler: event*
+ 
++  - group: imu
++    fastrpc:
++      name: fastrpc-adsp
++    config:
++      imu:
++        # QMI8658 orientation
++        mount_matrix:
++          x: [0, -1, 0]
++          y: [0, 0, 1]
++          z: [-1, 0, 0]
++        gyro_auto_calibration: true
++
+ target_devices:
+   - xbox-elite
+   # gpio-keys node is shared between gamepad and volume up key,
 -- 
 2.56.0
 

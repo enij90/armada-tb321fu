@@ -70,6 +70,7 @@ systemctl enable armada-ssc.service
 systemctl enable armada-guestos.service
 systemctl enable usr-share-guestos-android.mount
 systemctl enable armada-device-quirks.service
+systemctl enable armada-panel-calibration.service
 systemctl enable armada-rgb.service
 systemctl enable armada-rgb-brightness-watch.service
 systemctl enable armada-rgb-brightness-watch.path

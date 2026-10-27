@@ -19,6 +19,7 @@ import {
   setSwipeGesturesEnabled as applySwipeGesturesEnabled,
 } from "../backend";
 import { openCalibration } from "../components/Calibration";
+import { PanelCalibration } from "../components/PanelCalibration";
 import { ButtonRow, SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import { useDebouncedApply } from "../hooks/useDebouncedApply";
 import { t, translateLabel } from "../i18n";
@@ -223,6 +224,7 @@ export function Settings({ config, setConfig }: {
         )}
       </PanelSection>
       <PanelSection title={t("settings.system")}>
+        <ToggleRow label={t("settings.enableSsh")} value={!!config.sshEnabled} onChange={setSshEnabled} />
         <ToggleRow
           label={t("settings.swipeGestures")}
           description={t("settings.swipeGesturesDescription")}
@@ -236,6 +238,7 @@ export function Settings({ config, setConfig }: {
           options={(config.sleepModes || []).map((option) => ({ ...option, label: translateLabel(option.label) }))}
           onChange={setSleepMode}
         />
+        <PanelCalibration />
         <ToggleRow
           label={t("settings.lowPowerDownloads")}
           description={t("settings.lowPowerDownloadsDescription")}
@@ -250,7 +253,6 @@ export function Settings({ config, setConfig }: {
             onChange={(enabled) => applyLowPowerDownloads(() => setLowPowerDownloadsOnBattery(enabled))}
           />
         )}
-        <ToggleRow label={t("settings.enableSsh")} value={!!config.sshEnabled} onChange={setSshEnabled} />
         <Field label={t("settings.osVersion")} description={config.osVersion || t("common.unknown")} />
         <Field label={t("settings.ablVersion")} description={config.ablVersion || t("common.unknown")} />
       </PanelSection>

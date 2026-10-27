@@ -16,6 +16,12 @@ from armada_control.steam import compat_mapped_appids, installed_games
 from armada_control.system import (
     bottom_screen_active,
     reapply_perf,
+    panel_calibration,
+    panel_rate,
+    calibrate_panel,
+    save_panel,
+    set_panel,
+    step_panel,
     restart_game_mode,
     set_bottom_screen_brightness,
     set_bottom_screen_enabled,
@@ -74,6 +80,24 @@ class Plugin:
 
     async def set_mtp_enabled(self, enabled):
         return await asyncio.to_thread(set_mtp_enabled, enabled)
+
+    async def get_panel_calibration(self):
+        return await asyncio.to_thread(panel_calibration)
+
+    async def get_panel_rate(self):
+        return await asyncio.to_thread(panel_rate)
+
+    async def calibrate_panel(self):
+        return await asyncio.to_thread(calibrate_panel)
+
+    async def step_panel(self, attr, direction):
+        return await asyncio.to_thread(step_panel, attr, direction)
+
+    async def set_panel(self, attr, value):
+        return await asyncio.to_thread(set_panel, attr, value)
+
+    async def save_panel(self, attr):
+        return await asyncio.to_thread(save_panel, attr)
 
     async def set_bottom_screen_enabled(self, enabled):
         return await asyncio.to_thread(set_bottom_screen_enabled, enabled)

@@ -25,10 +25,16 @@ fi
 # Even with gyro off: the sensors PD only comes up if this attaches soon after the ADSP boots.
 [ "$supported" = 1 ] || exit 0
 
+# The sensors PD rewrites its registry at boot, so it gets a fresh writable copy.
+state=/run/armada/ssc
+rm -rf "$state"
+mkdir -p "$state"
+cp -a "$root/." "$state/"
+
 # The ADSP has one FastRPC node; the device tree decides whether it is secure.
 for _ in $(seq 60); do
     for node in /dev/fastrpc-adsp /dev/fastrpc-adsp-secure; do
-        [ -e "$node" ] && exec hexagonrpcd -f "$node" -d adsp -s -R "$root"
+        [ -e "$node" ] && exec hexagonrpcd -f "$node" -d adsp -s -R "$state"
     done
     sleep 1
 done

@@ -93,6 +93,16 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: https://github.com/ROCKNIX/distribution/blob/807c74fc46c124891d8aa9b57a68533d38e9a6b2/projects/ROCKNIX/devices/SM8250/patches/linux/0057_Chipone-ICNA35XX-panel.patch
   upstream: unknown
   notes: Ports the Pocket Max init sequence, four vendor modes and per-panel shutdown delays onto Armada's Linux 7.2 managed-panel driver while retaining Armada's luminance-linear backlight scale.
+- `patches/0518-ROCKNIX-odin3-panel-frame-length-calibration.patch`
+  source: https://github.com/ROCKNIX/distribution/blob/abfdcfb57ff42180a50fca60a2a150641608d57e/projects/ROCKNIX/devices/SM8750/patches/linux/0518-ROCKNIX-odin3-panel-frame-length-calibration.patch
+  upstream: unknown
+  notes: Context refreshed onto Armada's 0060 and 0060a; the code is unchanged.
+- `patches/0518a-drm-panel-icna35xx-serialise-live-frame-length-writes.patch`
+  source: armada
+  upstream: local
+- `patches/0518b-drm-panel-icna35xx-calibrate-the-ICNA3512-frame-length.patch`
+  source: armada
+  upstream: local
 - `patches/0106-drm-panel-il97680a-luminance-linear-backlight-scale.patch`
   source: armada
   upstream: not submitted
@@ -858,7 +868,7 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   notes: Armada switches Pocket 6 from ROCKNIX's Odin 2 fallback to audio firmware extracted from a Pocket 6 vendor image, and drives its haptics actuator as an LRA with the stock Android values (board-id 0x1001f overlay) instead of the inherited Odin 2 ERM config.
 - `dts/qcs8550-retroidpocket-rpnova.dts.patch`
   source: armada
-  notes: Armada disables the inherited Pocket 6 PWM backlight and removes its panel reference so Nova uses its panel driver’s DSI backlight.
+  notes: Armada disables the inherited Pocket 6 PWM backlight and removes its panel reference so Nova uses its panel driver’s DSI backlight, and loads Nova's own ADSP firmware.
 - `dts/qcs8550-ayn-thor.dts.patch`
   source: armada
   notes: Armada fixes the hall-sensor pinctrl, makes only the lid-open edge wake, corrects touch orientation, and enables DPU dithering on the top panel after copying `dts/qcs8550-ayn-thor.dts`.
@@ -870,7 +880,7 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   notes: Armada selects the accepted Pocket S2 WSA2 sound-card mapping after copying the ROCKNIX DTS.
 - `dts/sm8650-konkr-pf.dts.patch`
   source: armada
-  notes: Armada selects the shared WSA2 channel mapping through a Pocket FIT-specific sound-card compatible and binds `konkr_sysbtn` to the controller MCU UART.
+  notes: Armada selects the shared WSA2 channel mapping through a Pocket FIT-specific sound-card compatible and binds `konkr_sysbtn` to the controller MCU UART, and loads its own ADSP firmware.
 
 - `patches/0505-arm64-emulate-unaligned-atomics.patch`
   source: https://github.com/bylaws/linux/commit/7ae989a43ae7e3cb8007ac21c28dacc24c9d8320
