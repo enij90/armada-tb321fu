@@ -17,10 +17,6 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0007-feat-ssc-device-enablement.patch`
   source: armada
-- `patches/0008-feat-Hardware-Support-accept-the-TB321FU-IMU-bridge.patch`
-  source: armada
-  notes: Whitelists the virtual device "TB321FU IMU" (tb321fu-imu-bridge: the Lenovo TB321FU's
-  accelerometer and gyroscope from the Qualcomm sensor core, which has no IIO device).
 - `patches/0009-fix-evdev-keep-the-Legion-G9-Legion-button-held-through-chords.patch`
   source: armada
   notes: The Legion G9 (3537:1134) hides BTN_MODE while another button is held with it;
