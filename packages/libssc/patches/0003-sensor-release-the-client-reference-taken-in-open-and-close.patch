@@ -1,0 +1,139 @@
+From 97ee91070dbf49f45407baa002ec5e0112196e05 Mon Sep 17 00:00:00 2001
+From: virtudude <virtudude@protonmail.com>
+Date: Mon, 26 Oct 2026 21:23:25 -0400
+Subject: [PATCH] sensor: release the client reference taken in open and close
+
+g_object_get() returns a new reference to the client, which open and
+close never released, so every open or close leaked one.
+---
+ src/libssc-sensor-accelerometer.c | 2 ++
+ src/libssc-sensor-compass.c       | 2 ++
+ src/libssc-sensor-gyroscope.c     | 2 ++
+ src/libssc-sensor-light.c         | 2 ++
+ src/libssc-sensor-magnetometer.c  | 2 ++
+ src/libssc-sensor-proximity.c     | 2 ++
+ 6 files changed, 12 insertions(+)
+
+diff --git a/src/libssc-sensor-accelerometer.c b/src/libssc-sensor-accelerometer.c
+index a4102ea..5301b00 100644
+--- a/src/libssc-sensor-accelerometer.c
++++ b/src/libssc-sensor-accelerometer.c
+@@ -151,6 +151,7 @@ ssc_sensor_accelerometer_close (SSCSensorAccelerometer *self, GCancellable *canc
+ 
+ 	if (priv->report_id)
+ 		g_signal_handler_disconnect (client, priv->report_id);
++	g_object_unref (client);
+ 
+ 	/* Close sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_accelerometer_parent_class)->close (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)accelerometer_close_ready, task);
+@@ -217,6 +218,7 @@ ssc_sensor_accelerometer_open (SSCSensorAccelerometer *self, GCancellable *cance
+ 					    "report",
+ 					    G_CALLBACK (report_received),
+ 					    self);
++	g_object_unref (client);
+ 
+ 	/* Open sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_accelerometer_parent_class)->open (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)accelerometer_open_ready, task);
+diff --git a/src/libssc-sensor-compass.c b/src/libssc-sensor-compass.c
+index 332d8ca..f53f749 100644
+--- a/src/libssc-sensor-compass.c
++++ b/src/libssc-sensor-compass.c
+@@ -178,6 +178,7 @@ ssc_sensor_compass_close (SSCSensorCompass *self, GCancellable *cancellable, GAs
+ 
+ 	if (priv->report_id)
+ 		g_signal_handler_disconnect (client, priv->report_id);
++	g_object_unref (client);
+ 
+ 	/* Close sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_compass_parent_class)->close (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)compass_close_ready, task);
+@@ -244,6 +245,7 @@ ssc_sensor_compass_open (SSCSensorCompass *self, GCancellable *cancellable, GAsy
+ 			"report",
+ 			G_CALLBACK (report_received),
+ 			self);
++	g_object_unref (client);
+ 
+ 	/* Open sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_compass_parent_class)->open (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)compass_open_ready, task);
+diff --git a/src/libssc-sensor-gyroscope.c b/src/libssc-sensor-gyroscope.c
+index 1b45d32..a50e61f 100644
+--- a/src/libssc-sensor-gyroscope.c
++++ b/src/libssc-sensor-gyroscope.c
+@@ -146,6 +146,7 @@ ssc_sensor_gyroscope_close (SSCSensorGyroscope *self, GCancellable *cancellable,
+ 
+ 	if (priv->report_id)
+ 		g_signal_handler_disconnect (client, priv->report_id);
++	g_object_unref (client);
+ 
+ 	/* Close sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_gyroscope_parent_class)->close (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)gyroscope_close_ready, task);
+@@ -212,6 +213,7 @@ ssc_sensor_gyroscope_open (SSCSensorGyroscope *self, GCancellable *cancellable,
+ 					    "report",
+ 					    G_CALLBACK (report_received),
+ 					    self);
++	g_object_unref (client);
+ 
+ 	/* Open sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_gyroscope_parent_class)->open (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)gyroscope_open_ready, task);
+diff --git a/src/libssc-sensor-light.c b/src/libssc-sensor-light.c
+index e0bd99a..f70b433 100644
+--- a/src/libssc-sensor-light.c
++++ b/src/libssc-sensor-light.c
+@@ -141,6 +141,7 @@ ssc_sensor_light_close (SSCSensorLight *self, GCancellable *cancellable, GAsyncR
+ 
+ 	if (priv->report_id)
+ 		g_signal_handler_disconnect (client, priv->report_id);
++	g_object_unref (client);
+ 
+ 	/* Close sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_light_parent_class)->close (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)light_close_ready, task);
+@@ -209,6 +210,7 @@ ssc_sensor_light_open (SSCSensorLight *self, GCancellable *cancellable, GAsyncRe
+ 					    "report",
+ 					    G_CALLBACK (report_received),
+ 					    self);
++	g_object_unref (client);
+ 
+ 	/* Open sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_light_parent_class)->open (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)light_open_ready, task);
+diff --git a/src/libssc-sensor-magnetometer.c b/src/libssc-sensor-magnetometer.c
+index 4517f08..e57def9 100644
+--- a/src/libssc-sensor-magnetometer.c
++++ b/src/libssc-sensor-magnetometer.c
+@@ -146,6 +146,7 @@ ssc_sensor_magnetometer_close (SSCSensorMagnetometer *self, GCancellable *cancel
+ 
+ 	if (priv->report_id)
+ 		g_signal_handler_disconnect (client, priv->report_id);
++	g_object_unref (client);
+ 
+ 	/* Close sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_magnetometer_parent_class)->close (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)magnetometer_close_ready, task);
+@@ -212,6 +213,7 @@ ssc_sensor_magnetometer_open (SSCSensorMagnetometer *self, GCancellable *cancell
+ 			"report",
+ 			G_CALLBACK (report_received),
+ 			self);
++	g_object_unref (client);
+ 
+ 	/* Open sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_magnetometer_parent_class)->open (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)magnetometer_open_ready, task);
+diff --git a/src/libssc-sensor-proximity.c b/src/libssc-sensor-proximity.c
+index fc46408..f837ff0 100644
+--- a/src/libssc-sensor-proximity.c
++++ b/src/libssc-sensor-proximity.c
+@@ -191,6 +191,7 @@ ssc_sensor_proximity_close (SSCSensorProximity *self, GCancellable *cancellable,
+ 		      NULL);
+ 	if (priv->report_id)
+ 		g_signal_handler_disconnect (client, priv->report_id);
++	g_object_unref (client);
+ 
+ 	/* Close sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_proximity_parent_class)->close (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)proximity_close_ready, task);
+@@ -258,6 +259,7 @@ ssc_sensor_proximity_open (SSCSensorProximity *self, GCancellable *cancellable,
+ 					    "report",
+ 					    G_CALLBACK (report_received),
+ 					    self);
++	g_object_unref (client);
+ 
+ 	/* Open sensor */
+ 	SSC_SENSOR_CLASS (ssc_sensor_proximity_parent_class)->open (SSC_SENSOR (self), cancellable, (GAsyncReadyCallback)proximity_open_ready, task);
+-- 
+2.56.0
+

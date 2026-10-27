@@ -332,6 +332,9 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: https://lore.kernel.org/r/20261002-anandu-fastrpc-interrupted-invoke-v3-v3-1-31e90439d2ba@oss.qualcomm.com
   upstream: https://lore.kernel.org/r/20261002-anandu-fastrpc-interrupted-invoke-v3-v3-1-31e90439d2ba@oss.qualcomm.com
   notes: Backported to 7.2's inline wait, and put_work_scheduled uses xchg() instead of fl->lock because the rpmsg callback runs in hard IRQ; the commit message still describes v3.
+- `patches/0569-soc-qcom-smp2p-reset-inbound-state-only-on-restart.patch`
+  source: armada
+  upstream: not submitted
 - `patches/0504-mailbox-qcom-ipcc-mask-summary-irq-for-suspend-to-ram.patch`
   source: https://github.com/ROCKNIX/distribution/commit/f955f5b6137554253e4d52bbe72f9b4936fb253d
   upstream: not submitted

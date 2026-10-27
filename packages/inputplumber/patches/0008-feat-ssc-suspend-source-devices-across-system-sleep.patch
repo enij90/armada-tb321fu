@@ -1,0 +1,599 @@
+From 7873df3b83edc4172f345df0a9df115ed1d42704 Mon Sep 17 00:00:00 2001
+From: virtudude <virtudude@protonmail.com>
+Date: Mon, 26 Oct 2026 21:54:52 -0400
+Subject: [PATCH] feat(ssc): suspend source devices across system sleep
+
+The SSC keeps sampling an open sensor while the system sleeps, so the
+ADSP never power-collapses and the SoC stays out of its deep sleep
+states. The kernel suspends other source hardware on its own, but not
+this.
+
+Give source devices suspend and resume hooks, called from HookSleep and
+HookWake next to the target suspend and resume, which gamepad reordering
+keeps using on its own. The SSC driver disables its sensors' reports
+until wake. SUSPEND_TARGET_DEVICES_ON_SLEEP=0 keeps the target devices
+across sleep, so clients see no disconnect. Resuming targets that were
+never suspended no longer removes them.
+
+Assisted-by: LLM
+---
+ src/drivers/ssc/bindings.rs           | 14 ++++++
+ src/drivers/ssc/driver.rs             | 63 ++++++++++++++++++++++++++-
+ src/drivers/ssc/runtime.rs            | 36 ++++++++++++---
+ src/input/composite_device/client.rs  | 22 ++++++++++
+ src/input/composite_device/command.rs |  2 +
+ src/input/composite_device/mod.rs     | 43 ++++++++++++++++++
+ src/input/composite_device/targets.rs |  5 +++
+ src/input/manager.rs                  | 19 +++++++-
+ src/input/source/client.rs            | 22 ++++++++++
+ src/input/source/command.rs           |  6 +++
+ src/input/source/fastrpc/ssc_imu.rs   | 14 +++++-
+ src/input/source/mod.rs               | 23 ++++++++++
+ 12 files changed, 259 insertions(+), 10 deletions(-)
+
+diff --git a/src/drivers/ssc/bindings.rs b/src/drivers/ssc/bindings.rs
+index 27604d2..4f32d4f 100644
+--- a/src/drivers/ssc/bindings.rs
++++ b/src/drivers/ssc/bindings.rs
+@@ -111,6 +111,10 @@ pub type FnSscSensorOpenSync = unsafe extern "C" fn(
+     error: *mut *mut GError,
+ ) -> u32;
+ 
++/// ssc_sensor_*_close_sync:
++/// Disables a sensor's reports; the sensor can be opened again.
++pub type FnSscSensorCloseSync = FnSscSensorOpenSync;
++
+ /// ssc_sensor_set_sample_rate:
+ /// Sets the rate a sensor is opened at; call it between new and open.
+ pub type FnSscSensorSetSampleRate = unsafe extern "C" fn(sensor: *mut GObject, sample_rate: f32);
+@@ -138,8 +142,10 @@ pub struct SscDylibs {
+     /* SSC */
+     pub ssc_sensor_gyroscope_new_sync: FnSscSensorNewSync,
+     pub ssc_sensor_gyroscope_open_sync: FnSscSensorOpenSync,
++    pub ssc_sensor_gyroscope_close_sync: FnSscSensorCloseSync,
+     pub ssc_sensor_accelerometer_new_sync: FnSscSensorNewSync,
+     pub ssc_sensor_accelerometer_open_sync: FnSscSensorOpenSync,
++    pub ssc_sensor_accelerometer_close_sync: FnSscSensorCloseSync,
+     /// Not in every libssc; without it sensors open at their first advertised rate.
+     pub ssc_sensor_set_sample_rate: Option<FnSscSensorSetSampleRate>,
+ }
+@@ -189,6 +195,10 @@ impl SscDylibs {
+                     ssc,
+                     "ssc_sensor_gyroscope_open_sync"
+                 )?,
++                ssc_sensor_gyroscope_close_sync: *load_symbol!(
++                    ssc,
++                    "ssc_sensor_gyroscope_close_sync"
++                )?,
+                 ssc_sensor_accelerometer_new_sync: *load_symbol!(
+                     ssc,
+                     "ssc_sensor_accelerometer_new_sync"
+@@ -197,6 +207,10 @@ impl SscDylibs {
+                     ssc,
+                     "ssc_sensor_accelerometer_open_sync"
+                 )?,
++                ssc_sensor_accelerometer_close_sync: *load_symbol!(
++                    ssc,
++                    "ssc_sensor_accelerometer_close_sync"
++                )?,
+                 ssc_sensor_set_sample_rate: ssc
+                     .get::<FnSscSensorSetSampleRate>(b"ssc_sensor_set_sample_rate\0")
+                     .ok()
+diff --git a/src/drivers/ssc/driver.rs b/src/drivers/ssc/driver.rs
+index 5b77d31..b98321e 100644
+--- a/src/drivers/ssc/driver.rs
++++ b/src/drivers/ssc/driver.rs
+@@ -1,4 +1,5 @@
+ use std::error::Error;
++use std::sync::atomic::{AtomicU32, Ordering};
+ use std::sync::Arc;
+ use std::time::{Duration, Instant};
+ use tokio::{sync::mpsc, sync::mpsc::error::TryRecvError};
+@@ -26,6 +27,10 @@ pub struct Driver {
+     accelerometer: Option<SscObject>,
+     next_open: Instant,
+     open_failed: bool,
++    // Reports are disabled for system sleep.
++    suspended: bool,
++    // Bumped when a sensor is replaced, so the old one's callback goes quiet.
++    generation: [Arc<AtomicU32>; 2],
+ 
+     // Event handling / polling
+     tx: mpsc::Sender<Event>,
+@@ -57,6 +62,8 @@ impl Driver {
+             accelerometer: None,
+             next_open: Instant::now(),
+             open_failed: false,
++            suspended: false,
++            generation: Default::default(),
+             tx,
+             rx,
+             filtered_events: Default::default(),
+@@ -88,7 +95,12 @@ impl Driver {
+             match self.runtime.clone().create_gyroscope(self.sample_rate) {
+                 Ok(sensor) => {
+                     let tx = self.tx.clone();
++                    let generation = self.generation[0].clone();
++                    let current = generation.load(Ordering::Relaxed);
+                     sensor.set_measurement_handler(move |x, y, z| {
++                        if generation.load(Ordering::Relaxed) != current {
++                            return;
++                        }
+                         _ = tx.try_send(Event::Gyro(AxisData {
+                             roll: x as f64,
+                             pitch: y as f64,
+@@ -104,7 +116,12 @@ impl Driver {
+             match self.runtime.clone().create_accelerometer(self.sample_rate) {
+                 Ok(sensor) => {
+                     let tx = self.tx.clone();
++                    let generation = self.generation[1].clone();
++                    let current = generation.load(Ordering::Relaxed);
+                     sensor.set_measurement_handler(move |x, y, z| {
++                        if generation.load(Ordering::Relaxed) != current {
++                            return;
++                        }
+                         _ = tx.try_send(Event::Accelerometer(AxisData {
+                             roll: x as f64,
+                             pitch: y as f64,
+@@ -132,6 +149,48 @@ impl Driver {
+         }
+     }
+ 
++    /// Disable the sensors' reports for system sleep. An open sensor keeps
++    /// the ADSP awake and the SoC out of its deep sleep states.
++    pub fn suspend(&mut self) {
++        if !self.suspended {
++            self.suspended = true;
++            self.set_sensors_enabled(false);
++        }
++    }
++
++    /// Enable the sensors' reports again after system sleep.
++    pub fn resume(&mut self) {
++        if self.suspended {
++            self.suspended = false;
++            self.set_sensors_enabled(true);
++        }
++    }
++
++    fn set_sensors_enabled(&mut self, enabled: bool) {
++        let sensors = [&mut self.gyroscope, &mut self.accelerometer];
++        for (sensor, generation) in sensors.into_iter().zip(&self.generation) {
++            let Some(opened) = sensor else { continue };
++            match opened.set_enabled(enabled) {
++                Ok(()) => {}
++                // libssc already dropped the callback; reopening restores it.
++                Err(e) if !enabled => log::warn!("Failed to disable SSC sensor: {e}"),
++                Err(e) => {
++                    log::warn!("Failed to enable SSC sensor, reopening it: {e}");
++                    // libssc keeps callbacks on a failed open, so never free it.
++                    generation.fetch_add(1, Ordering::Relaxed);
++                    std::mem::forget(sensor.take());
++                }
++            }
++        }
++        // Samples queued while a request blocked are stale.
++        while self.rx.try_recv().is_ok() {}
++        if enabled {
++            log::info!("SSC sensors enabled after sleep");
++        } else {
++            log::info!("SSC sensors disabled for sleep");
++        }
++    }
++
+     pub fn update_filtered_events(&mut self, events: Vec<Event>) {
+         self.filtered_events = events;
+     }
+@@ -146,7 +205,9 @@ impl Driver {
+ 
+     /// Poll the device for data
+     pub fn poll(&mut self) -> Result<Vec<Event>, Box<dyn Error + Send + Sync>> {
+-        self.try_open();
++        if !self.suspended {
++            self.try_open();
++        }
+ 
+         // libssc uses GLib and relies on the GLib main loop
+         // Instead of creating a main loop and main context then managing it alongside InputPlumber's loop etc,
+diff --git a/src/drivers/ssc/runtime.rs b/src/drivers/ssc/runtime.rs
+index 23eaf8d..db1727a 100644
+--- a/src/drivers/ssc/runtime.rs
++++ b/src/drivers/ssc/runtime.rs
+@@ -1,7 +1,7 @@
+ use std::{error::Error, ptr::null_mut, sync::Arc};
+ 
+ use crate::drivers::ssc::bindings::{
+-    gpointer, FnSscSensorNewSync, FnSscSensorOpenSync, GCallback, GClosure, GError, GObject,
++    gpointer, FnSscSensorCloseSync, FnSscSensorNewSync, FnSscSensorOpenSync, GCallback, GClosure, GError, GObject,
+     SscDylibs, GFALSE,
+ };
+ 
+@@ -29,6 +29,8 @@ pub unsafe extern "C" fn closure_destroy_handler(data: gpointer, _: *mut GClosur
+ pub struct SscObject {
+     _ptr: *mut std::ffi::c_void,
+     _runtime: Arc<SscRuntime>,
++    open_fn: FnSscSensorOpenSync,
++    close_fn: FnSscSensorCloseSync,
+ }
+ 
+ // SAFETY: The GLib functions we're using this with are thread safe.
+@@ -45,17 +47,38 @@ impl Drop for SscObject {
+ 
+ impl SscObject {
+     /// Create a SscObject instance. The provided pointer is required to be non-null.
+-    fn new(ptr: *mut std::ffi::c_void, runtime: Arc<SscRuntime>) -> Result<Self, ()> {
++    fn new(
++        ptr: *mut std::ffi::c_void,
++        runtime: Arc<SscRuntime>,
++        open_fn: FnSscSensorOpenSync,
++        close_fn: FnSscSensorCloseSync,
++    ) -> Result<Self, ()> {
+         if ptr.is_null() {
+             Err(())
+         } else {
+             Ok(Self {
+                 _ptr: ptr,
+                 _runtime: runtime,
++                open_fn,
++                close_fn,
+             })
+         }
+     }
+ 
++    /// Enable or disable an opened sensor's reports. Blocks until the SSC
++    /// answers.
++    pub fn set_enabled(&self, enabled: bool) -> Result<(), Box<dyn Error + Send + Sync>> {
++        let func = if enabled { self.open_fn } else { self.close_fn };
++        let mut err: *mut GError = null_mut();
++        // SAFETY: _ptr is a live sensor of the type these functions take.
++        let ok = unsafe { func(self._ptr as *mut GObject, null_mut(), &mut err) };
++        match self._runtime.convert_glib_error(err) {
++            Some(e) => Err(e.into()),
++            None if ok == 0 => Err("no reason given".into()),
++            None => Ok(()),
++        }
++    }
++
+     pub unsafe fn ptr(&self) -> *mut std::ffi::c_void {
+         self._ptr
+     }
+@@ -140,6 +163,7 @@ impl SscRuntime {
+         self: Arc<Self>,
+         new_fn: FnSscSensorNewSync,
+         open_fn: FnSscSensorOpenSync,
++        close_fn: FnSscSensorCloseSync,
+         sample_rate: f64,
+     ) -> Result<SscObject, Box<dyn Error + Send + Sync>> {
+         let mut err: *mut GError = null_mut();
+@@ -154,7 +178,7 @@ impl SscRuntime {
+             return Err(format!("Failed to instantiate SSC sensor: {v}").into());
+         }
+ 
+-        let sensor = SscObject::new(ptr, self.clone())
++        let sensor = SscObject::new(ptr, self.clone(), open_fn, close_fn)
+             .map_err(|_| "Failed to instantiate SSC sensor: (got a null pointer)")?;
+ 
+         if let Some(set_sample_rate) = self.dylibs.ssc_sensor_set_sample_rate {
+@@ -192,7 +216,8 @@ impl SscRuntime {
+         unsafe {
+             let new_fn = self.dylibs.ssc_sensor_gyroscope_new_sync;
+             let open_fn = self.dylibs.ssc_sensor_gyroscope_open_sync;
+-            self.create_measurement_sensor(new_fn, open_fn, sample_rate)
++            let close_fn = self.dylibs.ssc_sensor_gyroscope_close_sync;
++            self.create_measurement_sensor(new_fn, open_fn, close_fn, sample_rate)
+         }
+     }
+ 
+@@ -204,7 +229,8 @@ impl SscRuntime {
+         unsafe {
+             let new_fn = self.dylibs.ssc_sensor_accelerometer_new_sync;
+             let open_fn = self.dylibs.ssc_sensor_accelerometer_open_sync;
+-            self.create_measurement_sensor(new_fn, open_fn, sample_rate)
++            let close_fn = self.dylibs.ssc_sensor_accelerometer_close_sync;
++            self.create_measurement_sensor(new_fn, open_fn, close_fn, sample_rate)
+         }
+     }
+ }
+diff --git a/src/input/composite_device/client.rs b/src/input/composite_device/client.rs
+index 30edf7a..2c0000c 100644
+--- a/src/input/composite_device/client.rs
++++ b/src/input/composite_device/client.rs
+@@ -521,6 +521,28 @@ impl CompositeDeviceClient {
+         Err(ClientError::ChannelClosed)
+     }
+ 
++    /// Prepares the source devices for system sleep.
++    pub async fn suspend_source_devices(&self) -> Result<(), ClientError> {
++        let (tx, rx) = channel(1);
++        self.send(CompositeCommand::SuspendSourceDevices(tx)).await?;
++
++        if let Some(result) = Self::recv(rx).await {
++            return Ok(result);
++        }
++        Err(ClientError::ChannelClosed)
++    }
++
++    /// Resumes the source devices after system sleep.
++    pub async fn resume_source_devices(&self) -> Result<(), ClientError> {
++        let (tx, rx) = channel(1);
++        self.send(CompositeCommand::ResumeSourceDevices(tx)).await?;
++
++        if let Some(result) = Self::recv(rx).await {
++            return Ok(result);
++        }
++        Err(ClientError::ChannelClosed)
++    }
++
+     /// Calls the resume handler to perform system wake from suspend-related tasks.
+     pub async fn resume(&self) -> Result<(), ClientError> {
+         let (tx, rx) = channel(1);
+diff --git a/src/input/composite_device/command.rs b/src/input/composite_device/command.rs
+index 7c175de..c692342 100644
+--- a/src/input/composite_device/command.rs
++++ b/src/input/composite_device/command.rs
+@@ -61,5 +61,7 @@ pub enum CompositeCommand {
+     Stop,
+     Suspend(mpsc::Sender<()>),
+     Resume(mpsc::Sender<()>),
++    SuspendSourceDevices(mpsc::Sender<()>),
++    ResumeSourceDevices(mpsc::Sender<()>),
+     IsSuspended(mpsc::Sender<bool>),
+ }
+diff --git a/src/input/composite_device/mod.rs b/src/input/composite_device/mod.rs
+index 2530dd7..d5126c5 100644
+--- a/src/input/composite_device/mod.rs
++++ b/src/input/composite_device/mod.rs
+@@ -568,6 +568,12 @@ impl CompositeDevice {
+                             log::error!("Failed to send resume response: {e:?}");
+                         }
+                     }
++                    CompositeCommand::SuspendSourceDevices(sender) => {
++                        self.suspend_source_devices(sender).await;
++                    }
++                    CompositeCommand::ResumeSourceDevices(sender) => {
++                        self.resume_source_devices(sender).await;
++                    }
+                     CompositeCommand::IsSuspended(sender) => {
+                         let is_suspended = !self.targets.get_suspended_devices().is_empty();
+                         log::debug!("Checking if device is suspended: {is_suspended}");
+@@ -2233,6 +2239,43 @@ impl CompositeDevice {
+ 
+     /// Takes the provided [HashMap] and sets a filter for all matching source device ID's and
+     /// capabilties.
++    /// Tells each source device to prepare for system sleep and replies once
++    /// they all answered. Runs in a task so this loop keeps draining input
++    /// from the source devices meanwhile.
++    async fn suspend_source_devices(&self, sender: mpsc::Sender<()>) {
++        let source_devices = self.source_devices.clone();
++        tokio::task::spawn(async move {
++            // Concurrently, so one source's reply cannot delay the others.
++            let replies = source_devices.values().map(|client| client.suspend());
++            let results = futures::future::join_all(replies).await;
++            for ((source_id, _), result) in source_devices.iter().zip(results) {
++                if let Err(e) = result {
++                    log::warn!("Failed to suspend source device {source_id}: {e:?}");
++                }
++            }
++            if let Err(e) = sender.send(()).await {
++                log::error!("Failed to send suspend source devices response: {e:?}");
++            }
++        });
++    }
++
++    /// Undoes [CompositeDevice::suspend_source_devices] after the system wakes.
++    async fn resume_source_devices(&self, sender: mpsc::Sender<()>) {
++        let source_devices = self.source_devices.clone();
++        tokio::task::spawn(async move {
++            let replies = source_devices.values().map(|client| client.resume());
++            let results = futures::future::join_all(replies).await;
++            for ((source_id, _), result) in source_devices.iter().zip(results) {
++                if let Err(e) = result {
++                    log::warn!("Failed to resume source device {source_id}: {e:?}");
++                }
++            }
++            if let Err(e) = sender.send(()).await {
++                log::error!("Failed to send resume source devices response: {e:?}");
++            }
++        });
++    }
++
+     async fn set_filtered_events(
+         &mut self,
+         events: HashMap<String, Vec<Capability>>,
+diff --git a/src/input/composite_device/targets.rs b/src/input/composite_device/targets.rs
+index 5d8c8f2..5ffa46e 100644
+--- a/src/input/composite_device/targets.rs
++++ b/src/input/composite_device/targets.rs
+@@ -656,6 +656,11 @@ impl CompositeDeviceTargets {
+     /// to happen.
+     pub async fn handle_resume(&mut self, persistent_id: &str) {
+         let dbus_path = self.path.as_str();
++        // Restoring an empty list would remove every target device.
++        if self.target_devices_suspended.is_empty() {
++            log::debug!("[{dbus_path}] No suspended target devices to restore");
++            return;
++        }
+         log::info!(
+             "[{dbus_path}] Restoring target devices: {:?}",
+             self.target_devices_suspended
+diff --git a/src/input/manager.rs b/src/input/manager.rs
+index d442cf8..d16f5ba 100644
+--- a/src/input/manager.rs
++++ b/src/input/manager.rs
+@@ -581,14 +581,23 @@ impl Manager {
+                 }
+                 ManagerCommand::SystemSleep { sender } => {
+                     log::info!("Preparing to suspend all target devices");
++                    // Kept target devices mean clients see no disconnect.
++                    let suspend_target_devices = std::env::var("SUSPEND_TARGET_DEVICES_ON_SLEEP")
++                        .map_or(true, |v| v != "0");
+ 
+                     // Call the suspend handler on each composite device and wait
+                     // for a response.
+                     let composite_devices = self.composite_devices.clone();
+                     tokio::task::spawn(async move {
+                         for device in composite_devices.values() {
+-                            if let Err(e) = device.suspend().await {
+-                                log::error!("Failed to call suspend handler on device: {e:?}");
++                            if suspend_target_devices {
++                                if let Err(e) = device.suspend().await {
++                                    log::error!("Failed to call suspend handler on device: {e:?}");
++                                }
++                            }
++                            // Source devices the kernel does not suspend, like the SSC.
++                            if let Err(e) = device.suspend_source_devices().await {
++                                log::error!("Failed to suspend source devices: {e:?}");
+                             }
+                         }
+ 
+@@ -609,6 +618,12 @@ impl Manager {
+                     let composite_devices = self.composite_devices.clone();
+                     let gamepad_order = self.target_gamepad_order.clone();
+                     tokio::task::spawn(async move {
++                        for device in composite_devices.values() {
++                            if let Err(e) = device.resume_source_devices().await {
++                                log::error!("Failed to resume source devices: {e:?}");
++                            }
++                        }
++
+                         // Resume any composite devices in gamepad order first
+                         for path in gamepad_order {
+                             let Some(device) = composite_devices.get(&path) else {
+diff --git a/src/input/source/client.rs b/src/input/source/client.rs
+index d74e89f..462d0c3 100644
+--- a/src/input/source/client.rs
++++ b/src/input/source/client.rs
+@@ -14,6 +14,8 @@ use super::command::SourceCommand;
+ /// Maximum duration to wait for a response from a command. If this timeout
+ /// is reached, that typically indicates a deadlock somewhere in the code.
+ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
++/// Suspend and resume hold up system sleep, so they wait less.
++const SLEEP_TIMEOUT: Duration = Duration::from_secs(2);
+ 
+ /// Possible errors for a source device client
+ #[derive(Error, Debug)]
+@@ -144,6 +146,26 @@ impl SourceDeviceClient {
+         Ok(())
+     }
+ 
++    /// Prepare the source device for system sleep and wait until it is done.
++    pub async fn suspend(&self) -> Result<(), ClientError> {
++        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
++        self.send(SourceCommand::Suspend(tx)).await?;
++        match tokio::time::timeout(SLEEP_TIMEOUT, rx.recv()).await {
++            Ok(Some(())) => Ok(()),
++            _ => Err(ClientError::ChannelClosed),
++        }
++    }
++
++    /// Undo [SourceDeviceClient::suspend] and wait until it is done.
++    pub async fn resume(&self) -> Result<(), ClientError> {
++        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
++        self.send(SourceCommand::Resume(tx)).await?;
++        match tokio::time::timeout(SLEEP_TIMEOUT, rx.recv()).await {
++            Ok(Some(())) => Ok(()),
++            _ => Err(ClientError::ChannelClosed),
++        }
++    }
++
+     /// Stop the source device.
+     pub async fn stop(&self) -> Result<(), ClientError> {
+         self.tx.send(SourceCommand::Stop).await?;
+diff --git a/src/input/source/command.rs b/src/input/source/command.rs
+index dea4b11..805cdbb 100644
+--- a/src/input/source/command.rs
++++ b/src/input/source/command.rs
+@@ -1,5 +1,7 @@
+ use std::{error::Error, sync::mpsc::Sender};
+ 
++use tokio::sync::mpsc;
++
+ use evdev::FFEffectData;
+ 
+ use crate::input::{capability::Capability, output_event::OutputEvent};
+@@ -18,5 +20,9 @@ pub enum SourceCommand {
+     ResetEffects,
+     GetEventFilter(Sender<Vec<Capability>>),
+     SetEventFilter(Vec<Capability>),
++    /// Prepare for system sleep; replies once done.
++    Suspend(mpsc::Sender<()>),
++    /// Undo [SourceCommand::Suspend] after wake; replies once done.
++    Resume(mpsc::Sender<()>),
+     Stop,
+ }
+diff --git a/src/input/source/fastrpc/ssc_imu.rs b/src/input/source/fastrpc/ssc_imu.rs
+index f4aa456..3eee50c 100644
+--- a/src/input/source/fastrpc/ssc_imu.rs
++++ b/src/input/source/fastrpc/ssc_imu.rs
+@@ -9,7 +9,7 @@ use crate::{
+     input::{
+         capability::{Capability, Source},
+         event::{native::NativeEvent, value::InputValue},
+-        source::{EventCapability, InputError, SourceInputDevice, SourceOutputDevice},
++        source::{EventCapability, InputError, OutputError, SourceInputDevice, SourceOutputDevice},
+     },
+     udev::device::UdevDevice,
+ };
+@@ -78,7 +78,17 @@ impl SourceInputDevice for SscImu {
+     }
+ }
+ 
+-impl SourceOutputDevice for SscImu {}
++impl SourceOutputDevice for SscImu {
++    fn suspend(&mut self) -> Result<(), OutputError> {
++        self.driver.suspend();
++        Ok(())
++    }
++
++    fn resume(&mut self) -> Result<(), OutputError> {
++        self.driver.resume();
++        Ok(())
++    }
++}
+ 
+ impl Debug for SscImu {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+diff --git a/src/input/source/mod.rs b/src/input/source/mod.rs
+index a3ff90b..06ba7a2 100644
+--- a/src/input/source/mod.rs
++++ b/src/input/source/mod.rs
+@@ -186,6 +186,17 @@ pub trait SourceOutputDevice {
+     fn stop(&mut self) -> Result<(), OutputError> {
+         Ok(())
+     }
++
++    /// Prepare the device for system sleep, for hardware the kernel does not
++    /// suspend on its own.
++    fn suspend(&mut self) -> Result<(), OutputError> {
++        Ok(())
++    }
++
++    /// Undo [SourceOutputDevice::suspend] after the system wakes.
++    fn resume(&mut self) -> Result<(), OutputError> {
++        Ok(())
++    }
+ }
+ 
+ /// Options for running a source device
+@@ -553,6 +564,18 @@ impl<T: SourceInputDevice + SourceOutputDevice + Send + 'static> SourceDriver<T>
+                             log::error!("Failed to get filtered events: {e}");
+                         };
+                     }
++                    SourceCommand::Suspend(sender) => {
++                        if let Err(e) = implementation.suspend() {
++                            log::warn!("Failed to suspend source device: {e:?}");
++                        }
++                        let _ = sender.try_send(());
++                    }
++                    SourceCommand::Resume(sender) => {
++                        if let Err(e) = implementation.resume() {
++                            log::warn!("Failed to resume source device: {e:?}");
++                        }
++                        let _ = sender.try_send(());
++                    }
+                 },
+                 Err(e) => match e {
+                     TryRecvError::Empty => return Ok(()),
+-- 
+2.56.0
+
