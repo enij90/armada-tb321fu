@@ -22,14 +22,18 @@ source_devices:
       product_id: "1134"
       handler: event*
     capability_map_id: lenovo_legion_g9
-  # The tablet's accelerometer + gyroscope (tb321fu-imu-bridge, from the SSC).
-  # A uinput device: InputPlumber accepts it through patch 0005; like the
-  # PS4 motion sensors it is a gamepad-group source mapped by imu_generic.
-  - group: gamepad
-    evdev:
-      name: TB321FU IMU
-      handler: event*
-    capability_map_id: imu_generic
+  # The tablet's accelerometer + gyroscope, read from the SSC over FastRPC.
+  - group: imu
+    fastrpc:
+      name: fastrpc-adsp
+    config:
+      imu:
+        # x = sensor y, y = -sensor x, z = sensor z (the old tb321fu-imu-bridge rotation)
+        mount_matrix:
+          x: [0, 1, 0]
+          y: [-1, 0, 0]
+          z: [0, 0, 1]
+        gyro_auto_calibration: true
   # The tablet's vibration motors (AW86937, left and right): the G9 has no
   # rumble Linux can drive, so game rumble goes to the tablet.
   - group: gamepad

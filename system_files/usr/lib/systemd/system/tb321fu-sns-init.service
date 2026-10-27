@@ -2,7 +2,7 @@
 Description=Lenovo TB321FU: sensor core (hexagonrpcd for the ADSP sensor PD)
 ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
 After=local-fs.target
-Before=iio-sensor-proxy.service tb321fu-imu-bridge.service
+Before=iio-sensor-proxy.service inputplumber.service
 
 [Service]
 ExecStart=/usr/libexec/tb321fu/sns-init

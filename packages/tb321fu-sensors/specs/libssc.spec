@@ -2,13 +2,15 @@
 
 Name:           libssc
 Version:        0.4.3
-Release:        2.tb321fu%{?dist}
+Release:        3.tb321fu%{?dist}
 Summary:        Library to access sensors of the Qualcomm Sensor Core (SSC)
 License:        GPL-3.0-or-later
 URL:            https://github.com/GUF296/libssc
 Source0:        %{url}/archive/%{commit}/libssc-%{commit}.tar.gz
 # LIBSSC_MAX_SAMPLE_RATE: the IMU's first advertised rate (25 Hz) is too slow for gyro aiming.
 Patch0:         libssc-0001-max-sample-rate.patch
+Patch1:         libssc-0002-release-the-client-reference-taken-in-open-and-close.patch
+Patch2:         libssc-0003-fail-an-open-that-is-never-confirmed.patch
 
 BuildRequires:  gcc
 BuildRequires:  meson

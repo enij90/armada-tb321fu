@@ -1,0 +1,187 @@
+From 535cdd1b84b9097e3410b3ee22f0cf768a713de8 Mon Sep 17 00:00:00 2001
+From: virtudude <virtudude@protonmail.com>
+Date: Mon, 26 Oct 2026 21:24:15 -0400
+Subject: [PATCH] sensor: fail an open that is never confirmed
+
+An open finished only when a configuration or measurement report
+arrived. If none came, the open never completed and the sync wrappers
+waited forever. When the enable request failed, the task was freed
+while its report handler stayed connected, so a later report used the
+freed task.
+
+Give the open a deadline in the task's context, finish it through one
+path whichever of the report, the failed request or the deadline comes
+first, and log the request error before handing it to the task. While
+an open is pending, ignore reports other than its own confirmation and
+refuse a second open.
+---
+ src/libssc-sensor.c | 90 ++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 72 insertions(+), 18 deletions(-)
+
+diff --git a/src/libssc-sensor.c b/src/libssc-sensor.c
+index d68ca57..1fe6a50 100644
+--- a/src/libssc-sensor.c
++++ b/src/libssc-sensor.c
+@@ -23,6 +23,8 @@
+ #include "libssc-sensor.h"
+ 
+ #define MAX_RETRIES 100
++/* Matches the QMI request timeout in libssc-client.c */
++#define OPEN_TIMEOUT_S 10
+ 
+ enum {
+ 	PROP_NAME = 1,
+@@ -61,6 +63,8 @@ typedef struct _SSCSensorPrivate {
+ 	gboolean attr_populated;
+ 	gboolean service_available;
+ 	guint service_retries;
++	ReportReceivedContext *open_ctx;
++	GSource *open_timeout;
+ } SSCSensorPrivate;
+ 
+ static void async_initable_iface_init (GAsyncInitableIface *iface);
+@@ -161,16 +165,61 @@ sensor_open_finish (SSCSensor *self, GAsyncResult *result, GError **error)
+ 	return g_task_propagate_boolean (G_TASK (result), error);
+ }
+ 
++/* Finish a pending open exactly once, whichever of its events comes first */
++static void
++open_complete (SSCSensor *self, GError *error)
++{
++	SSCSensorPrivate *priv = ssc_sensor_get_instance_private (self);
++	ReportReceivedContext *ctx = priv->open_ctx;
++
++	if (!ctx) {
++		g_clear_error (&error);
++		return;
++	}
++
++	priv->open_ctx = NULL;
++	if (priv->open_timeout) {
++		g_source_destroy (priv->open_timeout);
++		g_clear_pointer (&priv->open_timeout, g_source_unref);
++	}
++	if (priv->report_id) {
++		g_signal_handler_disconnect (priv->client, priv->report_id);
++		priv->report_id = 0;
++	}
++
++	if (error)
++		g_task_return_error (ctx->task, error);
++	else
++		g_task_return_boolean (ctx->task, TRUE);
++	g_clear_object (&ctx->task);
++	g_slice_free (ReportReceivedContext, ctx);
++}
++
++static gboolean
++open_timeout (gpointer user_data)
++{
++	SSCSensor *self = SSC_SENSOR (g_task_get_source_object (G_TASK (user_data)));
++
++	open_complete (self, g_error_new_literal (G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
++						  "Sensor did not confirm it was enabled"));
++	return G_SOURCE_REMOVE;
++}
++
+ static void
+ sensor_open_ready (SSCClient *self, GAsyncResult *result, gpointer user_data)
+ {
+-	GTask *task = G_TASK (user_data);
++	g_autoptr (GTask) task = G_TASK (user_data);
++	SSCSensor *sensor = SSC_SENSOR (g_task_get_source_object (task));
++	SSCSensorPrivate *priv = ssc_sensor_get_instance_private (sensor);
+ 	GError *error = NULL;
+ 
+ 	if (!ssc_client_send_finish (self, result, &error)) {
+-		g_task_return_error (task, error);
+-		g_clear_object (&task);
+ 		g_debug ("Sensor enable request failed: %s", error->message);
++		/* A report or the timeout may have finished this open already */
++		if (priv->open_ctx && priv->open_ctx->task == task)
++			open_complete (sensor, error);
++		else
++			g_error_free (error);
+ 		return;
+ 	}
+ 
+@@ -199,6 +248,13 @@ sensor_open (SSCSensor *self, GCancellable *cancellable, GAsyncReadyCallback cal
+ 		return;
+ 	}
+ 
++	if (priv->open_ctx) {
++		g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_PENDING,
++					 "Sensor is already being opened");
++		g_object_unref (task);
++		return;
++	}
++
+ 	g_info ("Enabling sensor (%" G_GUINT64_FORMAT " %" G_GUINT64_FORMAT ") in '%s' mode", priv->uid_high, priv->uid_low, priv->stream_type == SSC_STREAM_TYPE_CONTINUOUS? "continuous" : "on-change");
+ 
+ 	/*
+@@ -234,6 +290,10 @@ sensor_open (SSCSensor *self, GCancellable *cancellable, GAsyncReadyCallback cal
+ 	ctx = g_slice_new (ReportReceivedContext);
+ 	ctx->task = task;
+ 	ctx->sensor = self;
++	priv->open_ctx = ctx;
++	/* Runs in the task's context, like its other callbacks */
++	priv->open_timeout = g_timeout_source_new_seconds (OPEN_TIMEOUT_S);
++	g_task_attach_source (task, priv->open_timeout, open_timeout);
+ 
+ 	/* Start listening for report signals */
+ 	priv->report_id = g_signal_connect (priv->client,
+@@ -248,7 +308,7 @@ sensor_open (SSCSensor *self, GCancellable *cancellable, GAsyncReadyCallback cal
+ 			 buf,
+ 			 g_task_get_cancellable (task),
+ 			 (GAsyncReadyCallback)sensor_open_ready,
+-			 task);
++			 g_object_ref (task));
+ }
+ 
+ gboolean
+@@ -294,6 +354,10 @@ report_received (SSCClient *self, guint32 msg_id, guint64 uid_high, guint64 uid_
+ 
+ 	priv = ssc_sensor_get_instance_private (ctx->sensor);
+ 
++	/* An open only waits for its sensor to confirm it is enabled */
++	if (ctx == priv->open_ctx && msg_id != SSC_MSG_RESPONSE_ENABLE_REPORT &&
++	    msg_id != SSC_MSG_REPORT_MEASUREMENT && msg_id != SSC_MSG_REPORT_MEASUREMENT_PROXIMITY)
++		return;
+ 
+ 	/* Discover response */
+ 	if (uid_high == SSC_SENSOR_UID_SUID_HIGH && uid_low == SSC_SENSOR_UID_SUID_LOW && msg_id == SSC_MSG_RESPONSE_SUID) {
+@@ -479,13 +543,8 @@ report_received (SSCClient *self, guint32 msg_id, guint64 uid_high, guint64 uid_
+ 		g_debug ("  sample-rate: %f Hz", config_msg->has_sample_rate ? config_msg->sample_rate : 0.0);
+ 
+ 		/* Configuration updated, complete task and stop listening */
+-		if (ctx->task) {
+-			g_signal_handler_disconnect (self, priv->report_id);
+-			priv->report_id = 0;
+-			g_task_return_boolean (ctx->task, TRUE);
+-			g_clear_object (&ctx->task);
+-			g_slice_free (ReportReceivedContext, ctx);
+-		}
++		if (ctx == priv->open_ctx)
++			open_complete (ctx->sensor, NULL);
+ 
+ 		ssc_config_response__free_unpacked (config_msg, NULL);
+ 		return;
+@@ -498,13 +557,8 @@ report_received (SSCClient *self, guint32 msg_id, guint64 uid_high, guint64 uid_
+ 	} else if (uid_high == priv->uid_high && uid_low == priv->uid_low && (msg_id == SSC_MSG_REPORT_MEASUREMENT || msg_id == SSC_MSG_REPORT_MEASUREMENT_PROXIMITY)) {
+ 		g_debug ("Measurement received for '%s' sensor (%" G_GUINT64_FORMAT " %" G_GUINT64_FORMAT "), assuming enabled", priv->data_type, priv->uid_high, priv->uid_low);
+ 
+-		if (ctx->task) {
+-			g_signal_handler_disconnect (self, priv->report_id);
+-			priv->report_id = 0;
+-			g_task_return_boolean (ctx->task, TRUE);
+-			g_clear_object (&ctx->task);
+-			g_slice_free (ReportReceivedContext, ctx);
+-		}
++		if (ctx == priv->open_ctx)
++			open_complete (ctx->sensor, NULL);
+ 	}
+ }
+ 
+-- 
+2.56.0
+

@@ -24,6 +24,8 @@ fi
 
 # Even with gyro off: the sensors PD only comes up if this attaches soon after the ADSP boots.
 [ "$supported" = 1 ] || exit 0
+# A board whose own unit runs hexagonrpcd (TB321FU: tb321fu-sns-init) only needs the opt-in above.
+[ -e "$root/EXTERNAL" ] && exit 0
 
 # The sensors PD rewrites its registry at boot, so it gets a fresh writable copy.
 state=/run/armada/ssc

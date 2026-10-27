@@ -1,11 +1,11 @@
 [Unit]
-Description=Lenovo TB321FU: restart the sensor bridges after sleep
+Description=Lenovo TB321FU: restart the light sensor bridge after sleep
 ConditionFirmware=device-tree-compatible(lenovo,tb321fu)
 After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/systemctl --no-block start tb321fu-imu-bridge.service tb321fu-als-bridge.service
+ExecStart=/usr/bin/systemctl --no-block start tb321fu-als-bridge.service
 
 [Install]
 WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target

@@ -1,0 +1,2 @@
+tb321fu-sns-init.service serves this board's SSC: vendor config from the firmware
+package, registry seeded from the tablet's own persist partition.
