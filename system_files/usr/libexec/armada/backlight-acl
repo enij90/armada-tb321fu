@@ -6,11 +6,17 @@
 # it finds directly whenever it can, which bypasses the steamos-priv-write
 # steering to the primary panel. Without write access Steam falls back to
 # the polkit helper (its standard path on SteamOS), which steers and
-# rescales the write.
+# rescales the write. Devices with brightness conversion quirks also need this
+# path to apply their conversion. Revoke any previous grant when a udev event
+# reapplies the rule.
 set -euo pipefail
 
 eval "$(/usr/libexec/armada/device-env)"
-[[ -n "${ARMADA_PRIMARY_BACKLIGHT:-}" ]] && exit 0
+if [[ -n "${ARMADA_PRIMARY_BACKLIGHT:-}" || "${ARMADA_BACKLIGHT_GAMMA:-1}" != 1 ||
+      "${ARMADA_BACKLIGHT_INPUT_MIN:-0}" != 0 || "${ARMADA_BACKLIGHT_MIN:-0}" != 0 ]]; then
+    chmod go-w "/sys/class/backlight/$1/brightness" 2>/dev/null || true
+    exit 0
+fi
 
 chgrp wheel "/sys/class/backlight/$1/brightness" 2>/dev/null || true
 chmod g+w "/sys/class/backlight/$1/brightness" 2>/dev/null || true

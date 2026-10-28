@@ -1,0 +1,32 @@
+From 9a0b0d60eb9ece3a017c57f0508fcb481cb52989 Mon Sep 17 00:00:00 2001
+From: virtudude <virtudude@protonmail.com>
+Date: Tue, 27 Oct 2026 19:47:44 -0400
+Subject: [PATCH] sensor: log a failed disable before handing its error to the
+ task
+
+g_task_return_error() takes ownership of the error and may complete the
+task before it returns, so sensor_close_ready() could read freed memory
+when it logged error->message afterwards. Log it first, as
+sensor_open_ready() already does.
+---
+ src/libssc-sensor.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/libssc-sensor.c b/src/libssc-sensor.c
+index 1fe6a50..71e6d4f 100644
+--- a/src/libssc-sensor.c
++++ b/src/libssc-sensor.c
+@@ -110,9 +110,9 @@ sensor_close_ready (SSCClient *self, GAsyncResult *result, gpointer user_data)
+ 	GError *error = NULL;
+ 
+ 	if (!ssc_client_send_finish (self, result, &error)) {
++		g_debug ("Sensor disable request failed: %s", error->message);
+ 		g_task_return_error (task, error);
+ 		g_clear_object (&task);
+-		g_debug ("Sensor disable request failed: %s", error->message);
+ 		return;
+ 	}
+ 
+-- 
+2.56.0
+

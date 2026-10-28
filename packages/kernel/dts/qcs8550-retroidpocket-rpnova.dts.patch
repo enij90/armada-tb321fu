@@ -1,24 +1,36 @@
 diff --git a/arch/arm64/boot/dts/qcom/qcs8550-retroidpocket-rpnova.dts b/arch/arm64/boot/dts/qcom/qcs8550-retroidpocket-rpnova.dts
-index b21c84b..4257d86 100644
 --- a/arch/arm64/boot/dts/qcom/qcs8550-retroidpocket-rpnova.dts
 +++ b/arch/arm64/boot/dts/qcom/qcs8550-retroidpocket-rpnova.dts
-@@ -12,9 +12,15 @@
- 	compatible = "retroidpocket,rpnova", "qcom,qcs8550", "qcom,sm8550";
+@@ -13,8 +13,26 @@
  };
  
 +&backlight {
 +	status = "disabled";
 +};
 +
++&vdd_disp_2v8 {
++	gpio = <&tlmm 143 GPIO_ACTIVE_HIGH>;
++};
++
  &mdss_dsi0 {
  	panel@0 {
- 		compatible = "il97680a,rpnova";
+-		compatible = "il97680a,rpnova";
+-		/delete-property/ rotation;
++		compatible = "retroidpocket,rpnova-panel";
 +		armada,dpu-8bpc-dither;
 +		/delete-property/ backlight;
- 		/delete-property/ rotation;
++		/delete-property/ avdd-supply;
++
++		vdd-supply = <&vreg_l11b_1p2>;
++		vddio-supply = <&vreg_l12b_1p8>;
++		vci-supply = <&vreg_l13b_3p0>;
++		vdd18-supply = <&vdd_disp_1v8>;
++		vdd28-supply = <&vdd_disp_2v8>;
++
++		rotation = <0>;
  	};
  };
-@@ -33,3 +39,8 @@
+@@ -33,3 +51,8 @@
  	trigger-left-deadzone = <100>;
  	trigger-right-deadzone = <100>;
  };

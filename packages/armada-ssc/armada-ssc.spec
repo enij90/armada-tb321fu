@@ -25,6 +25,13 @@ for archive in data/*.tar.gz; do
     tar -xzf "${archive}" -C "${dest}" --no-same-owner
 done
 
+for p in patches/*/*.patch; do
+    board=%{buildroot}%{_datadir}/armada/ssc/$(basename "$(dirname "${p}")")
+    patch -d "${board}" -p1 --no-backup-if-mismatch --forward < "${p}"
+    # Nonzero mtimes make the ADSP reparse the sensor configs.
+    find "${board}" -newermt @0 -exec touch -h -d @0 {} +
+done
+
 %files
 %doc README.md
 %{_datadir}/armada/ssc

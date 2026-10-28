@@ -11,3 +11,5 @@ with no `notes` is verbatim. `notes` mean the file was modified.
   source: armada
 - `patches/0004-sensor-fail-an-open-that-is-never-confirmed.patch`
   source: armada
+- `patches/0005-sensor-log-a-failed-disable-before-handing-its-error-to-the-task.patch`
+  source: armada

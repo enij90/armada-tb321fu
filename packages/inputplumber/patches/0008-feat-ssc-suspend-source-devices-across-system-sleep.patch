@@ -1,4 +1,4 @@
-From 7873df3b83edc4172f345df0a9df115ed1d42704 Mon Sep 17 00:00:00 2001
+From 078e489a4897c74f6003b48b86b8f8190b330d4d Mon Sep 17 00:00:00 2001
 From: virtudude <virtudude@protonmail.com>
 Date: Mon, 26 Oct 2026 21:54:52 -0400
 Subject: [PATCH] feat(ssc): suspend source devices across system sleep
@@ -18,18 +18,18 @@ never suspended no longer removes them.
 Assisted-by: LLM
 ---
  src/drivers/ssc/bindings.rs           | 14 ++++++
- src/drivers/ssc/driver.rs             | 63 ++++++++++++++++++++++++++-
- src/drivers/ssc/runtime.rs            | 36 ++++++++++++---
+ src/drivers/ssc/driver.rs             | 62 ++++++++++++++++++++++++++-
+ src/drivers/ssc/runtime.rs            | 36 +++++++++++++---
  src/input/composite_device/client.rs  | 22 ++++++++++
  src/input/composite_device/command.rs |  2 +
- src/input/composite_device/mod.rs     | 43 ++++++++++++++++++
+ src/input/composite_device/mod.rs     | 42 ++++++++++++++++++
  src/input/composite_device/targets.rs |  5 +++
  src/input/manager.rs                  | 19 +++++++-
  src/input/source/client.rs            | 22 ++++++++++
  src/input/source/command.rs           |  6 +++
  src/input/source/fastrpc/ssc_imu.rs   | 14 +++++-
  src/input/source/mod.rs               | 23 ++++++++++
- 12 files changed, 259 insertions(+), 10 deletions(-)
+ 12 files changed, 257 insertions(+), 10 deletions(-)
 
 diff --git a/src/drivers/ssc/bindings.rs b/src/drivers/ssc/bindings.rs
 index 27604d2..4f32d4f 100644
@@ -80,7 +80,7 @@ index 27604d2..4f32d4f 100644
                      .get::<FnSscSensorSetSampleRate>(b"ssc_sensor_set_sample_rate\0")
                      .ok()
 diff --git a/src/drivers/ssc/driver.rs b/src/drivers/ssc/driver.rs
-index 5b77d31..b98321e 100644
+index 5b77d31..1cbd886 100644
 --- a/src/drivers/ssc/driver.rs
 +++ b/src/drivers/ssc/driver.rs
 @@ -1,4 +1,5 @@
@@ -89,18 +89,17 @@ index 5b77d31..b98321e 100644
  use std::sync::Arc;
  use std::time::{Duration, Instant};
  use tokio::{sync::mpsc, sync::mpsc::error::TryRecvError};
-@@ -26,6 +27,10 @@ pub struct Driver {
+@@ -26,6 +27,9 @@ pub struct Driver {
      accelerometer: Option<SscObject>,
      next_open: Instant,
      open_failed: bool,
-+    // Reports are disabled for system sleep.
 +    suspended: bool,
 +    // Bumped when a sensor is replaced, so the old one's callback goes quiet.
 +    generation: [Arc<AtomicU32>; 2],
  
      // Event handling / polling
      tx: mpsc::Sender<Event>,
-@@ -57,6 +62,8 @@ impl Driver {
+@@ -57,6 +61,8 @@ impl Driver {
              accelerometer: None,
              next_open: Instant::now(),
              open_failed: false,
@@ -109,7 +108,7 @@ index 5b77d31..b98321e 100644
              tx,
              rx,
              filtered_events: Default::default(),
-@@ -88,7 +95,12 @@ impl Driver {
+@@ -88,7 +94,12 @@ impl Driver {
              match self.runtime.clone().create_gyroscope(self.sample_rate) {
                  Ok(sensor) => {
                      let tx = self.tx.clone();
@@ -122,7 +121,7 @@ index 5b77d31..b98321e 100644
                          _ = tx.try_send(Event::Gyro(AxisData {
                              roll: x as f64,
                              pitch: y as f64,
-@@ -104,7 +116,12 @@ impl Driver {
+@@ -104,7 +115,12 @@ impl Driver {
              match self.runtime.clone().create_accelerometer(self.sample_rate) {
                  Ok(sensor) => {
                      let tx = self.tx.clone();
@@ -135,7 +134,7 @@ index 5b77d31..b98321e 100644
                          _ = tx.try_send(Event::Accelerometer(AxisData {
                              roll: x as f64,
                              pitch: y as f64,
-@@ -132,6 +149,48 @@ impl Driver {
+@@ -132,6 +148,48 @@ impl Driver {
          }
      }
  
@@ -184,7 +183,7 @@ index 5b77d31..b98321e 100644
      pub fn update_filtered_events(&mut self, events: Vec<Event>) {
          self.filtered_events = events;
      }
-@@ -146,7 +205,9 @@ impl Driver {
+@@ -146,7 +204,9 @@ impl Driver {
  
      /// Poll the device for data
      pub fn poll(&mut self) -> Result<Vec<Event>, Box<dyn Error + Send + Sync>> {
@@ -340,7 +339,7 @@ index 7c175de..c692342 100644
      IsSuspended(mpsc::Sender<bool>),
  }
 diff --git a/src/input/composite_device/mod.rs b/src/input/composite_device/mod.rs
-index 2530dd7..d5126c5 100644
+index 2530dd7..cee6d85 100644
 --- a/src/input/composite_device/mod.rs
 +++ b/src/input/composite_device/mod.rs
 @@ -568,6 +568,12 @@ impl CompositeDevice {
@@ -356,13 +355,12 @@ index 2530dd7..d5126c5 100644
                      CompositeCommand::IsSuspended(sender) => {
                          let is_suspended = !self.targets.get_suspended_devices().is_empty();
                          log::debug!("Checking if device is suspended: {is_suspended}");
-@@ -2233,6 +2239,43 @@ impl CompositeDevice {
+@@ -2231,6 +2237,42 @@ impl CompositeDevice {
+         self.dbus.path().to_string()
+     }
  
-     /// Takes the provided [HashMap] and sets a filter for all matching source device ID's and
-     /// capabilties.
-+    /// Tells each source device to prepare for system sleep and replies once
-+    /// they all answered. Runs in a task so this loop keeps draining input
-+    /// from the source devices meanwhile.
++    /// Prepares the source devices for system sleep and replies once each has
++    /// answered or timed out. Spawned so this loop keeps draining their input.
 +    async fn suspend_source_devices(&self, sender: mpsc::Sender<()>) {
 +        let source_devices = self.source_devices.clone();
 +        tokio::task::spawn(async move {
@@ -397,9 +395,9 @@ index 2530dd7..d5126c5 100644
 +        });
 +    }
 +
+     /// Takes the provided [HashMap] and sets a filter for all matching source device ID's and
+     /// capabilties.
      async fn set_filtered_events(
-         &mut self,
-         events: HashMap<String, Vec<Capability>>,
 diff --git a/src/input/composite_device/targets.rs b/src/input/composite_device/targets.rs
 index 5d8c8f2..5ffa46e 100644
 --- a/src/input/composite_device/targets.rs

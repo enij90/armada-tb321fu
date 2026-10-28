@@ -24,6 +24,11 @@ the image ships every file with mtime 0, so the capture writes 0 there.
 Otherwise the ADSP re-parses every config at boot, which the Thor does not
 survive.
 
+`patches/<device id>/` holds changes applied on top of a board's capture, so
+the archive stays a straight copy. The Odin 3 turns off SSC island mode
+there: with island on, s2idle entered right after a sensor close hangs the
+SoC.
+
 `socinfo` links to `/sys/devices/soc0`, and `SOURCE` records the Android build
 and the sha256 of each ADSP firmware file the board was running at capture.
 The registry is only valid for that firmware, so the image build fails if the

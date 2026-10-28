@@ -52,6 +52,10 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0078-drm-msm-dpu-fix-vblank-timestamps-on-command-mode-panels.patch`
   source: armada
   upstream: local
+- `patches/0078a-drm-msm-dpu-program-merge3d-for-command-mode.patch`
+  source: https://github.com/RetroidPocket/linux/commit/b547718c91dbaf8fe27745afced8de00d1f7415b
+  upstream: unknown
+  notes: Unmodified Retroid fix that programs and flushes MERGE_3D for command-mode displays using two layer mixers. Required by the uncompressed 1280x960 Nova/Duo panel; otherwise DSI receives half a line and reports FIFO underflow.
 - `patches/0016-rp5-smooth-brightness-adjustment.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8250/patches/linux/0016-rp5-smooth-brightness-adjustment.patch
   upstream: unknown
@@ -103,13 +107,16 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0518b-drm-panel-icna35xx-calibrate-the-ICNA3512-frame-length.patch`
   source: armada
   upstream: local
-- `patches/0106-drm-panel-il97680a-luminance-linear-backlight-scale.patch`
-  source: armada
+- `patches/0105-dt-bindings-display-panel-retroid-il97680a.patch`
+  source: https://github.com/RetroidPocket/linux/commit/9bfe85be2179d03338d09b8900f3b1916999ef15
   upstream: not submitted
-- `patches/0107-drm-msm-dpu-AVR-variable-refresh-on-DSI-video-mode.patch`
-  source: https://github.com/portare-ch/portareos/blob/67ed458421d919aba9c687c3f72d7678954b6902/projects/PortareOS/devices/SM8550/patches/linux/1097-drm-msm-dpu-AVR-variable-refresh-on-DSI-video-mode.patch
-  upstream: unknown
-  notes: Rebased onto Armada’s Linux 7.2.6 display stack and panel driver, retaining its 60/120 Hz modes and luminance-linear backlight; the range is 80–120 Hz, following PortareOS #601.
+- `patches/0105a-drm-panel-retroid-il97680a.patch`
+  source: https://github.com/JPyke3/linux/commit/c102403bfcfe545d34e7124630f60e56d090753b
+  upstream: not submitted
+- `patches/0105b-drm-panel-il97680a-backport-orientation-helper.patch`
+  source: armada
+  upstream: not applicable
+  notes: Only renames drm_of_get_panel_orientation() to of_drm_get_panel_orientation() for Linux 7.2.6. Drop when the base kernel provides the new name.
 - `patches/0108-drm-msm-dpu-send-the-flip-event-after-the-vblank-irq.patch`
   source: https://github.com/portare-ch/portareos/blob/be06100b6d127692ed99401d23980fc04888ae01/projects/PortareOS/devices/SM8550/patches/linux/1098-drm-msm-dpu-send-the-flip-event-after-the-vblank-irq.patch
   upstream: unknown
@@ -123,10 +130,6 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   notes: Standalone single-DSI driver for the 1080x1920 60Hz WT0600 panel (Pocket S 1K) from ROCKNIX PR #3007.
 - `patches/0104-drm-panel-Add-Retroid-Pocket-6-panel.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8550/patches/linux/0104-drm-panel-Add-Retroid-Pocket-6-panel.patch
-  upstream: unknown
-  notes: Ported to Linux 7.2's managed DRM panel allocator.
-- `patches/0105-drm-panel-Add-Retroid-Pocket-Nova-panel.patch`
-  source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8550/patches/linux/0105-drm-panel-Add-Retroid-Pocket-Nova-panel.patch
   upstream: unknown
   notes: Ported to Linux 7.2's managed DRM panel allocator.
 - `patches/0104a-drm-panel-visionox-vtdr6130-add-sm8250.patch`
@@ -245,6 +248,10 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0506-usbcore-add-interrupt-interval-override.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8550/patches/linux/0506-usbcore-add-interrupt-interval-override.patch
   upstream: unknown
+- `patches/1008-HID-uhid-read-the-output-queue-under-qlock.patch`
+  source: armada
+  upstream: local
+  notes: Fixes a NULL dereference in `uhid_char_read()` on arm64 that orphans InputPlumber's virtual controller and stalls Steam's controller thread until reboot. Mainline carries the same lockless read; this is a candidate for upstream submission.
 - `patches/0071-HACK-fix-usb-boot-hang.patch`
   source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8550/patches/linux/0071-HACK-fix-usb-boot-hang.patch
   upstream: unknown
@@ -334,7 +341,7 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   notes: Backported to 7.2's inline wait, and put_work_scheduled uses xchg() instead of fl->lock because the rpmsg callback runs in hard IRQ; the commit message still describes v3.
 - `patches/0569-soc-qcom-smp2p-reset-inbound-state-only-on-restart.patch`
   source: armada
-  upstream: not submitted
+  upstream: local
 - `patches/0504-mailbox-qcom-ipcc-mask-summary-irq-for-suspend-to-ram.patch`
   source: https://github.com/ROCKNIX/distribution/commit/f955f5b6137554253e4d52bbe72f9b4936fb253d
   upstream: not submitted
@@ -871,7 +878,8 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   notes: Armada switches Pocket 6 from ROCKNIX's Odin 2 fallback to audio firmware extracted from a Pocket 6 vendor image, and drives its haptics actuator as an LRA with the stock Android values (board-id 0x1001f overlay) instead of the inherited Odin 2 ERM config.
 - `dts/qcs8550-retroidpocket-rpnova.dts.patch`
   source: armada
-  notes: Armada disables the inherited Pocket 6 PWM backlight and removes its panel reference so Nova uses its panel driver’s DSI backlight, and loads Nova's own ADSP firmware.
+  reference: https://github.com/RetroidPocket/linux/blob/2209a42da1a891d0d140293f5831c50e4aa9cc61/arch/arm64/boot/dts/qcom/qcs8550-retroidpocket-rpnova.dts
+  notes: Armada disables the inherited Pocket 6 PWM backlight and removes its panel reference so Nova uses its panel driver’s DSI backlight. Matches Retroid’s Nova panel wiring: L11B/L12B/L13B for vdd/vddio/vci, GPIO 70/143 fixed regulators for vdd18/vdd28, and rotation 0. Removes the inherited avdd supply and retains Armada DPU dithering and Nova's own ADSP firmware. The ROCKNIX Nova → RP6 → AYN common inheritance remains unchanged for other systems.
 - `dts/qcs8550-ayn-thor.dts.patch`
   source: armada
   notes: Armada fixes the hall-sensor pinctrl, makes only the lid-open edge wake, corrects touch orientation, and enables DPU dithering on the top panel after copying `dts/qcs8550-ayn-thor.dts`.

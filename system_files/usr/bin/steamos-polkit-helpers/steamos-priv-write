@@ -5,94 +5,91 @@ WRITE_PATH="${1:-}"
 WRITE_VALUE="${2:-}"
 
 if [[ -z "$WRITE_PATH" ]]; then
-    echo "Usage: $0 <path> [value]" >&2
-    exit 2
-fi
-
-if [[ $EUID -ne 0 ]]; then
-    exec pkexec --disable-internal-agent "$0" "$@"
-fi
-
-log() {
-    systemd-cat -t armada-steamos-priv-write -p info <<<"$*"
-}
-
-run_armada_power() {
-    /usr/bin/armada-power "$@"
-}
-
-if [[ "$WRITE_PATH" == /sys/class/drm/card*/device/power_dpm_force_performance_level ]]; then
-    case "$WRITE_VALUE" in
-        auto) run_armada_power gpu-auto ;;
-        manual|high) run_armada_power gpu-manual 0 ;;
-        low)
-            min_mhz="$(/usr/bin/armada-power status | awk -F= '/^manual_gpu_clock_min=/{print $2}')"
-            [[ -n "$min_mhz" ]] || exit 1
-            run_armada_power gpu-manual "$min_mhz"
-            ;;
-        *) exit 1 ;;
-    esac
-    log "gpu performance level: $WRITE_VALUE"
-    exit 0
-fi
-
-if [[ "$WRITE_PATH" == /sys/class/drm/card*/device/pp_od_clk_voltage ]]; then
-    if [[ "$WRITE_VALUE" =~ (^|[[:space:]])s[[:space:]]+[0-9]+[[:space:]]+([0-9]{3,5})([[:space:]]|$) ]]; then
-        mhz="${BASH_REMATCH[2]}"
-    else
-        echo "unsupported pp_od_clk_voltage write: $WRITE_VALUE" >&2
-        exit 1
-    fi
-    run_armada_power gpu-manual "$mhz"
-    log "gpu manual clock: ${mhz} MHz"
-    exit 0
-fi
-
-if [[ "$WRITE_PATH" == /sys/devices/system/cpu/cpufreq/policy*/scaling_governor ]]; then
-    echo "CPU governor writes are managed by armada-power profiles" >&2
-    exit 1
-fi
-
-if [[ "$WRITE_PATH" == /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq ]]; then
-    echo "CPU max frequency writes are managed by armada-power profiles" >&2
-    exit 1
-fi
-
-if [[ "$WRITE_PATH" == /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq ]]; then
-    echo "CPU min frequency writes are managed by armada-power profiles" >&2
-    exit 1
-fi
-
-if [[ "$WRITE_PATH" == /sys/class/hwmon/hwmon*/power*_cap ]]; then
-    echo "TDP writes are not supported on this device" >&2
-    exit 1
+  echo "Usage: $0 <path> [value]" >&2
+  exit 2
 fi
 
 if [[ "$WRITE_PATH" =~ ^/sys/class/backlight/([[:alnum:]_:-][[:alnum:]_.:-]*)/brightness$ ]]; then
-    src_name="${BASH_REMATCH[1]}"
-    [[ "$WRITE_VALUE" =~ ^[0-9]+$ ]] || exit 1
-    # Steam adjusts the first backlight it finds; on dual-screen devices
-    # that can be the secondary panel. Steer writes to the primary
-    # backlight, rescaling between the two devices' brightness ranges.
-    eval "$(/usr/libexec/armada/device-env)"
-    src_dir="/sys/class/backlight/${src_name}"
-    [[ -e "$src_dir/brightness" ]] || exit 1
-    tgt_dir="$src_dir"
-    if [[ -n "${ARMADA_PRIMARY_BACKLIGHT:-}" ]]; then
-        tgt_dir="/sys/class/backlight/${ARMADA_PRIMARY_BACKLIGHT}"
-    fi
-    [[ -e "$tgt_dir/brightness" ]] || exit 1
-    val="$WRITE_VALUE"
-    if [[ "$tgt_dir" != "$src_dir" && -e "$src_dir/max_brightness" ]]; then
-        src_max="$(cat "$src_dir/max_brightness")"
-        tgt_max="$(cat "$tgt_dir/max_brightness")"
-        if [[ "$src_max" -gt 0 && "$src_max" -ne "$tgt_max" ]]; then
-            val=$(( val * tgt_max / src_max ))
-        fi
-    fi
-    echo "$val" > "$tgt_dir/brightness"
-    log "backlight: $WRITE_VALUE -> $tgt_dir/brightness ($val)"
+  src_name="${BASH_REMATCH[1]}"
+  [[ "$WRITE_VALUE" =~ ^[0-9]+$ ]] || exit 1
+  eval "$(/usr/libexec/armada/device-env)"
+  src_dir="/sys/class/backlight/${src_name}"
+  [[ -e "$src_dir/brightness" ]] || exit 1
+  tgt_dir="$src_dir"
+  if [[ -n "${ARMADA_PRIMARY_BACKLIGHT:-}" ]]; then
+    tgt_dir="/sys/class/backlight/${ARMADA_PRIMARY_BACKLIGHT}"
+  fi
+  [[ -e "$tgt_dir/brightness" ]] || exit 1
+  val="$(/usr/libexec/armada/steam-backlight-value "$WRITE_VALUE" \
+    "$src_dir" "$tgt_dir" "${ARMADA_BACKLIGHT_GAMMA:-1}" \
+    "${ARMADA_BACKLIGHT_INPUT_MIN:-0}" "${ARMADA_BACKLIGHT_MIN:-0}")"
+  if [[ $EUID -eq 0 ]]; then
+    echo "$val" >"$tgt_dir/brightness"
     exit 0
+  fi
+  # logind authorizes the active session and coalesces overlapping writes.
+  exec busctl --system call org.freedesktop.login1 \
+    /org/freedesktop/login1/session/auto org.freedesktop.login1.Session \
+    SetBrightness ssu backlight "${tgt_dir##*/}" "$val"
+fi
+
+if [[ $EUID -ne 0 ]]; then
+  exec pkexec --disable-internal-agent "$0" "$@"
+fi
+
+log() {
+  systemd-cat -t armada-steamos-priv-write -p info <<<"$*"
+}
+
+run_armada_power() {
+  /usr/bin/armada-power "$@"
+}
+
+if [[ "$WRITE_PATH" == /sys/class/drm/card*/device/power_dpm_force_performance_level ]]; then
+  case "$WRITE_VALUE" in
+  auto) run_armada_power gpu-auto ;;
+  manual | high) run_armada_power gpu-manual 0 ;;
+  low)
+    min_mhz="$(/usr/bin/armada-power status | awk -F= '/^manual_gpu_clock_min=/{print $2}')"
+    [[ -n "$min_mhz" ]] || exit 1
+    run_armada_power gpu-manual "$min_mhz"
+    ;;
+  *) exit 1 ;;
+  esac
+  log "gpu performance level: $WRITE_VALUE"
+  exit 0
+fi
+
+if [[ "$WRITE_PATH" == /sys/class/drm/card*/device/pp_od_clk_voltage ]]; then
+  if [[ "$WRITE_VALUE" =~ (^|[[:space:]])s[[:space:]]+[0-9]+[[:space:]]+([0-9]{3,5})([[:space:]]|$) ]]; then
+    mhz="${BASH_REMATCH[2]}"
+  else
+    echo "unsupported pp_od_clk_voltage write: $WRITE_VALUE" >&2
+    exit 1
+  fi
+  run_armada_power gpu-manual "$mhz"
+  log "gpu manual clock: ${mhz} MHz"
+  exit 0
+fi
+
+if [[ "$WRITE_PATH" == /sys/devices/system/cpu/cpufreq/policy*/scaling_governor ]]; then
+  echo "CPU governor writes are managed by armada-power profiles" >&2
+  exit 1
+fi
+
+if [[ "$WRITE_PATH" == /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq ]]; then
+  echo "CPU max frequency writes are managed by armada-power profiles" >&2
+  exit 1
+fi
+
+if [[ "$WRITE_PATH" == /sys/devices/system/cpu/cpufreq/policy*/scaling_min_freq ]]; then
+  echo "CPU min frequency writes are managed by armada-power profiles" >&2
+  exit 1
+fi
+
+if [[ "$WRITE_PATH" == /sys/class/hwmon/hwmon*/power*_cap ]]; then
+  echo "TDP writes are not supported on this device" >&2
+  exit 1
 fi
 
 echo "refusing unsupported write: $WRITE_VALUE -> $WRITE_PATH" >&2

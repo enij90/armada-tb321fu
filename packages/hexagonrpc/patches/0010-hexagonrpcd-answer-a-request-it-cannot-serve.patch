@@ -1,0 +1,57 @@
+From 824b716b467db9c421510902bd24bc6d3d0b1368 Mon Sep 17 00:00:00 2001
+From: gennro <gennro2004@gmail.com>
+Date: Sat, 17 Oct 2026 19:09:39 -0500
+Subject: [PATCH] hexagonrpcd: answer a request it cannot serve, and keep
+ listening
+
+A request the listener cannot serve (an unsupported method, unexpected
+buffers) set its error but ended the listener loop without sending it.
+hexagonrpcd then exited and the remote caller waited for good. On the
+KONKR Pocket FIT Elite the ADSP sensors process asks for apps_std method
+36 at start-up; left unanswered, it keeps the ADSP from ever sleeping, so
+the SoC never reaches CX or DDR collapse in suspend. Answer such a request
+with its error and no output buffers, and go on.
+
+The returned and decoded buffers are also reset once freed, so a failed
+request does not hand the next reply a freed buffer.
+---
+ hexagonrpcd/listener.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/hexagonrpcd/listener.c b/hexagonrpcd/listener.c
+index a6a592e..c1e7f80 100644
+--- a/hexagonrpcd/listener.c
++++ b/hexagonrpcd/listener.c
+@@ -384,15 +384,27 @@ int run_fastrpc_listener(int fd,
+ 
+ 		if (returned != NULL)
+ 			iobuf_free(n_outbufs, returned);
++		returned = NULL;
+ 
+ 		ret = invoke_requested_procedure(n_ifaces, ifaces,
+ 						 handle, sc, &result,
+ 						 decoded, &returned);
+-		if (ret)
+-			break;
+ 
+ 		if (decoded != NULL)
+ 			iobuf_free(REMOTE_SCALARS_INBUFS(sc), decoded);
++		decoded = NULL;
++
++		/*
++		 * A request that can't be served (an unsupported method, bad
++		 * buffers) is answered with its error and no output, and the
++		 * listener goes on. Leaving it unanswered leaves the remote
++		 * caller waiting for good: the sensors process keeps the ADSP
++		 * from ever sleeping.
++		 */
++		if (ret) {
++			sc = REMOTE_SCALARS_MAKE(0, 0, 0);
++			ret = 0;
++		}
+ 
+ 		n_outbufs = REMOTE_SCALARS_OUTBUFS(sc);
+ 	}
+-- 
+2.56.0
+

@@ -16,6 +16,7 @@
 0076-drm-msm-dpu-expose-abgr-xbgr-2101010-on-planes.patch
 0077-drm-msm-dpu-plane-igc-3d-lut-color-pipelines.patch
 0078-drm-msm-dpu-fix-vblank-timestamps-on-command-mode-panels.patch
+0078a-drm-msm-dpu-program-merge3d-for-command-mode.patch
 0016-rp5-smooth-brightness-adjustment.patch
 0056_Xm-Plus-XM91080G-panel.patch
 0028-drm-panel-Add-panel-driver-for-Chipone-ICNA35XX-base.patch
@@ -34,11 +35,10 @@
 0063-gpu-drm-panel-add-wt0600-1k-panel.patch
 0104-drm-panel-Add-Retroid-Pocket-6-panel.patch
 0104a-drm-panel-visionox-vtdr6130-add-sm8250.patch
-0105-drm-panel-Add-Retroid-Pocket-Nova-panel.patch
-0106-drm-panel-il97680a-luminance-linear-backlight-scale.patch
-0107-drm-msm-dpu-AVR-variable-refresh-on-DSI-video-mode.patch
+0105-dt-bindings-display-panel-retroid-il97680a.patch
+0105a-drm-panel-retroid-il97680a.patch
+0105b-drm-panel-il97680a-backport-orientation-helper.patch
 0108-drm-msm-dpu-send-the-flip-event-after-the-vblank-irq.patch
-0109-drm-panel-il97680a-defer-display-enable.patch
 0064_Mangmi-Air-Y-Pro-panel.patch
 
 # ============== Panel power + backlight ==============
@@ -77,6 +77,7 @@
 0505-arm64-emulate-unaligned-atomics.patch
 0505a-arm64-unaligned-atomics-cover-the-load128-store-exclusive.patch
 0506-usbcore-add-interrupt-interval-override.patch
+1008-HID-uhid-read-the-output-queue-under-qlock.patch
 
 # ============== USB boot hang fix ==============
 0071-HACK-fix-usb-boot-hang.patch
