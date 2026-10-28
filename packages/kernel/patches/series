@@ -279,6 +279,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0806-input-touchscreen-add-novatek-nt36523-spi-guf296.patch
 0807-usb-typec-mux-add-parade-ps5169-redriver-guf296.patch
 0808-ASoC-qcom-audioreach-secondary-TDM-for-lenovo-tb321fu-speakers.patch
+0809-drm-msm-dpu-AVR-variable-refresh-on-DSI-video-mode.patch
 0810-drm-panel-nt36523-run-tb321fu-boe-at-144hz.patch
 0811-drm-panel-nt36523-run-tb321fu-boe-at-165hz.patch
 0812-drm-msm-dpu-validate-mode-clock-on-the-active-width.patch

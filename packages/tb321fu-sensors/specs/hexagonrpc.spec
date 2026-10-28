@@ -2,11 +2,12 @@
 
 Name:           hexagonrpc
 Version:        0.4.0
-Release:        1.tb321fu%{?dist}
+Release:        2.tb321fu%{?dist}
 Summary:        FastRPC daemon serving files to Qualcomm Hexagon DSPs
 License:        GPL-3.0-or-later
 URL:            https://github.com/GUF296/hexagonrpc
 Source0:        %{url}/archive/%{commit}/hexagonrpc-%{commit}.tar.gz
+Patch0:         hexagonrpc-0001-answer-a-request-it-cannot-serve.patch
 
 BuildRequires:  gcc
 BuildRequires:  meson
@@ -18,7 +19,7 @@ through it. GUF296's TB321FU branch (tb321fu-qcom-sns-20260626.1), with the
 persistent registry kept under /var/lib/qcom-sns.
 
 %prep
-%autosetup -n hexagonrpc-%{commit}
+%autosetup -p1 -n hexagonrpc-%{commit}
 # Same relocation as GUF296's qcom-sns packaging (build-y700-sensor-debs.sh).
 sed -i \
     -e 's#Y700_REGISTRY_ROOT#QCOM_SNS_REGISTRY_ROOT#g' \
