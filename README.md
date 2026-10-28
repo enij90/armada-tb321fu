@@ -24,10 +24,10 @@ It is not supported by the Armada project: please report problems here, not upst
 | Speakers (2× AW882xx) | ✅ |
 | Internal microphones | ✅ |
 | Wi-Fi (WCN7850) | ✅ |
-| Bluetooth | 🚧 work in progress (see known issues) |
+| Bluetooth | ✅ |
 | USB-C charging, charges to 100% | ✅ |
 | USB-C display output (DisplayPort Alt Mode), video | ✅ |
-| USB-C display output, audio | 🚧 off for now (see known issues) |
+| USB-C display output, audio | ✅ |
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
 | Headphones on the G9's jack | ✅ |
 | Vibration motors (2× AW86937), game rumble | ✅ |
@@ -66,19 +66,25 @@ It is not supported by the Armada project: please report problems here, not upst
 
 This update:
 
-- **Speakers:** a sound after a pause no longer loses its first half second.
-- **Vibration:** on tablets where one of the two motors never started, both should now work
-  ([#9](https://github.com/enij90/armada-tb321fu/issues/9)). Full-strength rumble is a bit
-  softer, as on Android (gain 0x80 instead of 0xff); it can be changed in
-  `/sys/module/aw86937_y700/parameters/gain_ceiling` (1-255).
-- **Legion G9 with the custom firmware:** the four back buttons work as L4, R4, L5 and R5
-  in Steam, and the M button opens the Quick Access menu (see
-  [Legion G9 controller](#legion-g9-controller)).
+- **Gyro:** it now comes through InputPlumber's own support for the Qualcomm sensor hub,
+  like on the other Armada handhelds, instead of a separate bridge service. It keeps
+  working after sleep, and the sensor hub still sleeps with the tablet.
+- **Bluetooth:** the device search now runs for 120 seconds instead of 20, so the devices
+  it finds stay in Steam's list long enough to pick one.
+- **USB-C:** a charger no longer takes the tablet's USB data connection: with a charger on
+  one port, a device on the other one (the Legion G9, a hub, a dock…) works, also when the
+  tablet starts with the charger plugged in. The ports follow the same rule as on Android.
+- **Sound on a TV or monitor over USB-C:** it's back. Before, the display often stayed
+  silent every other time it was plugged in: the tablet now stops the sound before
+  turning off the video signal, as Android does.
+- **Waydroid:** Google sign-in and app downloads work again. The current Waydroid image
+  declares a video codec service it doesn't include, which left Android without its
+  storage; the tablet now hides that entry until Waydroid fixes the image.
+- **Armada updates up to October 28.**
 
-Previous update (October 24): speakers with much less crackle after boot, CSOT panel up to
-165 Hz with variable refresh rate, the power button sleeps right away in Desktop Mode,
-Steam's battery charge limit works, faster Steam Remote Play decoding, Armada updates up to
-October 22. Older changes are listed in the
+Previous update (October 26): speakers no longer lose the first half second of a sound,
+both vibration motors work on every tablet, and the G9's back buttons work as L4, R4, L5
+and R5 with the custom firmware. Older changes are listed in the
 [releases](https://github.com/enij90/armada-tb321fu/releases).
 
 ## Known issues
@@ -90,14 +96,9 @@ October 22. Older changes are listed in the
   starts normally.
 - Camera image quality is not tuned yet: the second rear camera is a macro camera and is
   blurry at a distance, and the OV13B10 sensor shows line corruption in RAW at 60 and 120 fps.
-- Sound over USB-C (to a TV or monitor) is off for now: it shared a path with the tablet's
-  own sound and could leave the tablet without sound after a while.
 - Steam's battery charge limit (Settings → Power): when you change it, the level where
   charging starts again is only updated at the next restart. While charging is held at the
   limit, Steam still shows the tablet as charging.
-- Bluetooth is still work in progress: Steam's device list empties after a while (turn
-  Bluetooth off and on to search again), and phone calls routed to the tablet make the
-  radio restart.
 
 ## Installation
 
