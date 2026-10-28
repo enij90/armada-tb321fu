@@ -1,0 +1,40 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: stop audio before the main link goes idle
+
+On unplug, msm_dp_bridge_atomic_disable() pushes the main link to idle
+and only msm_dp_display_disable(), in post_disable, waits for the audio
+stream to close. Userspace closes it about 450 ms later, so the ADSP's
+DisplayPort sink keeps running into an idle link. On the TB321FU (SM8650,
+AudioReach) the next DisplayPort start then fails: GRAPH_START on port
+104 answers after ~500 ms with status 1 and the APM stops answering for
+~15 s. Plugs alternated with and without audio.
+
+Lenovo's kernel for this board turns audio off and waits before the
+stream pre-disable (dp_display_pre_disable(), dp_display_process_hpd_low()).
+Do the same: signal the unplug to audio and wait for audio_comp in
+atomic_disable, before PUSH_IDLE. post_disable's wait then returns at
+once. Tested: 10 plugs, all with audio (before: about one in two muted).
+
+---
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -1422,6 +1422,19 @@
+ 
+ 	msm_dp_display = container_of(dp, struct msm_dp_display_private, msm_dp_display);
+ 
++	/*
++	 * Let the audio stream stop while the main link still carries it. If
++	 * the link goes idle first, the ADSP's DisplayPort sink keeps running
++	 * into it and its next start times out. Lenovo's driver also turns
++	 * audio off before the stream's pre-disable.
++	 */
++	if (dp->power_on && dp->audio_enabled) {
++		msm_dp_display_handle_plugged_change(dp, false);
++		if (!wait_for_completion_timeout(&msm_dp_display->audio_comp,
++						 HZ * 5))
++			DRM_ERROR("audio comp timeout\n");
++	}
++
+ 	msm_dp_ctrl_push_idle(msm_dp_display->ctrl);
+ }
+ 

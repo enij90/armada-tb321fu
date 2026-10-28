@@ -301,6 +301,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0827-iio-light-add-tb321fu-ambient-light-sensor-fed-from-userspace.patch
 0829-usb-typec-ucsi-glink-preserve-the-altmode-mux-on-sm8650-guf296.patch
 0841-usb-typec-ucsi-glink-tb321fu-switch-the-data-lanes-like-lenovo.patch
+0843-drm-msm-dp-stop-audio-before-the-main-link-goes-idle.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
 0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch
