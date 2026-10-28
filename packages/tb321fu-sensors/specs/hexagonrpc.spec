@@ -1,8 +1,8 @@
 %global commit 86d7a139ef35bb2e62ea13bd7b166a1ec08a4b97
 
 Name:           hexagonrpc
-Version:        0.4.0
-Release:        2.tb321fu%{?dist}
+Version:        0.5.0
+Release:        1.tb321fu%{?dist}
 Summary:        FastRPC daemon serving files to Qualcomm Hexagon DSPs
 License:        GPL-3.0-or-later
 URL:            https://github.com/GUF296/hexagonrpc
@@ -15,7 +15,8 @@ BuildRequires:  meson
 %description
 hexagonrpcd answers the remote file system calls of a Qualcomm DSP over
 FastRPC. On the Lenovo TB321FU the ADSP sensor PD reads its sensor registry
-through it. GUF296's TB321FU branch (tb321fu-qcom-sns-20260626.1), with the
+through it. GUF296's TB321FU branch (tb321fu-qcom-sns-20260626.1), based on
+upstream master one commit before 0.5.0 (the version bump), with the
 persistent registry kept under /var/lib/qcom-sns.
 
 %prep

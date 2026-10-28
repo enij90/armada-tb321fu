@@ -1,8 +1,8 @@
 %global commit b7719402d5d45f64d8ac533ff02698fdd84e1edc
 
 Name:           libssc
-Version:        0.4.3
-Release:        4.tb321fu%{?dist}
+Version:        0.4.4
+Release:        1.tb321fu%{?dist}
 Summary:        Library to access sensors of the Qualcomm Sensor Core (SSC)
 License:        GPL-3.0-or-later
 URL:            https://github.com/GUF296/libssc
@@ -25,7 +25,8 @@ BuildRequires:  protobuf-compiler
 %description
 libssc talks QMI over QRTR to the Qualcomm Sensor Core and exposes its
 accelerometer, gyroscope, light, proximity, magnetometer and compass sensors.
-Built from GUF296's TB321FU branch (tb321fu-qcom-sns-20260626.1).
+Built from GUF296's TB321FU branch (tb321fu-qcom-sns-20260626.1), on 0.4.3;
+upstream 0.4.4 only changes the test mock, so the runtime matches 0.4.4.
 
 %package devel
 Summary:        Development files for libssc
