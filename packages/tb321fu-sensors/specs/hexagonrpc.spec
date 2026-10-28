@@ -2,7 +2,7 @@
 
 Name:           hexagonrpc
 Version:        0.5.0
-Release:        1.tb321fu%{?dist}
+Release:        1.tb321fu.armada%{?dist}
 Summary:        FastRPC daemon serving files to Qualcomm Hexagon DSPs
 License:        GPL-3.0-or-later
 URL:            https://github.com/GUF296/hexagonrpc

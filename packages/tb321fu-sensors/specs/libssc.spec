@@ -2,7 +2,7 @@
 
 Name:           libssc
 Version:        0.4.4
-Release:        1.tb321fu%{?dist}
+Release:        1.tb321fu.armada%{?dist}
 Summary:        Library to access sensors of the Qualcomm Sensor Core (SSC)
 License:        GPL-3.0-or-later
 URL:            https://github.com/GUF296/libssc
