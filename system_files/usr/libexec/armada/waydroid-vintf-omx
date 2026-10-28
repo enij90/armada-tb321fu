@@ -1,0 +1,56 @@
+#!/bin/bash
+# Waydroid's arm64 vendor image (MAINLINE 20260927) declares
+# android.hardware.media.omx in its VINTF manifest but ships no OMX service:
+# mediaserver waits for it forever and MediaProvider never mounts
+# /storage/emulated, so Google sign-in hangs and downloads find no space
+# (waydroid/waydroid#2453). While the installed image has that mismatch, shadow
+# its manifest through the vendor overlay without the OMX HAL. Runs before the
+# rootfs mount; overlay lower dirs cannot change once mounted.
+set -euo pipefail
+
+cfg=/var/lib/waydroid/waydroid.cfg
+target=/var/lib/waydroid/overlay/vendor/etc/vintf/manifest.xml
+marker='<!-- armada: android.hardware.media.omx removed, waydroid/waydroid#2453 -->'
+
+ours() {
+    [[ -f $target ]] && grep -qF -- "$marker" "$target"
+}
+
+[[ -r $cfg ]] || exit 0
+images=$(sed -n 's/^images_path[[:space:]]*=[[:space:]]*//p' "$cfg" | head -n 1)
+vendor=${images:-/var/lib/waydroid/images}/vendor.img
+[[ -f $vendor ]] || exit 0
+
+mnt=$(mktemp -d)
+trap 'umount "$mnt" 2>/dev/null || true; rmdir "$mnt"' EXIT
+mount -o ro,loop "$vendor" "$mnt"
+src=$mnt/etc/vintf/manifest.xml
+
+# Nothing to fix (or Waydroid fixed the image): drop only our own copy.
+if [[ ! -f $src ]] ||
+    ! grep -q '<name>android.hardware.media.omx</name>' "$src" ||
+    compgen -G "$mnt/bin/hw/*media.omx*" >/dev/null; then
+    if ours; then
+        rm -f "$target"
+    fi
+    exit 0
+fi
+
+# A manifest someone put there by hand stays theirs.
+if [[ -f $target ]] && ! ours; then
+    exit 0
+fi
+
+mkdir -p "$(dirname "$target")"
+python3 -I - "$src" "$target.tmp" "$marker" <<'EOF'
+import sys
+
+src, out, marker = sys.argv[1:]
+s = open(src).read()
+i = s.index("<name>android.hardware.media.omx</name>")
+a = s.rindex('<hal format="hidl">', 0, i)
+b = s.index("</hal>", i) + len("</hal>")
+s = s[:a].rstrip(" ") + s[b:].lstrip("\n")
+open(out, "w").write(marker + "\n" + s)
+EOF
+mv -f "$target.tmp" "$target"
