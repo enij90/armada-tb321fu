@@ -169,6 +169,7 @@ desktop_pkgs=(
     gwenview
     kio-extras
     libadwaita
+    libappindicator
     libdbusmenu-gtk3
     qt6-qttools
     qt6-qtvirtualkeyboard

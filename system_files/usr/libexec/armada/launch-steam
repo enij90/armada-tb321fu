@@ -51,6 +51,14 @@ if [[ -f "${steam_v4l2_shim}" ]]; then
     export LD_PRELOAD="${steam_v4l2_shim}${LD_PRELOAD:+:${LD_PRELOAD}}"
 fi
 
+# Steam's XRRGetOutputInfo/XRRGetCrtcInfo workaround looks the real functions up
+# in an already loaded libXrandr; the ARM client does not load it, so every
+# output change fails and a display hotplug in Desktop Mode crashes Steam.
+steam_xrandr=/usr/lib64/libXrandr.so.2
+if [[ -f "${steam_xrandr}" ]]; then
+    export LD_PRELOAD="${steam_xrandr}${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
+
 touch "${steam_root}/.cef-enable-remote-debugging"
 cd "${steam_arm_dir}"
 exec "${steam_arm}" \
