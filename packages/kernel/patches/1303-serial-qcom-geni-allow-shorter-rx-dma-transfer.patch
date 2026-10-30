@@ -1,0 +1,106 @@
+From: Armada <armada@armada.dev>
+Subject: [PATCH] serial: qcom-geni: allow a shorter RX DMA transfer per port
+
+Non-console GENI UARTs receive in SE DMA mode with a fixed 2048-byte
+transfer. The transfer completes when the buffer fills, or with RX_EOT
+once the line has been idle for STALE_TIMEOUT (16) character times.
+
+A peer that streams continuously never leaves that idle gap. The
+Retroid Pocket Duo gamepad MCU sends a 23-byte status frame roughly
+every 2.7 ms at 115200 baud, leaving about 0.7 ms idle against a 1.4 ms
+stale timeout, so its bytes only reach the tty layer once 2048 have
+accumulated: a burst about every 245 ms. That shows up as variable,
+bursty input latency.
+
+Add an optional "qcom,rx-dma-len" property (bytes, 4..2048, multiple of
+4) that shortens each RX DMA transfer for such ports. The buffer is still
+allocated at DMA_RX_BUF_SIZE, so only the programmed transfer length
+changes. Ports without the property behave exactly as before.
+
+diff --git a/drivers/tty/serial/qcom_geni_serial.c b/drivers/tty/serial/qcom_geni_serial.c
+index 510071f..6c7ee23 100644
+--- a/drivers/tty/serial/qcom_geni_serial.c
++++ b/drivers/tty/serial/qcom_geni_serial.c
+@@ -100,6 +100,7 @@
+ #define BYTES_PER_FIFO_WORD		4U
+ 
+ #define DMA_RX_BUF_SIZE		2048
++#define DMA_RX_LEN_MIN		4
+ 
+ static DEFINE_IDA(port_ida);
+ #define DOMAIN_IDX_POWER	0
+@@ -138,6 +139,7 @@ struct qcom_geni_serial_port {
+ 	unsigned long poll_timeout_us;
+ 	unsigned long clk_rate;
+ 	void *rx_buf;
++	u32 rx_dma_len;
+ 	u32 loopback;
+ 	bool brk;
+ 
+@@ -867,7 +869,7 @@ static void qcom_geni_serial_stop_rx_dma(struct uart_port *uport)
+ 
+ 	if (port->rx_dma_addr) {
+ 		geni_se_rx_dma_unprep(&port->se, port->rx_dma_addr,
+-				      DMA_RX_BUF_SIZE);
++				      port->rx_dma_len);
+ 		port->rx_dma_addr = 0;
+ 	}
+ }
+@@ -883,7 +885,7 @@ static void qcom_geni_serial_start_rx_dma(struct uart_port *uport)
+ 	geni_se_setup_s_cmd(&port->se, UART_START_READ, UART_PARAM_RFR_OPEN);
+ 
+ 	ret = geni_se_rx_dma_prep(&port->se, port->rx_buf,
+-				  DMA_RX_BUF_SIZE,
++				  port->rx_dma_len,
+ 				  &port->rx_dma_addr);
+ 	if (ret) {
+ 		dev_err(uport->dev, "unable to start RX SE DMA: %d\n", ret);
+@@ -903,7 +905,7 @@ static void qcom_geni_serial_handle_rx_dma(struct uart_port *uport, bool drop)
+ 	if (!port->rx_dma_addr)
+ 		return;
+ 
+-	geni_se_rx_dma_unprep(&port->se, port->rx_dma_addr, DMA_RX_BUF_SIZE);
++	geni_se_rx_dma_unprep(&port->se, port->rx_dma_addr, port->rx_dma_len);
+ 	port->rx_dma_addr = 0;
+ 
+ 	rx_in = readl(uport->membase + SE_DMA_RX_LEN_IN);
+@@ -913,7 +915,7 @@ static void qcom_geni_serial_handle_rx_dma(struct uart_port *uport, bool drop)
+ 		handle_rx_uart(uport, rx_in);
+ 
+ 	ret = geni_se_rx_dma_prep(&port->se, port->rx_buf,
+-				  DMA_RX_BUF_SIZE,
++				  port->rx_dma_len,
+ 				  &port->rx_dma_addr);
+ 	if (ret) {
+ 		dev_err(uport->dev, "unable to start RX SE DMA: %d\n", ret);
+@@ -1901,6 +1903,30 @@ static int qcom_geni_serial_probe(struct platform_device *pdev)
+ 	if (of_property_read_bool(pdev->dev.of_node, "cts-rts-swap"))
+ 		port->cts_rts_swap = true;
+ 
++	/*
++	 * In SE DMA mode an RX transfer completes only when the buffer fills
++	 * or the line has been idle for STALE_TIMEOUT characters. A peer that
++	 * streams continuously never leaves that idle gap, so every byte waits
++	 * for a full buffer. Let such ports ask for a shorter transfer so data
++	 * reaches the tty layer promptly. The buffer allocation is unchanged.
++	 */
++	port->rx_dma_len = DMA_RX_BUF_SIZE;
++	if (!data->console &&
++	    !of_property_read_u32(pdev->dev.of_node, "qcom,rx-dma-len",
++				  &port->rx_dma_len)) {
++		if (port->rx_dma_len < DMA_RX_LEN_MIN ||
++		    port->rx_dma_len > DMA_RX_BUF_SIZE ||
++		    !IS_ALIGNED(port->rx_dma_len, 4)) {
++			dev_warn(&pdev->dev,
++				 "invalid qcom,rx-dma-len %u, using %u\n",
++				 port->rx_dma_len, DMA_RX_BUF_SIZE);
++			port->rx_dma_len = DMA_RX_BUF_SIZE;
++		} else {
++			dev_dbg(&pdev->dev, "RX DMA transfer length %u bytes\n",
++				port->rx_dma_len);
++		}
++	}
++
+ 	port->private_data.drv = drv;
+ 	uport->private_data = &port->private_data;
+ 	platform_set_drvdata(pdev, port);

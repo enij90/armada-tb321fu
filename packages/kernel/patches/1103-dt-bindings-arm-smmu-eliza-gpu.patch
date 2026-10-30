@@ -1,0 +1,35 @@
+From 925f98235a729a87e632d6366fc749faac0463b4 Mon Sep 17 00:00:00 2001
+From: Akhil P Oommen <akhilpo@oss.qualcomm.com>
+Date: Sat, 18 Jul 2026 02:11:29 +0530
+Subject: [PATCH] dt-bindings: arm-smmu: Document GPU SMMU for Eliza SoC
+
+Add specific compatible strings to document the GPU SMMU present
+in the Eliza SoC.
+
+Reviewed-by: Krzysztof Kozlowski <krzysztof.kozlowski@oss.qualcomm.com>
+Signed-off-by: Akhil P Oommen <akhilpo@oss.qualcomm.com>
+Signed-off-by: Will Deacon <will@kernel.org>
+---
+ Documentation/devicetree/bindings/iommu/arm,smmu.yaml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/iommu/arm,smmu.yaml b/Documentation/devicetree/bindings/iommu/arm,smmu.yaml
+index ad15fda5c25eee..d87281026a712a 100644
+--- a/Documentation/devicetree/bindings/iommu/arm,smmu.yaml
++++ b/Documentation/devicetree/bindings/iommu/arm,smmu.yaml
+@@ -95,6 +95,7 @@ properties:
+       - description: Qcom Adreno GPUs implementing "qcom,smmu-500" and "arm,mmu-500"
+         items:
+           - enum:
++              - qcom,eliza-smmu-500
+               - qcom,glymur-smmu-500
+               - qcom,hawi-smmu-500
+               - qcom,kaanapali-smmu-500
+@@ -572,6 +573,7 @@ allOf:
+         compatible:
+           items:
+             - enum:
++                - qcom,eliza-smmu-500
+                 - qcom,glymur-smmu-500
+                 - qcom,hawi-smmu-500
+                 - qcom,kaanapali-smmu-500

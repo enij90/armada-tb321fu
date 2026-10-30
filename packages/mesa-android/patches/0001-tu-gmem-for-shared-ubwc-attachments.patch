@@ -1,0 +1,43 @@
+From: Armada <no-reply@armadaos.dev>
+Subject: [PATCH] tu: render shared UBWC attachments in GMEM
+
+In Lepton on Armada, Android's gralloc buffers are UBWC and the host scans
+them out directly. Frames SurfaceFlinger renders into them through zink
+with sysmem rendering may scan out with small black blocks in random places.
+The GPU reads the same buffers back correctly, so gamescope screenshots and
+forced composition look fine.
+
+Use GMEM for render passes with an imported UBWC attachment
+(DRM_FORMAT_MOD_QCOM_COMPRESSED) whenever GMEM is possible.
+---
+--- a/src/freedreno/vulkan/tu_cmd_buffer.cc
++++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
+@@ -9,6 +9,8 @@
+ 
+ #include "tu_cmd_buffer.h"
+ 
++#include "drm-uapi/drm_fourcc.h"
++
+ #include "vk_common_entrypoints.h"
+ #include "vk_log.h"
+ #include "vk_render_pass.h"
+@@ -1427,6 +1429,19 @@
+       return false;
+    }
+ 
++   /* The display engine reads imported UBWC buffers directly. What sysmem
++    * rendering leaves in them scans out with black blocks on some devices,
++    * while GMEM resolves display correctly.
++    */
++   for (unsigned a = 0; a < cmd->state.pass->attachment_count; a++) {
++      const struct tu_image_view *iview = cmd->state.attachments[a];
++      if (iview && iview->image->layout[0].ubwc &&
++          iview->image->vk.drm_format_mod == DRM_FORMAT_MOD_QCOM_COMPRESSED) {
++         cmd->state.rp.gmem_disable_reason = "Shared UBWC attachment";
++         return false;
++      }
++   }
++
+    /* This is a case where it's better to avoid GMEM, too many tiles but no HW binning possible. */
+    if (!vsc->binning_possible && vsc->binning_useful) {
+       cmd->state.rp.gmem_disable_reason = "Too many tiles and HW binning is not possible";

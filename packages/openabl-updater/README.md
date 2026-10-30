@@ -4,6 +4,7 @@ Ships OpenABL bootloader images and updates the device's ABL to them at shutdown
 
 The build downloads the pinned OpenABL release's image for each supported chipset
 (SM8250, SM8550, SM8650, SM8750) and checks it against that release's `.sha256`.
+The Retroid Pocket Duo (SM7750) uses the SM8750 image.
 
 | Path | Purpose |
 |---|---|

@@ -26,21 +26,6 @@ diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd
 index e7846bf..9c2d36a 100644
 --- a/src/freedreno/vulkan/tu_cmd_buffer.cc
 +++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
-@@ -390,12 +390,8 @@ tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
-       tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CACHE_CLEAN);
-    if (flushes & TU_CMD_FLAG_CACHE_INVALIDATE)
-       tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CACHE_INVALIDATE);
--   if (flushes & TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE) {
--      tu_cs_emit_regs(cs, SP_UPDATE_CNTL(CHIP,
--            .cs_bindless = CHIP == A6XX ? 0x1f : 0xff,
--            .gfx_bindless = CHIP == A6XX ? 0x1f : 0xff,
--      ));
--   }
-+   if (flushes & TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE)
-+      tu_emit_bindless_invalidate<CHIP>(cs, true, true);
- 
-    /* SUBPASS_SLICE_FENCE is a weaker version of:
-     * - CACHE_INVALIDATE (only invalidate UCHE GMEM aperture)
 @@ -2500,6 +2496,8 @@ tu_init_hw(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
           .gfx_shared_const = true,
           .cs_bindless = CHIP == A6XX ? 0x1f : 0xff,

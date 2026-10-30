@@ -1,0 +1,86 @@
+From 444bb9b352908ce84ab7425a1e747772bc7ec6da Mon Sep 17 00:00:00 2001
+From: Teguh Sobirin <teguh@sobir.in>
+Date: Tue, 8 Sep 2026 22:37:22 +0000
+Subject: [PATCH] wifi: ath12k: support targets with fixed firmware memory
+
+WPSS-hosted targets run from a fixed MSA region granted by TZ and never
+request DDR from the host over QMI. Asking for request_mem/fw_mem_ready
+makes such a target hand the host a memory request it answers with
+buffers the XPU will not let the target touch, which resets the SoC.
+
+Add hw_params->fixed_fw_mem: skip those indications, go from host_cap
+straight to BDF download, and do not send the PHY capability request
+the firmware predates. Mirrors ath11k's WCN6750 handling.
+
+Signed-off-by: Teguh Sobirin <teguh@sobir.in>
+
+Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+Source: https://github.com/RetroidPocket/linux/commit/444bb9b352908ce84ab7425a1e747772bc7ec6da
+---
+diff --git a/drivers/net/wireless/ath/ath12k/hw.h b/drivers/net/wireless/ath/ath12k/hw.h
+--- a/drivers/net/wireless/ath/ath12k/hw.h
++++ b/drivers/net/wireless/ath/ath12k/hw.h
+@@ -198,6 +198,9 @@
+ 	bool supports_aspm:1;
+ 	bool current_cc_support:1;
+ 
++	/* fixed MSA region: no request_mem/fw_mem_ready, host_cap -> BDF directly */
++	bool fixed_fw_mem:1;
++
+ 	/* 0x8fc on PCIe parts, 0x504 on WPSS-hosted WCN parts */
+ 	u32 hal_shadow_base_addr;
+ 
+diff --git a/drivers/net/wireless/ath/ath12k/qmi.c b/drivers/net/wireless/ath/ath12k/qmi.c
+--- a/drivers/net/wireless/ath/ath12k/qmi.c
++++ b/drivers/net/wireless/ath/ath12k/qmi.c
+@@ -2466,10 +2466,17 @@
+ 	req->client_id = QMI_WLANFW_CLIENT_ID;
+ 	req->fw_ready_enable_valid = 1;
+ 	req->fw_ready_enable = 1;
+-	req->request_mem_enable_valid = 1;
+-	req->request_mem_enable = 1;
+-	req->fw_mem_ready_enable_valid = 1;
+-	req->fw_mem_ready_enable = 1;
++
++	/* Fixed-MSA targets must not be asked for request_mem/fw_mem_ready
++	 * (ath11k WCN6750).
++	 */
++	if (!ab->hw_params->fixed_fw_mem) {
++		req->request_mem_enable_valid = 1;
++		req->request_mem_enable = 1;
++		req->fw_mem_ready_enable_valid = 1;
++		req->fw_mem_ready_enable = 1;
++	}
++
+ 	req->cal_done_enable_valid = 1;
+ 	req->cal_done_enable = 1;
+ 	req->fw_init_done_enable_valid = 1;
+@@ -3888,7 +3895,11 @@
+ 	struct ath12k_hw_group *ag = ab->ag;
+ 	int ret;
+ 
+-	ath12k_qmi_phy_cap_send(ab);
++	/* Not sent by ath11k WCN6750 nor icnss2; the firmware predates it. */
++	if (ab->hw_params->fixed_fw_mem)
++		ab->qmi.num_radios = ab->hw_params->def_num_link;
++	else
++		ath12k_qmi_phy_cap_send(ab);
+ 
+ 	ret = ath12k_qmi_fw_ind_register_send(ab);
+ 	if (ret < 0) {
+@@ -4136,6 +4147,15 @@
+ 		ath12k_warn(ab, "failed to send qmi host cap for device id %d: %d\n",
+ 			    ab->device_id, ret);
+ 		return ret;
++	}
++
++	/* no memory request round trip; go straight to BDF (ath11k WCN6750) */
++	if (ab->hw_params->fixed_fw_mem) {
++		ret = ath12k_qmi_event_load_bdf(qmi);
++		if (ret < 0) {
++			ath12k_warn(ab, "qmi failed to download BDF: %d\n", ret);
++			return ret;
++		}
+ 	}
+ 
+ 	return ret;

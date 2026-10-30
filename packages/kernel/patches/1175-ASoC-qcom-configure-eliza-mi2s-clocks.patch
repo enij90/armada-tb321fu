@@ -1,0 +1,86 @@
+From: Armada contributors <noreply@armada-os.org>
+Subject: [PATCH] ASoC: qcom: sc8280xp: configure Eliza MI2S clocks
+
+Backport the Eliza MI2S clock and codec setup from RetroidPocket/linux
+592a27a5a0376a80db2271c6e97c4f7643b279d8 and its sc8280xp hw_params path.
+Keep the existing machine driver and scope the new setup to Eliza.
+Use the existing fixed 48 kHz, stereo S16_LE backend parameters, and apply
+codec format/clock setup to both speaker amplifiers.
+
+---
+diff --git a/sound/soc/qcom/sc8280xp.c b/sound/soc/qcom/sc8280xp.c
+index ca5ed2f60..708a54afb 100644
+--- a/sound/soc/qcom/sc8280xp.c
++++ b/sound/soc/qcom/sc8280xp.c
+@@ -14,6 +14,7 @@
+ #include <sound/jack.h>
+ #include <linux/input-event-codes.h>
+ #include "qdsp6/q6afe.h"
++#include "qdsp6/q6prm.h"
+ #include "qdsp6/q6dsp-common.h"
+ #include "common.h"
+ #include "sdw.h"
+@@ -254,6 +255,54 @@ static int sc8280xp_tdm_snd_hw_params(struct snd_pcm_substream *substream,
+ 					   channels, tdm_slot_offset);
+ }
+ 
++static int sc8280xp_eliza_mi2s_hw_params(struct snd_pcm_substream *substream,
++					  struct snd_pcm_hw_params *params)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
++	struct snd_soc_dai *codec_dai;
++	unsigned int mclk = params_rate(params) * 256;
++	int bclk = snd_soc_params_to_bclk(params);
++	int i, ret;
++
++	if (!of_device_is_compatible(rtd->card->dev->of_node, "qcom,eliza-sndcard"))
++		return 0;
++
++	switch (cpu_dai->id) {
++	case PRIMARY_MI2S_RX:
++	case QUATERNARY_MI2S_RX:
++	case QUATERNARY_MI2S_TX:
++		if (bclk < 0)
++			return bclk;
++
++		ret = snd_soc_dai_set_sysclk(cpu_dai, LPAIF_MI2S_MCLK,
++					     mclk, SND_SOC_CLOCK_OUT);
++		if (ret)
++			return ret;
++
++		ret = snd_soc_dai_set_sysclk(cpu_dai, LPAIF_MI2S_BCLK,
++					     bclk, SND_SOC_CLOCK_OUT);
++		if (ret)
++			return ret;
++
++		for_each_rtd_codec_dais(rtd, i, codec_dai) {
++			ret = snd_soc_dai_set_fmt(codec_dai, SND_SOC_DAIFMT_BC_FC |
++						 SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_I2S);
++			if (ret && ret != -ENOTSUPP)
++				return ret;
++
++			ret = snd_soc_dai_set_sysclk(codec_dai, 0, mclk, SND_SOC_CLOCK_IN);
++			if (ret && ret != -ENOTSUPP)
++				return ret;
++		}
++		break;
++	default:
++		break;
++	}
++
++	return 0;
++}
++
+ static int sc8280xp_snd_hw_params(struct snd_pcm_substream *substream,
+ 				  struct snd_pcm_hw_params *params)
+ {
+@@ -265,7 +314,7 @@ static int sc8280xp_snd_hw_params(struct snd_pcm_substream *substream,
+ 	case SECONDARY_TDM_RX_0:
+ 		return sc8280xp_tdm_snd_hw_params(substream, params);
+ 	default:
+-		return 0;
++		return sc8280xp_eliza_mi2s_hw_params(substream, params);
+ 	}
+ }
+ 

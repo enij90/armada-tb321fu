@@ -1,0 +1,49 @@
+From 0b69e4f4ee325ee0b50396657fd19d4d7b0a6294 Mon Sep 17 00:00:00 2001
+From: Puranam V G Tejaswi <puranam.tejaswi@oss.qualcomm.com>
+Date: Sat, 18 Jul 2026 02:11:30 +0530
+Subject: [PATCH] dt-bindings: display/msm: Document Adreno 722 GPU and GMU
+
+Adreno 722 found in Eliza chipset belongs to the A7x Gen1 family. It is
+derived from A730 and shares the same IP-level configurations: HWCG
+registers, protected registers, GBIF CX registers and gmu_cgc_mode.
+Major differences include lower cache/core counts, 1MB GMEM, no
+Concurrent Binning & LPAC support. Some of the peripheral blocks like
+RSCC are from A740 that resulted in updates to RSC layout.
+
+Update the dt-binding docs to document this GPU and GMU.
+
+Signed-off-by: Puranam V G Tejaswi <puranam.tejaswi@oss.qualcomm.com>
+Acked-by: Krzysztof Kozlowski <krzysztof.kozlowski@oss.qualcomm.com>
+Signed-off-by: Akhil P Oommen <akhilpo@oss.qualcomm.com>
+Patchwork: https://patchwork.freedesktop.org/patch/740964/
+Message-ID: <20260718-eliza-gpu-v2-5-64379dbebd7a@oss.qualcomm.com>
+Signed-off-by: Rob Clark <robin.clark@oss.qualcomm.com>
+---
+ Documentation/devicetree/bindings/display/msm/gmu.yaml | 1 +
+ Documentation/devicetree/bindings/display/msm/gpu.yaml | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/display/msm/gmu.yaml b/Documentation/devicetree/bindings/display/msm/gmu.yaml
+index 8578c2f8122e2c..9e459f12ce3f57 100644
+--- a/Documentation/devicetree/bindings/display/msm/gmu.yaml
++++ b/Documentation/devicetree/bindings/display/msm/gmu.yaml
+@@ -262,6 +262,7 @@ allOf:
+         compatible:
+           contains:
+             enum:
++              - qcom,adreno-gmu-722.0
+               - qcom,adreno-gmu-730.1
+               - qcom,adreno-gmu-740.1
+               - qcom,adreno-gmu-750.1
+diff --git a/Documentation/devicetree/bindings/display/msm/gpu.yaml b/Documentation/devicetree/bindings/display/msm/gpu.yaml
+index 992d3de7c117c4..e5efe2d35ddcce 100644
+--- a/Documentation/devicetree/bindings/display/msm/gpu.yaml
++++ b/Documentation/devicetree/bindings/display/msm/gpu.yaml
+@@ -445,6 +445,7 @@ allOf:
+               - qcom,adreno-680.1
+               - qcom,adreno-690.0
+               - qcom,adreno-730.1
++              - qcom,adreno-43020100
+               - qcom,adreno-43030c00
+               - qcom,adreno-43050a01
+               - qcom,adreno-43050c01

@@ -1,0 +1,77 @@
+From 352116dbc4fc61ae22eae748da36e46a3f45f65c Mon Sep 17 00:00:00 2001
+From: Akhil P Oommen <akhilpo@oss.qualcomm.com>
+Date: Sat, 18 Jul 2026 02:11:27 +0530
+Subject: [PATCH] drm/msm/a6xx: Rename GBIF_CX_CONFIG to a A6XX- variant
+ register
+
+The GBIF_CX_CONFIG register exists on GPUs prior to A8XX (it is used on
+A722, for example), so it should be tagged as an A6XX variant to match
+the register spec. Widen its variant range from "A8XX-" to "A6XX-" in the
+register XML and rename the generated macro accordingly at all existing
+usage sites.
+
+Reviewed-by: Dmitry Baryshkov <dmitry.baryshkov@oss.qualcomm.com>
+Reviewed-by: Konrad Dybcio <konrad.dybcio@oss.qualcomm.com>
+Signed-off-by: Akhil P Oommen <akhilpo@oss.qualcomm.com>
+Patchwork: https://patchwork.freedesktop.org/patch/740957/
+Message-ID: <20260718-eliza-gpu-v2-2-64379dbebd7a@oss.qualcomm.com>
+Signed-off-by: Rob Clark <robin.clark@oss.qualcomm.com>
+---
+ drivers/gpu/drm/msm/adreno/a6xx_catalog.c     | 2 +-
+ drivers/gpu/drm/msm/adreno/a6xx_gmu.c         | 2 +-
+ drivers/gpu/drm/msm/adreno/a8xx_gpu.c         | 2 +-
+ drivers/gpu/drm/msm/registers/adreno/a6xx.xml | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c b/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
+index 8f74b2558035b8..b89da68145bc05 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
+@@ -2180,7 +2180,7 @@ static const struct adreno_reglist a840_gbif[] = {
+ 	{ REG_A6XX_GBIF_QSB_SIDE1, 0x00071e20 },
+ 	{ REG_A6XX_GBIF_QSB_SIDE2, 0x00071e20 },
+ 	{ REG_A6XX_GBIF_QSB_SIDE3, 0x00071e20 },
+-	{ REG_A8XX_GBIF_CX_CONFIG, 0x20023000 },
++	{ REG_A6XX_GBIF_CX_CONFIG, 0x20023000 },
+ 	{ },
+ };
+ 
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
+index a2f6918c4f7f23..a5a5f3534fc0ab 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_gmu.c
+@@ -1032,7 +1032,7 @@ static int a6xx_gmu_fw_start(struct a6xx_gmu *gmu, unsigned int state)
+ 		gpu_write(gpu, gbif_cx[i].offset, gbif_cx[i].value);
+ 
+ 	if (adreno_is_a8xx(adreno_gpu)) {
+-		gpu_write(gpu, REG_A8XX_GBIF_CX_CONFIG, 0x20023000);
++		gpu_write(gpu, REG_A6XX_GBIF_CX_CONFIG, 0x20023000);
+ 		gmu_write(gmu, REG_A6XX_GMU_MRC_GBIF_QOS_CTRL, 0x33);
+ 	}
+ 
+diff --git a/drivers/gpu/drm/msm/adreno/a8xx_gpu.c b/drivers/gpu/drm/msm/adreno/a8xx_gpu.c
+index 0f6fd35bd5878b..add93c1fa0391f 100644
+--- a/drivers/gpu/drm/msm/adreno/a8xx_gpu.c
++++ b/drivers/gpu/drm/msm/adreno/a8xx_gpu.c
+@@ -228,7 +228,7 @@ static void a8xx_set_hwcg(struct msm_gpu *gpu, bool state)
+ 		 * GMU enables clk gating in GBIF during boot up. So,
+ 		 * override that here when hwcg feature is disabled
+ 		 */
+-		gpu_rmw(gpu, REG_A8XX_GBIF_CX_CONFIG, BIT(0), 0);
++		gpu_rmw(gpu, REG_A6XX_GBIF_CX_CONFIG, BIT(0), 0);
+ 	}
+ }
+ 
+diff --git a/drivers/gpu/drm/msm/registers/adreno/a6xx.xml b/drivers/gpu/drm/msm/registers/adreno/a6xx.xml
+index 3349c01646e12f..69dd0446f8d2da 100644
+--- a/drivers/gpu/drm/msm/registers/adreno/a6xx.xml
++++ b/drivers/gpu/drm/msm/registers/adreno/a6xx.xml
+@@ -1268,7 +1268,7 @@ by a particular renderpass/blit.
+ 	<reg32 offset="0x3119" name="VBIF_PERF_PWR_CNT_HIGH1" variants="A6XX"/>
+ 	<reg32 offset="0x311a" name="VBIF_PERF_PWR_CNT_HIGH2" variants="A6XX"/>
+ 
+-	<reg32 offset="0x3c00" name="GBIF_CX_CONFIG" variants="A8XX-"/>
++	<reg32 offset="0x3c00" name="GBIF_CX_CONFIG" variants="A6XX-"/>
+ 	<reg32 offset="0x3c01" name="GBIF_SCACHE_CNTL0"/>
+ 	<reg32 offset="0x3c02" name="GBIF_SCACHE_CNTL1"/>
+ 	<reg32 offset="0x3c03" name="GBIF_QSB_SIDE0"/>

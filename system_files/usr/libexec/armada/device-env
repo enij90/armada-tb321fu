@@ -39,6 +39,7 @@ case "$model" in
     "Retroid Pocket 6") profile=retroid-pocket-6 ;;
     "Retroid Pocket 6 TOP-DPAD") profile=retroid-pocket-6 ;;
     "Retroid Pocket Nova") profile=retroid-pocket-nova ;;
+    "Retroid Pocket Duo") profile=retroid-pocket-duo ;;
     *) profile= ;;
 esac
 
@@ -78,6 +79,11 @@ fi
 # BIG includes the prime cores; PRIME is the strict subset. Empty
 # ARMADA_IRQ_CORES means no IRQ restriction.
 case "${ARMADA_SOC_CLASS:-}" in
+    SM7750)
+        : "${ARMADA_LITTLE_CORES=0-2}"
+        : "${ARMADA_BIG_CORES=3-7}"
+        : "${ARMADA_PRIME_CORES=7}"
+        ;;
     SM8250)
         : "${ARMADA_LITTLE_CORES=0-3}"
         : "${ARMADA_BIG_CORES=4-7}"
@@ -126,6 +132,8 @@ vars=(
     ARMADA_SECONDARY_TOUCHSCREEN
     ARMADA_PANEL_TYPE
     ARMADA_PANEL_ORIENTATION
+    ARMADA_SECONDARY_PANEL_ORIENTATION
+    ARMADA_SECONDARY_FORCE_LINEAR
     ARMADA_GAMESCOPE_USE_ROTATION_SHADER
     ARMADA_GAMESCOPE_FAKE_OUTPUT_MM
     ARMADA_HDR_NITS

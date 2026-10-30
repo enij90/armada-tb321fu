@@ -1,0 +1,70 @@
+From: Armada <no-reply@armadaos.dev>
+Subject: [PATCH] freedreno: use A722 blob registers
+
+The A722 magic registers originally ported from Vauzi-17's A722 entry:
+https://github.com/Vauzi-17/710/blob/5db89bde562d/add_710_720_722.py
+
+SP_UNKNOWN_AB01 uses sherft2607's A722 value instead (patches/56-fd722-blob.py):
+https://github.com/sherft2607/turnip-adreno722-duo/blob/3d46784a9fd87539deea422d3d71188d8d87f1da/patches/56-fd722-blob.py
+
+These updated magic registers gave about 4% more FPS than the A730
+placeholder, with no GPU faults or rendering errors.
+---
+--- a/src/freedreno/common/freedreno_devices.py
++++ b/src/freedreno/common/freedreno_devices.py
+@@ -1008,7 +1008,54 @@
+         cs_shared_mem_size = 32 * 1024,
+         wave_granularity = 2,
+         fibers_per_sp = 128 * 2 * 16,
+-        raw_magic_regs = a730_raw_magic_regs,
++        # From A722 blob command stream traces
++        raw_magic_regs = [
++                [A6XXRegs.REG_A6XX_UCHE_CACHE_WAYS, 0x00040004],
++                [A6XXRegs.REG_A6XX_TPL1_DBG_ECO_CNTL, 0x03000000],
++                [A6XXRegs.REG_A6XX_TPL1_DBG_ECO_CNTL1, 0x00000700],
++
++                [A6XXRegs.REG_A6XX_SP_CHICKEN_BITS, 0x00000400],
++                [A6XXRegs.REG_A7XX_SP_CHICKEN_BITS_1, 0x01400400],
++                [A6XXRegs.REG_A7XX_SP_CHICKEN_BITS_2, 0x00000010],
++                [A6XXRegs.REG_A7XX_SP_CHICKEN_BITS_3, 0x00000000],
++
++                [A6XXRegs.REG_A7XX_UCHE_UNKNOWN_0E10, 0x00000000],
++                [A6XXRegs.REG_A7XX_UCHE_UNKNOWN_0E11, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_HLSQ_DBG_ECO_CNTL, 0x00000000],
++                [A6XXRegs.REG_A6XX_SP_DBG_ECO_CNTL, 0x11000000],
++
++                [A6XXRegs.REG_A6XX_PC_MODE_CNTL, 0x00001f1f],
++                [A6XXRegs.REG_A6XX_PC_DBG_ECO_CNTL, 0x20100000],
++                [A6XXRegs.REG_A7XX_PC_UNKNOWN_9E24, 0x01fc7f00],
++
++                [A6XXRegs.REG_A7XX_VFD_DBG_ECO_CNTL, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_ISDB_CNTL, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_AE6A, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_HLSQ_TIMEOUT_THRESHOLD_DP, 0x00000080],
++                [A6XXRegs.REG_A7XX_SP_HLSQ_DBG_ECO_CNTL_1, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_HLSQ_MODE_CNTL, 0x00000000],
++
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB01, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB22, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_B310, 0x00000000],
++
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_0CE2,   0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_0CE2+1, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_0CE4,   0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_0CE4+1, 0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_0CE6,   0x00000000],
++                [A6XXRegs.REG_A7XX_SP_UNKNOWN_0CE6+1, 0x00000000],
++
++                [A6XXRegs.REG_A7XX_GRAS_ROTATION_CNTL, 0x00000000],
++                [A6XXRegs.REG_A6XX_GRAS_DBG_ECO_CNTL,  0x00000800],
++
++                [A6XXRegs.REG_A7XX_RB_UNKNOWN_8E79, 0x00000000],
++                [A6XXRegs.REG_A7XX_RB_LRZ_CNTL2, 0x00000000],
++                [A6XXRegs.REG_A7XX_RB_CCU_DBG_ECO_CNTL, 0x00080000],
++                [A6XXRegs.REG_A6XX_VPC_DBG_ECO_CNTL, 0x02000000],
++                [A6XXRegs.REG_A6XX_UCHE_UNKNOWN_0E12, 0x03200000],
++                [A6XXRegs.REG_A6XX_RB_DBG_ECO_CNTL, 0x00000000],
++        ],
+     ))
+ 
+ add_gpus([

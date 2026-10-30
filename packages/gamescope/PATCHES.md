@@ -72,3 +72,10 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0083-pipewire-report-a-missing-capture-buffer-once-a-minute.patch`
   source: armada
+
+- `patches/0033-steamcompmgr-optional-blank-overlay-placeholder.patch`
+  source: armada
+  notes: Context refreshed for the repeat-frame argument on the current Gamescope base; behaviour unchanged.
+
+- `patches/0034-vulkan-allow-linear-composition-output.patch`
+  source: armada

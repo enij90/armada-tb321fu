@@ -1,0 +1,36 @@
+From: Armada contributors <noreply@armada-os.org>
+Subject: [PATCH] ASoC: es8326: enable codec supplies
+
+Adapt RetroidPocket/linux f8dfc9104b7c24de07fd839c1cc6468640f2e2a1.
+Use the managed regulator helper so probe deferral is respected and
+supplies are released on failed probe or unbind.
+
+---
+--- a/sound/soc/codecs/es8326.c
++++ b/sound/soc/codecs/es8326.c
+@@ -11,6 +11,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/irq.h>
+ #include <linux/module.h>
++#include <linux/regulator/consumer.h>
+ #include <sound/jack.h>
+ #include <sound/pcm_params.h>
+ #include <sound/soc.h>
+@@ -1269,12 +1270,17 @@
+ 
+ static int es8326_i2c_probe(struct i2c_client *i2c)
+ {
++	static const char * const supplies[] = { "vdd", "vddio" };
+ 	struct es8326_priv *es8326;
+ 	int ret;
+ 
+ 	es8326 = devm_kzalloc(&i2c->dev, sizeof(struct es8326_priv), GFP_KERNEL);
+ 	if (!es8326)
+ 		return -ENOMEM;
++
++	ret = devm_regulator_bulk_get_enable(&i2c->dev, ARRAY_SIZE(supplies), supplies);
++	if (ret)
++		return dev_err_probe(&i2c->dev, ret, "Failed to enable supplies\n");
+ 
+ 	i2c_set_clientdata(i2c, es8326);
+ 	es8326->i2c = i2c;

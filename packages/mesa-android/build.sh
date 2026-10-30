@@ -5,6 +5,9 @@
 # for linux-x86_64 only. The lepton package runs this too, with its own BASE.env.
 set -euxo pipefail
 
+# Android-only patches; the lepton package runs this script from /src/mesa-android.
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 source ./BASE.env
 
 # Source and patches come from the host mesa package; the two must not drift.
@@ -48,7 +51,7 @@ fi
 
 tar xf "$TARBALL"
 cd "$(tar tf "$TARBALL" | head -1 | cut -d/ -f1)"
-for patch in /src/mesa/patches/*.patch; do
+for patch in /src/mesa/patches/*.patch "${HERE}"/patches/*.patch; do
     patch -p1 <"$patch"
 done
 

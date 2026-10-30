@@ -1,5 +1,5 @@
 From: ROCKNIX
-Add Adreno 830 (gen8_0_0) chip-id variants to Turnip / freedreno.
+Subject: [PATCH] freedreno: add Adreno 830 (gen8_0_0) chip-id variants
 
 Mesa 26.1.2 ships the base a830 id (0xffff44050000), but not the rev-0001 or
 KGSL forms. Ported from ROCKNIX (projects/ROCKNIX/packages/graphics/mesa/

@@ -1,0 +1,35 @@
+From: Armada contributors <noreply@armada-os.org>
+Subject: [PATCH] ASoC: qcom: q6apm-dai: allow 32-bit PCM playback
+
+Allow an S32_LE playback topology to open and pass its sample width to
+the existing AudioReach PCM configuration path. The Duo speaker topology
+uses 32-bit samples throughout to match the AW88166 firmware's slots.
+Without this capability, ALSA rejects the S32_LE frontend at open.
+Keep capture capabilities unchanged.
+
+Speaker output was confirmed after a clean boot on the Duo with the
+matching S32_LE topology and primary MI2S backend format.
+
+---
+--- a/sound/soc/qcom/qdsp6/q6apm-dai.c
++++ b/sound/soc/qcom/qdsp6/q6apm-dai.c
+@@ -113,7 +113,8 @@
+ 				 SNDRV_PCM_INFO_PAUSE |
+ 				 SNDRV_PCM_INFO_NO_REWINDS | SNDRV_PCM_INFO_SYNC_APPLPTR |
+ 				 SNDRV_PCM_INFO_BATCH),
+-	.formats =              (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE),
++	.formats =              (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
++				 SNDRV_PCM_FMTBIT_S32_LE),
+ 	.rates =                SNDRV_PCM_RATE_8000_192000,
+ 	.rate_min =             8000,
+ 	.rate_max =             192000,
+@@ -537,6 +538,9 @@
+ 		break;
+ 	case SNDRV_PCM_FORMAT_S24_LE:
+ 		prtd->bits_per_sample = 24;
++		break;
++	case SNDRV_PCM_FORMAT_S32_LE:
++		prtd->bits_per_sample = 32;
+ 		break;
+ 	default:
+ 		return -EINVAL;

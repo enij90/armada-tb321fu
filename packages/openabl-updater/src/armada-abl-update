@@ -41,12 +41,21 @@ fi
 [ -n "${device_id}" ] && [ "${device_id}" != unknown ] || {
     echo "armada-abl-update: device is not recognized by Armada" >&2; exit 7;
 }
-case "${soc}" in SM8250|SM8550|SM8650|SM8750) ;; *)
-    echo "armada-abl-update: unsupported SoC '${soc:-unknown}'" >&2; exit 7 ;;
+payload_soc=${soc}
+case "${soc}" in
+    SM7750)
+        [ "${device_id}" = retroid-pocket-duo ] || {
+            echo "armada-abl-update: unsupported SM7750 device '${device_id}'" >&2; exit 7;
+        }
+        payload_soc=SM8750 ;;
+    SM8250|SM8550|SM8650|SM8750) ;;
+    *)
+        echo "armada-abl-update: unsupported SoC '${soc:-unknown}'" >&2; exit 7 ;;
 esac
 
 soc_id=$(cat "${ARMADA_ABL_SOC_ID_PATH:-/sys/devices/soc0/soc_id}" 2>/dev/null || true)
 case "${soc_id}" in
+    659|732) soc_id_class=SM7750 ;;
     356) soc_id_class=SM8250 ;;
     601|603) soc_id_class=SM8550 ;;
     682) soc_id_class=SM8650 ;;
@@ -58,10 +67,10 @@ esac
     exit 7
 }
 
-target_hash=$(manifest_get "ARMADA_ABL_SHA256_${soc}")
+target_hash=$(manifest_get "ARMADA_ABL_SHA256_${payload_soc}")
 target_name=$(manifest_get ARMADA_ABL_NAME)
 version=$(manifest_get ARMADA_ABL_VERSION)
-payload="${target_root%/}/usr/lib/openabl-updater/abl_signed-${soc}.elf"
+payload="${target_root%/}/usr/lib/openabl-updater/abl_signed-${payload_soc}.elf"
 is_sha256 "${target_hash}" && [ -s "${payload}" ] || {
     echo "armada-abl-update: invalid target payload metadata" >&2; exit 7;
 }
@@ -111,8 +120,8 @@ check_installed() {
     [ "${hash}" = "${target_hash}" ] && return 0
     identity=$(abl_identity "${part}" 2>/dev/null) || { unknown_copies+=("${name}"); return 0; }
     read -r installed_name installed installed_soc <<<"${identity}"
-    [ "${installed_soc}" = "${soc}" ] || {
-        echo "armada-abl-update: ${name} is ${installed_name} ${installed} for ${installed_soc}, expected ${soc}; refusing to overwrite" >&2
+    [ "${installed_soc}" = "${payload_soc}" ] || {
+        echo "armada-abl-update: ${name} is ${installed_name} ${installed} for ${installed_soc}, expected ${payload_soc}; refusing to overwrite" >&2
         exit 7
     }
     if [ "${installed_name}" = ROCKNIX ]; then

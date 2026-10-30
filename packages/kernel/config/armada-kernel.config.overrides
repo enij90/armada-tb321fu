@@ -115,7 +115,7 @@ CONFIG_DRM_PANEL_AR02_3INCH=y               # AYANEO Pocket DMG
 CONFIG_DRM_PANEL_SITRONIX_ST7703=y          # AYANEO Pocket DS lower panel
 CONFIG_DRM_PANEL_CHIPONE_ICNA35XX=y         # Pocket EVO + Odin 2 Portal + MANGMI Pocket Max
 CONFIG_DRM_PANEL_DDIC_CH13726A=y            # AYANEO Pocket S2K
-CONFIG_DRM_PANEL_VISIONOX_VTDR6130_COG=y    # Retroid Pocket 6
+CONFIG_DRM_PANEL_VISIONOX_VTDR6130_COG=y    # Pocket 6 and Duo top panel
 CONFIG_DRM_PANEL_SYNAPTICS_TD4328=y         # AYN Odin 2
 CONFIG_DRM_PANEL_BOE_XM91080G=y             # AYN Odin 2 Mini
 CONFIG_DRM_PANEL_AYANEO_WT0600_2K=y         # AYN Thor
@@ -184,6 +184,7 @@ CONFIG_JOYSTICK_XPAD_LEDS=y
 
 # ============== Audio ==============
 CONFIG_SND_SOC_AW88166=m
+CONFIG_SND_SOC_ES8326=m
 CONFIG_SND_SOC_AW88261=m               # KONKR Pocket FIT Elite speaker amp
 # absent snd-seq spams udev at boot — Fedora's snd-pcm modprobe rule pulls it in
 CONFIG_SND_SEQUENCER=m
@@ -262,6 +263,16 @@ CONFIG_SECURITY_NETWORK=y                   # hard dep of SECURITY_SELINUX
 CONFIG_SECURITY_SELINUX=y
 CONFIG_BPF_SYSCALL=y
 CONFIG_CGROUP_BPF=y
+
+# ============== SM7750 / CQ7790S (Retroid Pocket Duo) ==============
+CONFIG_ATH12K_AHB=y                         # WCN7750 WPSS / hybrid-bus Wi-Fi
+CONFIG_CLK_ELIZA_GCC=y
+CONFIG_CLK_ELIZA_GPUCC=y
+CONFIG_CLK_ELIZA_TCSRCC=y
+CONFIG_CLK_ELIZA_DISPCC=y
+CONFIG_PINCTRL_ELIZA=y
+CONFIG_PINCTRL_MILOS_LPASS_LPI=m
+CONFIG_INTERCONNECT_QCOM_ELIZA=y
 
 # ============== SM8650 (AYANEO Pocket S2, KONKR Pocket FIT) ==============
 # No SM_DISPCC_8650: display clock is the combined dispcc-sm8550.c (=y above).

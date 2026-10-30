@@ -1,0 +1,22 @@
+From: Armada <noreply@armada>
+Subject: [PATCH] vulkan: allow linear composition output
+
+The Retroid Pocket Duo's bottom panel corrupts UBWC scanout, while the same
+mode with a linear composition buffer is clean. Allow a compositor instance
+to opt into the existing linear-buffer allocation path. Imported client
+images are unchanged. Pair this with --force-composition to prevent direct
+scanout from bypassing the output buffer.
+
+This is a workaround until the shared-buffer UBWC issue is resolved.
+---
+diff --git a/src/rendervulkan.cpp b/src/rendervulkan.cpp
+--- a/src/rendervulkan.cpp
++++ b/src/rendervulkan.cpp
+@@ -3291,6 +3291,7 @@ static bool vulkan_make_output_images( VulkanOutput_t *pOutput )
+ 	outputImageflags.bStorage = true;
+ 	outputImageflags.bTransferSrc = true; // for screenshots
+ 	outputImageflags.bSampled = true; // for pipewire blits
++	outputImageflags.bLinear = env_to_bool( getenv( "GAMESCOPE_FORCE_LINEAR_OUTPUT" ) );
+ 	outputImageflags.bOutputImage = true;
+ 
+ 	pOutput->outputImages.resize(3); // extra image for partial composition.

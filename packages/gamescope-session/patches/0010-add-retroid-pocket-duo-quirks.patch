@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FeralAI <13342258+FeralAI@users.noreply.github.com>
+Date: Tue, 20 Oct 2026 19:17:08 -0500
+Subject: [PATCH] add Retroid Pocket Duo device quirks
+
+---
+ usr/share/gamescope-session-plus/device-quirks | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/usr/share/gamescope-session-plus/device-quirks b/usr/share/gamescope-session-plus/device-quirks
+index f5605bb..ed0a865 100644
+--- a/usr/share/gamescope-session-plus/device-quirks
++++ b/usr/share/gamescope-session-plus/device-quirks
+@@ -376,3 +376,14 @@ if [[ ":Retroid Pocket Nova:" =~ ":$SYS_ID:" ]]; then
+ 
+   export STEAM_DISPLAY_REFRESH_LIMITS=60,120
+ fi
++
++if [[ ":Retroid Pocket Duo:" =~ ":$SYS_ID:" ]]; then
++  ORIENTATION=left
++  CUSTOM_REFRESH_RATES=60,120
++  # Prefer top screen
++  OUTPUT_CONNECTOR='*,DSI-2,DSI-1'
++  FAKE_OUTPUT_MM=177x100
++  export GAMESCOPE_NO_BLANK_OVERLAY_LAYER=1
++
++  export STEAM_DISPLAY_REFRESH_LIMITS=60,120
++fi
+-- 
+2.56.0

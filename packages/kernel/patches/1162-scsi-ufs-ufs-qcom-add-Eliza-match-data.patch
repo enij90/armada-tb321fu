@@ -1,0 +1,27 @@
+From 1213eb175774de1f4ba6577a4329bba58729840d Mon Sep 17 00:00:00 2001
+From: Teguh Sobirin <teguh@sobir.in>
+Date: Wed, 9 Sep 2026 16:21:08 +0700
+Subject: [PATCH] scsi: ufs: ufs-qcom: add Eliza match data
+
+The UFS PHY on Eliza does not retain its state across deep sleep, like
+SM8550 and SM8650: with the default spm_lvl the link is parked in
+hibern8 and the exit fails on resume ("hibern8 exit failed. ret = 5").
+Match qcom,eliza-ufshc to the SM8550 driver data so system suspend
+powers the link off instead.
+
+Signed-off-by: Teguh Sobirin <teguh@sobir.in>
+
+Backport to Armada Linux 7.2.6; retain its existing SM8750 match.
+Source: https://github.com/RetroidPocket/linux/commit/1213eb175774de1f4ba6577a4329bba58729840d
+---
+diff --git a/drivers/ufs/host/ufs-qcom.c b/drivers/ufs/host/ufs-qcom.c
+--- a/drivers/ufs/host/ufs-qcom.c
++++ b/drivers/ufs/host/ufs-qcom.c
+@@ -3041,6 +3041,7 @@
+ 	{ .compatible = "qcom,ufshc" },
+ 	{ .compatible = "qcom,sm8550-ufshc", .data = &ufs_qcom_sm8550_drvdata },
+ 	{ .compatible = "qcom,sm8650-ufshc", .data = &ufs_qcom_sm8550_drvdata },
++	{ .compatible = "qcom,eliza-ufshc", .data = &ufs_qcom_sm8550_drvdata },
+ 	{ .compatible = "qcom,sm8750-ufshc", .data = &ufs_qcom_sm8550_drvdata },
+ 	{ .compatible = "qcom,sa8255p-ufshc", .data = &ufs_qcom_sa8255p_drvdata },
+ 	{},

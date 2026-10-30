@@ -20,3 +20,5 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0008-mangoapp-show-active-upscaler.patch`
   source: armada
+- `patches/0009-mangoapp-throttle-overlay-to-one-render-per-game-frame.patch`
+  source: https://github.com/flightlessmango/MangoHud/commit/2c1dc5283c045e9a7e424dc913fbafcdcc7e3be1

@@ -292,6 +292,35 @@ set -e
 grep -q '^--error Bootloader update failed' "$WORK/splash-log" ||
     fail "write failure did not replace the splash with an error"
 
+# The Duo uses the SM8750 payload but must still pass its own device/SoC checks.
+(
+    payload="$PAYLOAD_DIR/abl_signed-SM8750.elf"
+    duo_old="$WORK/duo-old"
+    make_blob "$payload" openabl-1.1-sm8750
+    make_blob "$duo_old" openabl-1.0-sm8750
+    printf 'ARMADA_ABL_SHA256_SM8750=%s\n' "$(hash_of "$payload")" >> "$PAYLOAD_DIR/manifest"
+    printf 'OpenABL\t1.0\tSM8750\t8192\t%s\n' "$(hash_of "$duo_old")" >> "$catalog"
+    base_env+=(ARMADA_ABL_DEVICE_ID=retroid-pocket-duo ARMADA_ABL_SOC=SM7750
+        ARMADA_TEST_PAYLOAD="$payload")
+    for id in 659 732; do
+        echo "$id" > "$SOC_ID"
+        install_both "$duo_old"
+        expect_updated "Duo SoC $id"
+    done
+    : > "$WORK/writes"
+    assert_contains "$(run_update)" "OpenABL 1.1 already installed"
+    [[ ! -s "$WORK/writes" ]] || fail "matching Duo ABL copies were rewritten"
+    install_both "$rocknix"
+    expect_refused "Duo with wrong ABL" "for SM8550, expected SM8750"
+    install_both "$duo_old"
+    echo 639 > "$SOC_ID"
+    expect_refused "Duo with SM8750 SoC id" "SoC id '639' does not confirm SM7750"
+    echo 732 > "$SOC_ID"
+    base_env+=(ARMADA_ABL_DEVICE_ID=another-device)
+    expect_refused "unapproved SM7750 device" "unsupported SM7750 device"
+)
+echo 601 > "$SOC_ID"
+
 # armada-control has no ABL update toggle.
 python3 - "$ROOT" <<'PY'
 import importlib.machinery
@@ -369,5 +398,30 @@ for soc in $(sed -n 's/^%global openabl_socs //p' "$spec"); do
 done
 ARMADA_ABL_RELEASES="$PKG/legacy-releases.tsv" python3 "$VERSION_TOOL" \
     --lookup ROCKNIX 1.2 SM8550 >/dev/null || fail "legacy catalog does not load"
+
+# Build the flashing-kit folders with fake payloads, without mounting an image.
+(
+    ABL_SRC="$WORK/kit-payloads"
+    ABL_KIT="$PKG/sdcard"
+    mkdir -p "$ABL_SRC"
+    for soc in SM8250 SM8550 SM8650 SM8750; do
+        make_blob "$ABL_SRC/abl_signed-${soc}.elf" "$soc"
+    done
+    manifest_get() { hash_of "$ABL_SRC/abl_signed-${1#ARMADA_ABL_SHA256_}.elf"; }
+    sudo() { "$@"; }
+    kit_loop=$(sed -n '/^for soc in SM7750 /,/^done$/p' "$ROOT/post_process/finalize-armada-image.sh")
+    [[ -n "$kit_loop" ]] || fail "flashing-kit loop not found"
+    eval "$kit_loop" >/dev/null
+    duo_kit="$WORK/mnt/openabl/SM7750"
+    cmp "$ABL_SRC/abl_signed-SM8750.elf" "$duo_kit/abl_signed-SM7750.elf" ||
+        fail "Duo flashing kit does not use the SM8750 payload"
+    (cd "$duo_kit" && sha256sum --strict -c abl_signed-SM7750.elf.sha256) >/dev/null
+    grep -q '/sdcard/openabl/SM7750/abl_signed-SM7750.elf' "$duo_kit/flash_abl.sh" ||
+        fail "Duo flash script uses the wrong payload path"
+    for script in flash_abl backup_abl restore_backup_abl; do
+        bash -n "$duo_kit/$script.sh"
+        ! grep -q '%DEVICE%' "$duo_kit/$script.sh" || fail "unexpanded Duo script"
+    done
+)
 
 printf 'ABL update test passed\n'

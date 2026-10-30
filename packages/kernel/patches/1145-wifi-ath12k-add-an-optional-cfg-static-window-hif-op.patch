@@ -1,0 +1,34 @@
+From bdbf8cc0bb5a31a32251f9cdc8718fba2c500373 Mon Sep 17 00:00:00 2001
+From: Teguh Sobirin <teguh@sobir.in>
+Date: Tue, 8 Sep 2026 22:37:20 +0000
+Subject: [PATCH] wifi: ath12k: add an optional cfg_static_window hif op
+
+A target that resets its register window across a firmware restart
+needs the static windows re-armed on every bring-up, after the BAR is
+known and before any register access. Add the hook; users follow.
+
+Signed-off-by: Teguh Sobirin <teguh@sobir.in>
+
+Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+Source: https://github.com/RetroidPocket/linux/commit/bdbf8cc0bb5a31a32251f9cdc8718fba2c500373
+---
+diff --git a/drivers/net/wireless/ath/ath12k/hif.h b/drivers/net/wireless/ath/ath12k/hif.h
+--- a/drivers/net/wireless/ath/ath12k/hif.h
++++ b/drivers/net/wireless/ath/ath12k/hif.h
+@@ -32,7 +32,16 @@
+ 	void (*get_ce_msi_idx)(struct ath12k_base *ab, u32 ce_id, u32 *msi_idx);
+ 	int (*panic_handler)(struct ath12k_base *ab);
+ 	void (*coredump_download)(struct ath12k_base *ab);
++
++	/* Optional. Re-arm static windows once per bring-up (the target resets them). */
++	void (*cfg_static_window)(struct ath12k_base *ab);
+ };
++
++static inline void ath12k_hif_cfg_static_window(struct ath12k_base *ab)
++{
++	if (ab->hif.ops->cfg_static_window)
++		ab->hif.ops->cfg_static_window(ab);
++}
+ 
+ static inline int ath12k_hif_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
+ 						 u8 *ul_pipe, u8 *dl_pipe)

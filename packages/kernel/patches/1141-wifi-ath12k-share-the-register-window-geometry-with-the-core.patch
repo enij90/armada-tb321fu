@@ -1,0 +1,74 @@
+From d1ef16ccc3d1c67d590986e51f15d3cbb5797942 Mon Sep 17 00:00:00 2001
+From: Teguh Sobirin <teguh@sobir.in>
+Date: Tue, 8 Sep 2026 22:37:18 +0000
+Subject: [PATCH] wifi: ath12k: share the register window geometry with the
+ core
+
+Expose the UMAC/CE window bases through ath12k_base and give the window
+start and range mask names outside pci.c. A transport that reaches its
+BAR through the same static windows can then use them. No functional
+change.
+
+Signed-off-by: Teguh Sobirin <teguh@sobir.in>
+
+Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+Source: https://github.com/RetroidPocket/linux/commit/d1ef16ccc3d1c67d590986e51f15d3cbb5797942
+---
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -965,6 +965,8 @@
+ };
+ 
+ struct ath12k_msi_config;
++struct ath12k_pci_reg_base;
++
+ /* Master structure to hold the hw data which may be used in core module */
+ struct ath12k_base {
+ 	enum ath12k_hw_rev hw_rev;
+@@ -1048,6 +1050,9 @@
+ 	u32 msi_ep_base_data;
+ 	bool multi_msi_vectors;
+ 	unsigned long msi_irq_flags;
++
++	/* UMAC/CE window bases */
++	const struct ath12k_pci_reg_base *reg_base;
+ 
+ 	struct napi_struct *napi;
+ 	struct ath12k_wmi_target_cap_arg target_caps;
+diff --git a/drivers/net/wireless/ath/ath12k/pci.c b/drivers/net/wireless/ath/ath12k/pci.c
+--- a/drivers/net/wireless/ath/ath12k/pci.c
++++ b/drivers/net/wireless/ath/ath12k/pci.c
+@@ -24,8 +24,8 @@
+ 
+ #define WINDOW_ENABLE_BIT		0x40000000
+ #define WINDOW_VALUE_MASK		GENMASK(24, 19)
+-#define WINDOW_START			0x80000
+-#define WINDOW_RANGE_MASK		GENMASK(18, 0)
++#define WINDOW_START			ATH12K_PCI_WINDOW_START
++#define WINDOW_RANGE_MASK		ATH12K_PCI_WINDOW_RANGE_MASK
+ #define WINDOW_STATIC_MASK		GENMASK(31, 6)
+ 
+ /* BAR0 + 4k is always accessible, and no
+@@ -1568,6 +1568,7 @@
+ 
+ 	ab_pci->device_family_ops = &ath12k_pci_family_drivers[device_id]->ops;
+ 	ab_pci->reg_base = ath12k_pci_family_drivers[device_id]->reg_base;
++	ab->reg_base = ab_pci->reg_base;
+ 
+ 	/* Call device specific probe. This is the callback that can
+ 	 * be used to override any ops in future
+diff --git a/drivers/net/wireless/ath/ath12k/pci.h b/drivers/net/wireless/ath/ath12k/pci.h
+--- a/drivers/net/wireless/ath/ath12k/pci.h
++++ b/drivers/net/wireless/ath/ath12k/pci.h
+@@ -105,6 +105,10 @@
+ 	void (*arch_deinit)(struct ath12k_base *ab);
+ };
+ 
++/* shared with the WCN7750 AHB transport */
++#define ATH12K_PCI_WINDOW_START		0x80000
++#define ATH12K_PCI_WINDOW_RANGE_MASK	GENMASK(18, 0)
++
+ struct ath12k_pci_reg_base {
+ 	u32 umac_base;
+ 	u32 ce_reg_base;

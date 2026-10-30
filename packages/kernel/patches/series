@@ -96,6 +96,7 @@
 1300-input-rsinput-axis-deadzone.patch
 1301-input-rsinput-decouple-trigger-reference-from-calibration.patch
 0515-input-rsinput-reassemble-uart-frames-instead-of-dropping-them.patch
+0515a-input-rsinput-accept-large-uart-batches.patch
 
 # ============== Audio ==============
 0059-ASoC-aw88395-lib-skip-monitor-sections-in-V1-ACF-parse.patch
@@ -108,6 +109,7 @@
 0620-drm-msm-a6xx-hfi-irq-clears-only-the-cm3-fault.patch
 0621-drm-msm-a6xx-bound-the-gmu-wait-for-a-fault-devcoredump.patch
 0622-drm-msm-a6xx-mask-the-hfi-interrupt-before-booting-the-gmu.patch
+0624-drm-msm-a6xx-increase-gmu-fw-init-timeout.patch
 0623-arm64-dts-qcom-sm8550-sm8650-add-the-ADSP-FastRPC-remote-heap.patch
 0624-drm-msm-a6xx-drop-the-boot-bandwidth-vote-once-the-gmu-votes.patch
 
@@ -312,3 +314,62 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 # ============== Firmware ==============
 # OpenABL: UEFI variables through QSEECOM on its chipsets
 0910-firmware-qcom-scm-allow-QSEECOM-on-OpenABL-s-platforms.patch
+
+# ============== SM7750 (Retroid Pocket Duo) ==============
+1100-drm-msm-a6xx-fix-a730-hwcg.patch
+1101-drm-msm-a6xx-rename-gbif-cx-config.patch
+1102-drm-msm-a6xx-add-adreno-722.patch
+1103-dt-bindings-arm-smmu-eliza-gpu.patch
+1104-dt-bindings-display-msm-adreno-722.patch
+1105-dt-bindings-clock-eliza-gpucc.patch
+1106-clk-qcom-add-eliza-gpucc.patch
+1107-arm64-dts-qcom-eliza-gpu-clock.patch
+1108-arm64-dts-qcom-eliza-gpu-smmu.patch
+1109-arm64-dts-qcom-eliza-gpu.patch
+1110-arm64-dts-qcom-eliza-gpu-cooling.patch
+1111-drm-panel-vtdr6130-add-pocket-duo.patch
+1114-remoteproc-qcom-add-eliza-wpss.patch
+1140-wifi-ath12k-move-MSI-state-from-ath12k-pci-to-ath12k-base.patch
+1141-wifi-ath12k-share-the-register-window-geometry-with-the-core.patch
+1142-wifi-ath12k-let-the-MSI-CE-DP-IRQ-setup-serve-platform-devices.patch
+1143-wifi-ath12k-allow-receive-only-services-in-map-service-to-pipe.patch
+1144-wifi-ath12k-keep-the-CE-interrupt-mask-balanced-across-restarts.patch
+1145-wifi-ath12k-add-an-optional-cfg-static-window-hif-op.patch
+1146-wifi-ath12k-take-the-shadow-register-base-from-hw-params.patch
+1147-wifi-ath12k-support-targets-with-fixed-firmware-memory.patch
+1148-wifi-ath12k-cap-the-shadow-register-configuration-at-38-entries.patch
+1149-wifi-ath12k-add-the-QMI-device-info-request.patch
+1150-wifi-ath12k-send-ddr-range-and-gpio-info-in-host-cap.patch
+1151-wifi-ath12k-support-cold-boot-calibration.patch
+1152-wifi-ath12k-track-the-firmware-generation-across-recovery.patch
+1153-wifi-ath12k-add-ath12k-core-firmware-crashed.patch
+1154-wifi-ath12k-stop-touching-srngs-after-the-HAL-is-torn-down.patch
+1155-wifi-ath12k-tolerate-a-missing-hwmon-device-on-thermal-cleanup.patch
+1156-wifi-ath12k-guard-the-link-peer-table-against-concurrent-teardown.patch
+1157-wifi-ath12k-add-the-WCN7750-copy-engine-configuration.patch
+1158-wifi-ath12k-add-WCN7750-hw1-0.patch
+1159-wifi-ath12k-ahb-add-the-WCN7750-hybrid-bus-transport.patch
+1160-wifi-ath12k-unwind-WCN7750-probe-failures.patch
+1161-dt-bindings-net-wireless-describe-WCN7750-resources.patch
+1162-scsi-ufs-ufs-qcom-add-Eliza-match-data.patch
+1163-dt-bindings-ufs-allow-Eliza-legacy-doorbell-mode.patch
+1164-arm64-dts-qcom-eliza-add-i2c6.patch
+1166-Bluetooth-qca-add-WCN7750-support.patch
+1167-drm-msm-dpu-enable-eliza-inline-rotation.patch
+1168-drm-msm-dpu-enable-eliza-lutdma.patch
+1169-arm64-dts-qcom-eliza-dpu-lutdma.patch
+1170-arm64-dts-qcom-eliza-add-adsp-gpr.patch
+1171-arm64-dts-qcom-eliza-add-lpass.patch
+1172-pinctrl-qcom-add-eliza-lpass-lpi.patch
+1173-ASoC-qcom-q6apm-add-mi2s-clocks.patch
+1174-ASoC-qcom-enable-quaternary-jack.patch
+1175-ASoC-qcom-configure-eliza-mi2s-clocks.patch
+1176-ASoC-es8326-enable-codec-supplies.patch
+1177-dt-bindings-describe-eliza-audio-resources.patch
+1178-ASoC-qcom-q6prm-add-missing-mclk-ids.patch
+1179-ASoC-qcom-fix-duo-speaker-slot-width.patch
+1180-ASoC-qcom-q6apm-allow-s32-playback.patch
+1181-cpufreq-dt-platdev-blocklist-eliza.patch
+1182-arm64-dts-qcom-eliza-add-cpu-l3-scaling.patch
+1302-input-rsinput-support-retroid-pocket-duo.patch
+1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch

@@ -31,10 +31,12 @@ printf '%s\n' \
     'printf '\''ARMADA_SECONDARY_CONNECTOR=%q\n'\'' "${TEST_SECONDARY_CONNECTOR-DSI-1}"' \
     'printf '\''ARMADA_SECONDARY_TOUCHSCREEN=%q\n'\'' "${TEST_SECONDARY_TOUCHSCREEN-bottom_touchscreen}"' \
     'printf '\''ARMADA_PANEL_ORIENTATION=%q\n'\'' "${TEST_PANEL_ORIENTATION-right}"' \
+    'printf '\''ARMADA_SECONDARY_PANEL_ORIENTATION=%q\n'\'' "${TEST_SECONDARY_PANEL_ORIENTATION-}"' \
+    'printf '\''ARMADA_SECONDARY_FORCE_LINEAR=%q\n'\'' "${TEST_SECONDARY_FORCE_LINEAR-0}"' \
     >"$device_env"
 printf '%s\n' \
     '#!/usr/bin/env bash' \
-    'printf '\''%s\n'\'' "${DISPLAY-unset}" "${WAYLAND_DISPLAY-unset}" "${GAMESCOPE_WAYLAND_DISPLAY-unset}" >"$ENV_FILE"' \
+    'printf '\''%s\n'\'' "${DISPLAY-unset}" "${WAYLAND_DISPLAY-unset}" "${GAMESCOPE_WAYLAND_DISPLAY-unset}" "${GAMESCOPE_FORCE_LINEAR_OUTPUT-unset}" >"$ENV_FILE"' \
     'printf '\''%s\0'\'' "$@" >"$ARGS_FILE"' \
     >"$gamescope"
 chmod +x "$device_env" "$gamescope"
@@ -75,7 +77,40 @@ expected=(
 for i in "${!expected[@]}"; do
     [[ "${actual[$i]}" == "${expected[$i]}" ]]
 done
-[[ "$(<"$env_file")" == $'unset\nunset\nunset' ]]
+[[ "$(<"$env_file")" == $'unset\nunset\nunset\nunset' ]]
+
+# The Duo's landscape bottom panel must not inherit its portrait top rotation.
+env \
+    TEST_PANEL_ORIENTATION=left \
+    TEST_SECONDARY_PANEL_ORIENTATION=normal \
+    ARMADA_DEVICE_ENV="$device_env" \
+    ARMADA_GAMESCOPE="$gamescope" \
+    GAMESCOPE_LEASE_SOCK="$lease_socket" \
+    ARGS_FILE="$args_file" \
+    ENV_FILE="$env_file" \
+    "$BOTTOM_GAMESCOPE"
+mapfile -d '' -t actual <"$args_file"
+[[ "${#actual[@]}" == "${#expected[@]}" ]]
+for i in "${!expected[@]}"; do
+    if [[ "${expected[$i]}" == right ]]; then
+        [[ "${actual[$i]}" == normal ]]
+    else
+        [[ "${actual[$i]}" == "${expected[$i]}" ]]
+    fi
+done
+
+# Linear output must also disable direct scanout, which bypasses that buffer.
+env \
+    TEST_SECONDARY_FORCE_LINEAR=1 \
+    ARMADA_DEVICE_ENV="$device_env" \
+    ARMADA_GAMESCOPE="$gamescope" \
+    GAMESCOPE_LEASE_SOCK="$lease_socket" \
+    ARGS_FILE="$args_file" \
+    ENV_FILE="$env_file" \
+    "$BOTTOM_GAMESCOPE"
+mapfile -d '' -t actual <"$args_file"
+[[ "${actual[*]}" == *'--force-composition -- /usr/libexec/armada/bottom-gamescope-ready' ]]
+[[ "$(tail -n 1 "$env_file")" == 1 ]]
 
 if env \
     TEST_SECONDARY_CONNECTOR= \

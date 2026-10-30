@@ -1,0 +1,35 @@
+From: Armada <armada@armada.dev>
+Subject: [PATCH] input: rsinput: accept large UART batches without dropping reports
+
+The Duo journal repeatedly reports RX buffer overflow because serdev offers
+more than 1024 bytes in one callback. The driver discards that entire batch
+but returns count, telling serdev that every byte was consumed. It also
+discards a partial frame when appending a smaller batch would overflow.
+
+Accept only the remaining buffer capacity and return that accepted count.
+The existing parser drains complete frames and retains the incomplete tail;
+the tty receive loop retries the unconsumed bytes. This preserves frames
+across buffer boundaries without enlarging the buffer or changing mappings.
+
+--- a/drivers/input/joystick/rsinput.c
++++ b/drivers/input/joystick/rsinput.c
+@@ -398,17 +398,8 @@
+         return count;
+     }
+ 
+-    if (count > sizeof(drv->rx_buf)) {
+-        dev_warn_ratelimited(&serdev->dev, "RX buffer overflow\n");
+-        return count;
+-    }
+-
+-    /*
+-     * If the buffered partial frame plus the new bytes would overflow the
+-     * buffer, discard the partial frame and resynchronise on the new bytes.
+-     */
+-    if (drv->rx_len + count > sizeof(drv->rx_buf))
+-        drv->rx_len = 0;
++    /* Leave excess bytes with serdev to retry after this buffer is drained. */
++    count = min(count, sizeof(drv->rx_buf) - drv->rx_len);
+ 
+     memcpy(drv->rx_buf + drv->rx_len, data, count);
+     drv->rx_len += count;

@@ -1,0 +1,17 @@
+From: Armada <noreply@armada>
+Subject: [PATCH] drm/msm/dpu: enable LUTDMA on Eliza
+
+Downstream kera (SDE 12.4, Eliza) has the same reg-DMA v3.0 engine as
+SM8750, and Eliza's DSPPs already use the SM8750 sub-block. Point Eliza
+at the SM8650/SM8750 reg-DMA description.
+---
+--- a/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_12_4_eliza.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_12_4_eliza.h
+@@ -344,6 +344,7 @@
+ 	.mixer = eliza_lm,
+ 	.dspp_count = ARRAY_SIZE(eliza_dspp),
+ 	.dspp = eliza_dspp,
++	.reg_dma = &sm8650_reg_dma,
+ 	.pingpong_count = ARRAY_SIZE(eliza_pp),
+ 	.pingpong = eliza_pp,
+ 	.dsc_count = ARRAY_SIZE(eliza_dsc),

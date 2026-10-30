@@ -31,3 +31,5 @@ to a commit, or `armada` if it is original; a URL source with no `notes` is verb
   physical-size scaling.
 - `patches/0009-Keep-the-lease-companion-locked-until-Steam-reports-in.patch`
   source: armada
+- `patches/0010-add-retroid-pocket-duo-quirks.patch`
+  source: armada

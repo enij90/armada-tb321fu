@@ -1,0 +1,22 @@
+From: Armada <noreply@armada>
+Subject: [PATCH] arm64: dts: qcom: eliza: add the DPU LUTDMA register set
+
+Map LUTDMA at 0x0af80000 (0x7000), downstream kera's regdma_phys and
+the same range as SM8750.
+---
+--- a/arch/arm64/boot/dts/qcom/eliza.dtsi
++++ b/arch/arm64/boot/dts/qcom/eliza.dtsi
+@@ -2386,9 +2386,11 @@
+ 			mdss_mdp: display-controller@ae01000 {
+ 				compatible = "qcom,eliza-dpu";
+ 				reg = <0x0 0x0ae01000 0x0 0x93000>,
+-				      <0x0 0x0aeb0000 0x0 0x3000>;
++				      <0x0 0x0aeb0000 0x0 0x3000>,
++				      <0x0 0x0af80000 0x0 0x7000>;
+ 				reg-names = "mdp",
+-					    "vbif";
++					    "vbif",
++					    "lutdma";
+ 
+ 				interrupts-extended = <&mdss 0>;
+ 

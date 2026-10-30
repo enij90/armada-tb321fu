@@ -1,0 +1,129 @@
+From: Armada <armada@armada.dev>
+Subject: [PATCH] dt-bindings: net: wireless: describe WCN7750 resources
+
+Describe the resources consumed by RetroidPocket's WCN7750 hybrid-bus
+transport, replacing the former supplies-only experimental binding.
+
+---
+diff --git a/Documentation/devicetree/bindings/net/wireless/qcom,wcn7750-wifi.yaml b/Documentation/devicetree/bindings/net/wireless/qcom,wcn7750-wifi.yaml
+new file mode 100644
+--- /dev/null
++++ b/Documentation/devicetree/bindings/net/wireless/qcom,wcn7750-wifi.yaml
+@@ -0,0 +1,117 @@
++# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/net/wireless/qcom,wcn7750-wifi.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: Qualcomm WCN7750 integrated WLAN
++
++maintainers:
++  - Armada <armada@armada.dev>
++
++description:
++  WLAN firmware runs on WPSS. The host uses platform MSI interrupts and a
++  firmware-reported register window through the internal PCIe link.
++
++properties:
++  compatible:
++    const: qcom,wcn7750-wifi
++
++  reg:
++    maxItems: 1
++    description: MSI target address
++
++  reg-names:
++    const: msi_addr
++
++  interrupts:
++    minItems: 28
++    maxItems: 32
++
++  iommus:
++    maxItems: 1
++
++  dma-coherent: true
++
++  interconnects:
++    maxItems: 1
++
++  interconnect-names:
++    const: pcie-mem
++
++  memory-region:
++    items:
++      - description: Reserved IOVA ranges surrounding the DMA aperture
++      - description: WLAN firmware MSA reservation
++
++  memory-region-names:
++    items:
++      - const: iova-partition
++      - const: msa
++
++  wlan-en-gpios:
++    maxItems: 1
++    description: WLAN enable signal
++
++  qcom,rproc:
++    $ref: /schemas/types.yaml#/definitions/phandle
++    description: WPSS remote processor
++
++  qcom,gpio-info:
++    $ref: /schemas/types.yaml#/definitions/uint32-array
++    minItems: 1
++    maxItems: 20
++    description: Firmware GPIO table sent in the QMI host-capability request
++
++  qcom,qmp:
++    $ref: /schemas/types.yaml#/definitions/phandle
++    description: AOSS QMP provider for WLAN PDC programming
++
++  qcom,pdc-init-table:
++    $ref: /schemas/types.yaml#/definitions/string-array
++    description: AOSS messages configuring autonomous WLAN regulator requests
++
++  qcom,smem-states:
++    $ref: /schemas/types.yaml#/definitions/phandle-array
++    maxItems: 1
++    description: Endpoint power-save state
++
++  qcom,smem-state-names:
++    description: Endpoint power-save state name
++    const: wlan-ep-powersave-smp2p-out
++
++  vdd-cx-mx-supply:
++    description: WLAN CX/MX supply
++
++  vdd-1.8-xo-supply:
++    description: WLAN oscillator supply
++
++  vdd-1.3-rfa-supply:
++    description: WLAN RF analog supply
++
++  vdd-1.8-io-supply:
++    description: WLAN I/O supply
++
++required:
++  - compatible
++  - reg
++  - reg-names
++  - interrupts
++  - iommus
++  - interconnects
++  - interconnect-names
++  - memory-region
++  - memory-region-names
++  - wlan-en-gpios
++  - qcom,rproc
++  - qcom,gpio-info
++  - qcom,qmp
++  - qcom,pdc-init-table
++  - qcom,smem-states
++  - qcom,smem-state-names
++  - vdd-cx-mx-supply
++  - vdd-1.8-xo-supply
++  - vdd-1.3-rfa-supply
++  - vdd-1.8-io-supply
++
++additionalProperties: false

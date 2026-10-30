@@ -1,0 +1,55 @@
+From: Armada <no-reply@armadaos.dev>
+Subject: [PATCH] freedreno: disable UBWC on A722 internal storage images
+
+With UBWC on storage images, A722 renders flashing black blocks
+(Megabonk, native and under FEX). Dropping UBWC fixes the issue.
+
+Images with an explicit DRM modifier keep UBWC. They're shared, like
+gamescope's composite, which the DPU can only rotate when it's UBWC.
+---
+diff --git a/src/freedreno/common/freedreno_dev_info.h b/src/freedreno/common/freedreno_dev_info.h
+index b975898..18717e2 100644
+--- a/src/freedreno/common/freedreno_dev_info.h
++++ b/src/freedreno/common/freedreno_dev_info.h
+@@ -436,6 +436,12 @@ struct fd_dev_info {
+        */
+       bool no_bv;
+ 
++      /* a722 corrupts UBWC storage images in blocks. Only images with an
++       * explicit DRM modifier, which are shared with other processes or the
++       * display, may use UBWC.
++       */
++      bool storage_ubwc_internal_quirk;
++
+       /* Whether CP_ALWAYS_ON_COUNTER only resets on device loss rather than
+        * on every suspend/resume.
+        */
+diff --git a/src/freedreno/common/freedreno_devices.py b/src/freedreno/common/freedreno_devices.py
+index fa893cc..8356bd8 100644
+--- a/src/freedreno/common/freedreno_devices.py
++++ b/src/freedreno/common/freedreno_devices.py
+@@ -1120,7 +1120,8 @@ add_gpus([
+     ], A6xxGPUInfo(
+         CHIP.A7XX,
+         [a7xx_base, a7xx_gen1, GPUProps(no_bv = True,
+-                                        has_lpac = False)],
++                                        has_lpac = False,
++                                        storage_ubwc_internal_quirk = True)],
+         num_ccu = 1,
+         tile_align_w = 64,
+         tile_align_h = 16,
+diff --git a/src/freedreno/vulkan/tu_image.cc b/src/freedreno/vulkan/tu_image.cc
+index 478a63b..8d8c7ae 100644
+--- a/src/freedreno/vulkan/tu_image.cc
++++ b/src/freedreno/vulkan/tu_image.cc
+@@ -696,4 +696,10 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
+    }
+
++   if ((pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
++       modifier == DRM_FORMAT_MOD_INVALID &&
++       device->physical_device->info->props.storage_ubwc_internal_quirk) {
++      ubwc_enabled = false;
++   }
++
+    if (TU_DEBUG(NOUBWC)) {
+       ubwc_enabled = false;

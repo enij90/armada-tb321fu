@@ -1,0 +1,20 @@
+From: Armada contributors <noreply@armadaos.dev>
+Subject: [PATCH] cpufreq: dt-platdev: blocklist Qualcomm Eliza
+
+Eliza uses qcom-cpufreq-hw. Adding static CPU OPP bandwidth tables for
+EPSS L3 makes cpufreq-dt-platdev instantiate the generic driver as well.
+On the Duo this logs a failed registration with -EEXIST because the
+hardware driver already owns the policies. Blocklist Eliza like the
+other Qualcomm platforms using the hardware driver.
+
+---
+--- a/drivers/cpufreq/cpufreq-dt-platdev.c
++++ b/drivers/cpufreq/cpufreq-dt-platdev.c
+@@ -153,6 +153,7 @@
+ 	{ .compatible = "nvidia,tegra234", },
+ 
+ 	{ .compatible = "qcom,apq8096", },
++	{ .compatible = "qcom,eliza", },
+ 	{ .compatible = "qcom,msm8909", },
+ 	{ .compatible = "qcom,msm8996", },
+ 	{ .compatible = "qcom,msm8998", },

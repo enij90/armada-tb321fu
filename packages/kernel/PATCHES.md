@@ -951,3 +951,286 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: armada
   upstream: candidate (bug from e8ba8a2bc4f6, still in mainline)
   notes: rtc_timer_do_work() returned without pm_relax() when __rtc_read_time() failed. On the TB321FU rtc0 is rtc-efi, whose GetTime fails with EIO; the first NTP write to rtc0 (RTC_SYSTOHC, chrony rtcsync) left "rtc-efi.0" active forever, so reads of /sys/power/wakeup_count blocked and Plasma's power button and idle suspend waited 25 s for the powerdevil helper timeout.
+
+- `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
+  source: armada
+  upstream: local
+  notes: Adds an optional qcom,rx-dma-len DT property to shorten GENI UART RX DMA transfers. The Duo gamepad MCU streams without idle gaps, so the default 2048-byte transfer delivered input in ~245 ms bursts.
+
+- `patches/0624-drm-msm-a6xx-increase-gmu-fw-init-timeout.patch`
+  source: https://github.com/RetroidPocket/linux/commit/ba970587a0e1203b6a0934b5b9174886b4c4d24c
+  upstream: https://patchwork.freedesktop.org/patch/753014/
+
+- `dts/sm7750-retroidpocket-duo.dts`
+  source: armada
+  upstream: local
+  notes: Standalone Duo board description using the shared IL97680A driver for the bottom panel, with three supplies and normal orientation.
+
+- `patches/1100-drm-msm-a6xx-fix-a730-hwcg.patch`
+  source: https://git.kernel.org/torvalds/c/01bcc0398f43099acb407a6067481e635c3e1b84
+  upstream: https://git.kernel.org/torvalds/c/01bcc0398f43099acb407a6067481e635c3e1b84
+
+- `patches/1101-drm-msm-a6xx-rename-gbif-cx-config.patch`
+  source: https://git.kernel.org/torvalds/c/352116dbc4fc61ae22eae748da36e46a3f45f65c
+  upstream: https://git.kernel.org/torvalds/c/352116dbc4fc61ae22eae748da36e46a3f45f65c
+
+- `patches/1102-drm-msm-a6xx-add-adreno-722.patch`
+  source: https://git.kernel.org/torvalds/c/a25fd4227f59b9147ae6d23336878c28e5437a4d
+  upstream: https://git.kernel.org/torvalds/c/a25fd4227f59b9147ae6d23336878c28e5437a4d
+
+- `patches/1103-dt-bindings-arm-smmu-eliza-gpu.patch`
+  source: https://git.kernel.org/torvalds/c/925f98235a729a87e632d6366fc749faac0463b4
+  upstream: https://git.kernel.org/torvalds/c/925f98235a729a87e632d6366fc749faac0463b4
+
+- `patches/1104-dt-bindings-display-msm-adreno-722.patch`
+  source: https://git.kernel.org/torvalds/c/0b69e4f4ee325ee0b50396657fd19d4d7b0a6294
+  upstream: https://git.kernel.org/torvalds/c/0b69e4f4ee325ee0b50396657fd19d4d7b0a6294
+
+- `patches/1105-dt-bindings-clock-eliza-gpucc.patch`
+  source: https://git.kernel.org/torvalds/c/26461dcf5de1a3645bf9bdb1558f12ea20df991f
+  upstream: https://git.kernel.org/torvalds/c/26461dcf5de1a3645bf9bdb1558f12ea20df991f
+
+- `patches/1106-clk-qcom-add-eliza-gpucc.patch`
+  source: https://git.kernel.org/torvalds/c/4cfe35f2ef21c4b6281d8b73fdbabaa6a8aa1440
+  upstream: https://git.kernel.org/torvalds/c/4cfe35f2ef21c4b6281d8b73fdbabaa6a8aa1440
+  notes: Makefile context refreshed for Linux 7.2.6, which has no Eliza video clock entry; driver unchanged.
+
+- `patches/1107-arm64-dts-qcom-eliza-gpu-clock.patch`
+  source: https://lore.kernel.org/r/20260806-eliza-mm-cc-v9-v10-10-6ba52dd14343@oss.qualcomm.com
+  upstream: https://lore.kernel.org/r/20260806-eliza-mm-cc-v9-v10-10-6ba52dd14343@oss.qualcomm.com
+  notes: Extracted only the GPUCC header and node from the multimedia clock series; camera/video controllers omitted. GPU clock and power-domain definitions unchanged.
+
+- `patches/1108-arm64-dts-qcom-eliza-gpu-smmu.patch`
+  source: https://git.kernel.org/torvalds/c/0cb81794dea5b236122578bd49e3e6bfdc6adf87
+  upstream: https://git.kernel.org/torvalds/c/0cb81794dea5b236122578bd49e3e6bfdc6adf87
+
+- `patches/1109-arm64-dts-qcom-eliza-gpu.patch`
+  source: https://git.kernel.org/torvalds/c/5cc169156d877a4aa947092dd3c9dbd784d62f93
+  upstream: https://git.kernel.org/torvalds/c/5cc169156d877a4aa947092dd3c9dbd784d62f93
+
+- `patches/1110-arm64-dts-qcom-eliza-gpu-cooling.patch`
+  source: https://git.kernel.org/torvalds/c/c53d30b2814e0f0215cdafe9ccf691eace2949ff
+  upstream: https://git.kernel.org/torvalds/c/c53d30b2814e0f0215cdafe9ccf691eace2949ff
+  notes: Include context refreshed for Linux 7.2.6; GPU thermal trips and cooling maps unchanged.
+
+- `patches/1111-drm-panel-vtdr6130-add-pocket-duo.patch`
+  source: Armada implementation from the unit's Android panel properties.
+  upstream: No.
+
+- `patches/1114-remoteproc-qcom-add-eliza-wpss.patch`
+  source: Armada; existing Linux Milos/SC7280 WPSS support and Qualcomm Kera downstream sources, checked against the Duo Android FDT.
+  upstream: No.
+  notes: Reuses the PAS driver with auto_boot=false. Adds the WPSS firmware processor support used by the WCN7750 ath12k backport.
+
+- `patches/1140-wifi-ath12k-move-MSI-state-from-ath12k-pci-to-ath12k-base.patch`
+  source: https://github.com/RetroidPocket/linux/commit/be7f234a62cd0a47ce043fa9329faaef509eb030
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support. Move the existing WCN7860 MSI reference as well.
+
+- `patches/1141-wifi-ath12k-share-the-register-window-geometry-with-the-core.patch`
+  source: https://github.com/RetroidPocket/linux/commit/d1ef16ccc3d1c67d590986e51f15d3cbb5797942
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1142-wifi-ath12k-let-the-MSI-CE-DP-IRQ-setup-serve-platform-devices.patch`
+  source: https://github.com/RetroidPocket/linux/commit/f2c4631acf1e6a497cee3610d1bcddbe13d1a75c
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1143-wifi-ath12k-allow-receive-only-services-in-map-service-to-pipe.patch`
+  source: https://github.com/RetroidPocket/linux/commit/7dae8198ef2133b30fadc1f2ac312031dab3d2ee
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1144-wifi-ath12k-keep-the-CE-interrupt-mask-balanced-across-restarts.patch`
+  source: https://github.com/RetroidPocket/linux/commit/ca800f8cd0e2b19ffca0df6a5fdbeea312ddb479
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1145-wifi-ath12k-add-an-optional-cfg-static-window-hif-op.patch`
+  source: https://github.com/RetroidPocket/linux/commit/bdbf8cc0bb5a31a32251f9cdc8718fba2c500373
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1146-wifi-ath12k-take-the-shadow-register-base-from-hw-params.patch`
+  source: https://github.com/RetroidPocket/linux/commit/7d9b6f2688952f71b4125cdb2974054330823609
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1147-wifi-ath12k-support-targets-with-fixed-firmware-memory.patch`
+  source: https://github.com/RetroidPocket/linux/commit/444bb9b352908ce84ab7425a1e747772bc7ec6da
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1148-wifi-ath12k-cap-the-shadow-register-configuration-at-38-entries.patch`
+  source: https://github.com/RetroidPocket/linux/commit/364880382bfaa6ed1c96522dd9070dfd8ebc6d94
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1149-wifi-ath12k-add-the-QMI-device-info-request.patch`
+  source: https://github.com/RetroidPocket/linux/commit/c8d5b4abbc9af8fa3e1d4fc8fd530bb3f6353677
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1150-wifi-ath12k-send-ddr-range-and-gpio-info-in-host-cap.patch`
+  source: https://github.com/RetroidPocket/linux/commit/814e706988b98ca39714133980021b39ae3f7403
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support. Use the 7.2 host-capability layout without dynamic_mem.
+
+- `patches/1151-wifi-ath12k-support-cold-boot-calibration.patch`
+  source: https://github.com/RetroidPocket/linux/commit/2f10dd06904a0af0897bdaa00dcb2e17cffe6b0d
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support. Use 7.2 QMI constants and reuse Armada 0040 for QDSS download.
+
+- `patches/1152-wifi-ath12k-track-the-firmware-generation-across-recovery.patch`
+  source: https://github.com/RetroidPocket/linux/commit/f23d44355701c909ab63a3253644af114eb0427c
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1153-wifi-ath12k-add-ath12k-core-firmware-crashed.patch`
+  source: https://github.com/RetroidPocket/linux/commit/ef330ed2a7cdbd5ae20ee89ec26f62dda1623822
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1154-wifi-ath12k-stop-touching-srngs-after-the-HAL-is-torn-down.patch`
+  source: https://github.com/RetroidPocket/linux/commit/5c301a42fc1d833eca66ed8dc5d58a650b3bd66c
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1155-wifi-ath12k-tolerate-a-missing-hwmon-device-on-thermal-cleanup.patch`
+  source: https://github.com/RetroidPocket/linux/commit/ecda60ed15f6d05dc2648bf28eb50e0bef800f73
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1156-wifi-ath12k-guard-the-link-peer-table-against-concurrent-teardown.patch`
+  source: https://github.com/RetroidPocket/linux/commit/1877d7230554c26f9558b215d0349253df378f5e
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1157-wifi-ath12k-add-the-WCN7750-copy-engine-configuration.patch`
+  source: https://github.com/RetroidPocket/linux/commit/c560f20177338be2a376b24e927574e1e0e207f2
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support.
+
+- `patches/1158-wifi-ath12k-add-WCN7750-hw1-0.patch`
+  source: https://github.com/RetroidPocket/linux/commit/a432a615be0498793cde6a7524a2746e547c87e6
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support. Omit supports_cong_ctrl_max_msdus, absent in 7.2.
+
+- `patches/1159-wifi-ath12k-ahb-add-the-WCN7750-hybrid-bus-transport.patch`
+  source: https://github.com/RetroidPocket/linux/commit/69b93ff4671eb07c1e81015ed3a0ccc106486a02
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support. Keep the 7.2 IPQ probe and UserPD paths; add only the WCN7750 branch.
+
+- `patches/1160-wifi-ath12k-unwind-WCN7750-probe-failures.patch`
+  source: Armada; review of the RetroidPocket hybrid-bus transport.
+  upstream: No.
+  notes: Propagates PDC errors and unmaps MSI on probe failure.
+
+- `patches/1161-dt-bindings-net-wireless-describe-WCN7750-resources.patch`
+  source: Armada; RetroidPocket WCN7750 driver and board resources.
+  upstream: No.
+  notes: Documents the hybrid-bus resources in place of the experimental supplies-only binding.
+
+- `patches/1162-scsi-ufs-ufs-qcom-add-Eliza-match-data.patch`
+  source: https://github.com/RetroidPocket/linux/commit/1213eb175774de1f4ba6577a4329bba58729840d
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Reuses SM8550 match data for Eliza's lack of PHY retention and legacy-doorbell capability quirk. Refreshed context for Armada's SM8750 entry; driver change otherwise unchanged.
+
+- `patches/1163-dt-bindings-ufs-allow-Eliza-legacy-doorbell-mode.patch`
+  source: Armada; RetroidPocket Duo UFS configuration.
+  upstream: No.
+  notes: Allows the Eliza board to omit MCQ resources while preserving Nord's requirement.
+
+- `patches/1164-arm64-dts-qcom-eliza-add-i2c6.patch`
+  source: https://github.com/RetroidPocket/linux/commit/aaa9c19f21f7c651f4a5dd270170f5862b6cabc0
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+
+- `patches/1166-Bluetooth-qca-add-WCN7750-support.patch`
+  source: https://github.com/RetroidPocket/linux/commit/762bc03f0c4863bad8b935e844cc570517314784
+  upstream: RetroidPocket downstream tree, not confirmed merged in mainline.
+  notes: Context refreshed for Armada's WCN7860 support, which is retained. Uses ORN firmware from the existing atheros-firmware package.
+
+- `patches/1167-drm-msm-dpu-enable-eliza-inline-rotation.patch`
+  source: armada
+  upstream: local
+  notes: Adds inline rotation for Eliza
+
+- `patches/1168-drm-msm-dpu-enable-eliza-lutdma.patch`
+  source: armada
+  upstream: local
+  notes: Enables LUTDMA for Eliza, matching downstream kera (https://git.codelinaro.org/clo/la/platform/vendor/opensource/display-devicetree/-/blob/1c5de2a5c1743f0693d3b0ca5ff7ca158627fc6b/display/kera-sde-common.dtsi). Needs `0068`.
+
+- `patches/1169-arm64-dts-qcom-eliza-dpu-lutdma.patch`
+  source: armada
+  upstream: local
+  notes: Maps the Eliza DPU LUTDMA registers. Needs `0069`.
+
+- `patches/1170-arm64-dts-qcom-eliza-add-adsp-gpr.patch`
+  source: https://github.com/RetroidPocket/linux/commit/23da74833df803c5e8bea71feb878173764ef121
+  upstream: https://lore.kernel.org/r/20260724-dts-qcom-eliza-add-gpr-v3-1-2595beb0cdec@oss.qualcomm.com
+  notes: Context refreshed for Armada's Eliza DTS.
+
+- `patches/1171-arm64-dts-qcom-eliza-add-lpass.patch`
+  source: https://github.com/RetroidPocket/linux/commit/b9f1f97846bcb1989bb52b6cbd1205ecc22c8e43
+  upstream: https://lore.kernel.org/r/20260731084032.3106477-2-ravi.hothi@oss.qualcomm.com
+  notes: Context refreshed for Armada's Eliza DTS.
+
+- `patches/1172-pinctrl-qcom-add-eliza-lpass-lpi.patch`
+  source: https://github.com/RetroidPocket/linux/commit/82c3edf8701154e2768973ebd4c0d2f3bd29621e
+  upstream: https://patch.msgid.link/20260715132150.1322663-3-ravi.hothi@oss.qualcomm.com
+
+- `patches/1173-ASoC-qcom-q6apm-add-mi2s-clocks.patch`
+  source: https://github.com/RetroidPocket/linux/commit/cc8495c1d45ab113a638b5df6c2e0bfa150a7376
+  upstream: https://patch.msgid.link/20260724182446.1484894-3-mohammad.rafi.shaik@oss.qualcomm.com
+  notes: Retains Armada's graph suspend/restore state and prepare-time RX start. Refreshed on top of the TB321FU secondary TDM patches (0808, 0835): the per-port MI2S clocks sit next to the Y700 TDM clocks, and q6i2s keeps its TDM channel map and slot ops.
+
+- `patches/1174-ASoC-qcom-enable-quaternary-jack.patch`
+  source: https://github.com/RetroidPocket/linux/commit/19e15b7d6f340dd636e54eb5b39a2991453d8ad5
+  upstream: unknown
+  notes: Context refreshed; Armada lacks the newer LPI_MI2S_RX_0 case.
+
+- `patches/1175-ASoC-qcom-configure-eliza-mi2s-clocks.patch`
+  source: https://github.com/RetroidPocket/linux/commit/592a27a5a0376a80db2271c6e97c4f7643b279d8
+  upstream: unknown
+  notes: Adapts the reference hw_params clock/codec setup to Armada's existing machine driver, scoped to Eliza. Configures both speaker codecs; retains the existing 48 kHz stereo S16_LE backend format. On top of the TB321FU 0808 the Eliza setup is sc8280xp_eliza_mi2s_hw_params(), called from the default case of the existing sc8280xp_snd_hw_params().
+
+- `patches/1176-ASoC-es8326-enable-codec-supplies.patch`
+  source: https://github.com/RetroidPocket/linux/commit/f8dfc9104b7c24de07fd839c1cc6468640f2e2a1
+  upstream: unknown
+  notes: Uses managed bulk regulator enable, propagating probe deferral and unwinding on probe failure/unbind.
+
+- `patches/1177-dt-bindings-describe-eliza-audio-resources.patch`
+  source: armada
+  upstream: local
+
+- `patches/1178-ASoC-qcom-q6prm-add-missing-mclk-ids.patch`
+  source: https://github.com/RetroidPocket/linux/commit/a2fdf929fbb491f3bf4d3cadb5a7cc7c90182c0f
+  upstream: https://patch.msgid.link/20260731162626.1588561-3-srinivas.kandagatla@oss.qualcomm.com
+  notes: Context refreshed for the TB321FU TDM clock IDs (0808); the MCLK IDs go before WSA_CORE_MCLK.
+
+- `patches/1179-ASoC-qcom-fix-duo-speaker-slot-width.patch`
+  source: armada; register definitions from https://github.com/awinic-driver/aw883xx/blob/main/aw883xx_pid_2066_reg.h
+  upstream: local
+
+- `patches/1180-ASoC-qcom-q6apm-allow-s32-playback.patch`
+  source: armada
+  upstream: local
+
+- `patches/1181-cpufreq-dt-platdev-blocklist-eliza.patch`
+  source: Armada
+  upstream: local
+
+- `patches/1182-arm64-dts-qcom-eliza-add-cpu-l3-scaling.patch`
+  source: Armada
+  upstream: local
+
+- `patches/0515a-input-rsinput-accept-large-uart-batches.patch`
+  source: armada
+  upstream: local
+  notes: Feed large UART receive batches through the existing frame reassembly buffer without dropping complete frames.
+
+- `patches/1302-input-rsinput-support-retroid-pocket-duo.patch`
+  source: armada
+  upstream: local
+  notes: Add configurable ADC references and share reset and supply sequencing between probe and resume; existing board defaults are retained.

@@ -1,0 +1,360 @@
+From: Armada contributors <noreply@armadaos.dev>
+Subject: [PATCH] arm64: dts: qcom: eliza: add CPU OPPs for L3 scaling
+
+Without CPU interconnect requests, EPSS L3 falls to its lowest performance
+state when interconnect synchronization releases the initial bandwidth
+votes.
+
+Add CPU interconnect paths and shared OPP tables to scale L3 with CPU
+frequency. Derive the bandwidths from the downstream memlat tables and
+CPU frequency LUTs on the Retroid Pocket Duo.
+
+---
+--- a/arch/arm64/boot/dts/qcom/eliza.dtsi
++++ b/arch/arm64/boot/dts/qcom/eliza.dtsi
+@@ -50,6 +50,10 @@
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 0>;
+ 
++			operating-points-v2 = <&cpu0_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
++
+ 			l2_0: l2-cache {
+ 				compatible = "cache";
+ 				cache-level = <2>;
+@@ -80,6 +84,10 @@
+ 			dynamic-power-coefficient = <100>;
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 0>;
++
++			operating-points-v2 = <&cpu0_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
+ 		};
+ 
+ 		cpu2: cpu@200 {
+@@ -98,6 +106,10 @@
+ 			dynamic-power-coefficient = <100>;
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 0>;
++
++			operating-points-v2 = <&cpu0_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
+ 
+ 			l2_2: l2-cache {
+ 				compatible = "cache";
+@@ -124,6 +136,10 @@
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 1>;
+ 
++			operating-points-v2 = <&cpu3_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
++
+ 			l2_3: l2-cache {
+ 				compatible = "cache";
+ 				cache-level = <2>;
+@@ -149,6 +165,10 @@
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 1>;
+ 
++			operating-points-v2 = <&cpu3_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
++
+ 			l2_4: l2-cache {
+ 				compatible = "cache";
+ 				cache-level = <2>;
+@@ -174,6 +194,10 @@
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 1>;
+ 
++			operating-points-v2 = <&cpu3_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
++
+ 			l2_5: l2-cache {
+ 				compatible = "cache";
+ 				cache-level = <2>;
+@@ -199,6 +223,10 @@
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 1>;
+ 
++			operating-points-v2 = <&cpu3_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
++
+ 			l2_6: l2-cache {
+ 				compatible = "cache";
+ 				cache-level = <2>;
+@@ -223,6 +251,10 @@
+ 			dynamic-power-coefficient = <588>;
+ 
+ 			qcom,freq-domain = <&cpufreq_hw 2>;
++
++			operating-points-v2 = <&cpu7_opp_table>;
++			interconnects = <&epss_l3 MASTER_EPSS_L3_APPS
++					 &epss_l3 SLAVE_EPSS_L3_SHARED>;
+ 
+ 			l2_7: l2-cache {
+ 				compatible = "cache";
+@@ -315,6 +347,257 @@
+ 				exit-latency-us = <4400>;
+ 				min-residency-us = <10150>;
+ 			};
++		};
++	};
++
++	/* CPU-to-L3 bandwidths derived from Retroid Pocket Duo firmware. */
++	cpu0_opp_table: opp-table-cpu0 {
++		compatible = "operating-points-v2";
++		opp-shared;
++
++		opp-441600000 {
++			opp-hz = /bits/ 64 <441600000>;
++			opp-peak-kBps = <(364800 * 32)>;
++		};
++
++		opp-595200000 {
++			opp-hz = /bits/ 64 <595200000>;
++			opp-peak-kBps = <(518400 * 32)>;
++		};
++
++		opp-787200000 {
++			opp-hz = /bits/ 64 <787200000>;
++			opp-peak-kBps = <(710400 * 32)>;
++		};
++
++		opp-902400000 {
++			opp-hz = /bits/ 64 <902400000>;
++			opp-peak-kBps = <(806400 * 32)>;
++		};
++
++		opp-1017600000 {
++			opp-hz = /bits/ 64 <1017600000>;
++			opp-peak-kBps = <(998400 * 32)>;
++		};
++
++		opp-1113600000 {
++			opp-hz = /bits/ 64 <1113600000>;
++			opp-peak-kBps = <(998400 * 32)>;
++		};
++
++		opp-1228800000 {
++			opp-hz = /bits/ 64 <1228800000>;
++			opp-peak-kBps = <(1094400 * 32)>;
++		};
++
++		opp-1344000000 {
++			opp-hz = /bits/ 64 <1344000000>;
++			opp-peak-kBps = <(1209600 * 32)>;
++		};
++
++		opp-1497600000 {
++			opp-hz = /bits/ 64 <1497600000>;
++			opp-peak-kBps = <(1344000 * 32)>;
++		};
++
++		opp-1593600000 {
++			opp-hz = /bits/ 64 <1593600000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-1708800000 {
++			opp-hz = /bits/ 64 <1708800000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-1843200000 {
++			opp-hz = /bits/ 64 <1843200000>;
++			opp-peak-kBps = <(1593600 * 32)>;
++		};
++	};
++
++	cpu3_opp_table: opp-table-cpu3 {
++		compatible = "operating-points-v2";
++		opp-shared;
++
++		opp-480000000 {
++			opp-hz = /bits/ 64 <480000000>;
++			opp-peak-kBps = <(364800 * 32)>;
++		};
++
++		opp-633600000 {
++			opp-hz = /bits/ 64 <633600000>;
++			opp-peak-kBps = <(518400 * 32)>;
++		};
++
++		opp-787200000 {
++			opp-hz = /bits/ 64 <787200000>;
++			opp-peak-kBps = <(518400 * 32)>;
++		};
++
++		opp-940800000 {
++			opp-hz = /bits/ 64 <940800000>;
++			opp-peak-kBps = <(518400 * 32)>;
++		};
++
++		opp-1056000000 {
++			opp-hz = /bits/ 64 <1056000000>;
++			opp-peak-kBps = <(710400 * 32)>;
++		};
++
++		opp-1190400000 {
++			opp-hz = /bits/ 64 <1190400000>;
++			opp-peak-kBps = <(710400 * 32)>;
++		};
++
++		opp-1286400000 {
++			opp-hz = /bits/ 64 <1286400000>;
++			opp-peak-kBps = <(902400 * 32)>;
++		};
++
++		opp-1401600000 {
++			opp-hz = /bits/ 64 <1401600000>;
++			opp-peak-kBps = <(1209600 * 32)>;
++		};
++
++		opp-1497600000 {
++			opp-hz = /bits/ 64 <1497600000>;
++			opp-peak-kBps = <(1209600 * 32)>;
++		};
++
++		opp-1612800000 {
++			opp-hz = /bits/ 64 <1612800000>;
++			opp-peak-kBps = <(1344000 * 32)>;
++		};
++
++		opp-1708800000 {
++			opp-hz = /bits/ 64 <1708800000>;
++			opp-peak-kBps = <(1344000 * 32)>;
++		};
++
++		opp-1824000000 {
++			opp-hz = /bits/ 64 <1824000000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-1920000000 {
++			opp-hz = /bits/ 64 <1920000000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-2073600000 {
++			opp-hz = /bits/ 64 <2073600000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-2208000000 {
++			opp-hz = /bits/ 64 <2208000000>;
++			opp-peak-kBps = <(1593600 * 32)>;
++		};
++
++		opp-2361600000 {
++			opp-hz = /bits/ 64 <2361600000>;
++			opp-peak-kBps = <(1593600 * 32)>;
++		};
++
++		opp-2400000000 {
++			opp-hz = /bits/ 64 <2400000000>;
++			opp-peak-kBps = <(1785600 * 32)>;
++		};
++	};
++
++	cpu7_opp_table: opp-table-cpu7 {
++		compatible = "operating-points-v2";
++		opp-shared;
++
++		opp-480000000 {
++			opp-hz = /bits/ 64 <480000000>;
++			opp-peak-kBps = <(364800 * 32)>;
++		};
++
++		opp-633600000 {
++			opp-hz = /bits/ 64 <633600000>;
++			opp-peak-kBps = <(518400 * 32)>;
++		};
++
++		opp-787200000 {
++			opp-hz = /bits/ 64 <787200000>;
++			opp-peak-kBps = <(806400 * 32)>;
++		};
++
++		opp-864000000 {
++			opp-hz = /bits/ 64 <864000000>;
++			opp-peak-kBps = <(806400 * 32)>;
++		};
++
++		opp-960000000 {
++			opp-hz = /bits/ 64 <960000000>;
++			opp-peak-kBps = <(806400 * 32)>;
++		};
++
++		opp-1094400000 {
++			opp-hz = /bits/ 64 <1094400000>;
++			opp-peak-kBps = <(998400 * 32)>;
++		};
++
++		opp-1209600000 {
++			opp-hz = /bits/ 64 <1209600000>;
++			opp-peak-kBps = <(998400 * 32)>;
++		};
++
++		opp-1324800000 {
++			opp-hz = /bits/ 64 <1324800000>;
++			opp-peak-kBps = <(998400 * 32)>;
++		};
++
++		opp-1459200000 {
++			opp-hz = /bits/ 64 <1459200000>;
++			opp-peak-kBps = <(1209600 * 32)>;
++		};
++
++		opp-1651200000 {
++			opp-hz = /bits/ 64 <1651200000>;
++			opp-peak-kBps = <(1209600 * 32)>;
++		};
++
++		opp-1766400000 {
++			opp-hz = /bits/ 64 <1766400000>;
++			opp-peak-kBps = <(1344000 * 32)>;
++		};
++
++		opp-1900800000 {
++			opp-hz = /bits/ 64 <1900800000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-2016000000 {
++			opp-hz = /bits/ 64 <2016000000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-2150400000 {
++			opp-hz = /bits/ 64 <2150400000>;
++			opp-peak-kBps = <(1497600 * 32)>;
++		};
++
++		opp-2304000000 {
++			opp-hz = /bits/ 64 <2304000000>;
++			opp-peak-kBps = <(1593600 * 32)>;
++		};
++
++		opp-2496000000 {
++			opp-hz = /bits/ 64 <2496000000>;
++			opp-peak-kBps = <(1593600 * 32)>;
++		};
++
++		opp-2630400000 {
++			opp-hz = /bits/ 64 <2630400000>;
++			opp-peak-kBps = <(1785600 * 32)>;
++		};
++
++		opp-2803200000 {
++			opp-hz = /bits/ 64 <2803200000>;
++			opp-peak-kBps = <(1785600 * 32)>;
+ 		};
+ 	};
+ 

@@ -1,0 +1,135 @@
+From: Armada <armada@armada.dev>
+Subject: [PATCH] remoteproc: qcom: add Eliza WPSS using existing PAS support
+
+Reuse sc7280_wpss_resource, as Milos does. Qualcomm's downstream Kera
+WPSS descriptor uses the same PAS ID (6), crash-reason SMEM (626),
+minidump ID (4), load-state/SSR/sysmon name (wpss), and SSCTL ID (0x19).
+The Duo Android tree votes CX and MX and uses the RPMh XO clock.
+
+Reuse the Milos WPSS and SMP2P descriptions with the Duo Android capture's
+register address (0x97000000) and watchdog SPI (200). SMP2P SMEM IDs
+617/616, remote PID 13, IPCC client 24 and signal IDs match Milos.
+The existing Eliza WPSS reserved memory also matches Android.
+
+Keep the SoC node disabled by default. The shared PAS descriptor retains
+auto_boot=false, leaving firmware startup to a consumer or an explicit
+userspace request. No WLAN transport or data path is added.
+
+Reference: OnePlusOSS/android_kernel_oneplus_sm8750,
+  oneplus/sm8750_b_16.0.0_oneplus_13, drivers/remoteproc/qcom_q6v5_pas.c,
+  kera_wpss_resource; verified against the Duo's Android FDT and boot log.
+
+--- a/drivers/remoteproc/qcom_q6v5_pas.c
++++ b/drivers/remoteproc/qcom_q6v5_pas.c
+@@ -1639,6 +1639,7 @@
+ 
+ static const struct of_device_id qcom_pas_of_match[] = {
+ 	{ .compatible = "qcom,eliza-adsp-pas", .data = &sm8550_adsp_resource },
++	{ .compatible = "qcom,eliza-wpss-pas", .data = &sc7280_wpss_resource },
+ 	{ .compatible = "qcom,milos-adsp-pas", .data = &sm8550_adsp_resource },
+ 	{ .compatible = "qcom,milos-cdsp-pas", .data = &milos_cdsp_resource },
+ 	{ .compatible = "qcom,milos-mpss-pas", .data = &sm8450_mpss_resource },
+--- a/Documentation/devicetree/bindings/remoteproc/qcom,milos-pas.yaml
++++ b/Documentation/devicetree/bindings/remoteproc/qcom,milos-pas.yaml
+@@ -17,6 +17,7 @@
+   compatible:
+     enum:
+       - qcom,eliza-adsp-pas
++      - qcom,eliza-wpss-pas
+       - qcom,milos-adsp-pas
+       - qcom,milos-cdsp-pas
+       - qcom,milos-mpss-pas
+@@ -108,6 +109,7 @@
+       properties:
+         compatible:
+           enum:
++            - qcom,eliza-wpss-pas
+             - qcom,milos-cdsp-pas
+             - qcom,milos-wpss-pas
+     then:
+--- a/arch/arm64/boot/dts/qcom/eliza.dtsi
++++ b/arch/arm64/boot/dts/qcom/eliza.dtsi
+@@ -628,6 +628,30 @@
+ 		};
+ 	};
+ 
++	smp2p-wpss {
++		compatible = "qcom,smp2p";
++		qcom,smem = <617>, <616>;
++		interrupts-extended = <&ipcc IPCC_CLIENT_WPSS
++					     IPCC_MPROC_SIGNAL_SMP2P
++					     IRQ_TYPE_EDGE_RISING>;
++		mboxes = <&ipcc IPCC_CLIENT_WPSS
++				IPCC_MPROC_SIGNAL_SMP2P>;
++
++		qcom,local-pid = <0>;
++		qcom,remote-pid = <13>;
++
++		smp2p_wpss_out: master-kernel {
++			qcom,entry-name = "master-kernel";
++			#qcom,smem-state-cells = <1>;
++		};
++
++		smp2p_wpss_in: slave-kernel {
++			qcom,entry-name = "slave-kernel";
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++	};
++
+ 	soc: soc@0 {
+ 		compatible = "simple-bus";
+ 
+@@ -2153,6 +2177,52 @@
+ 						remote-endpoint = <&mdss_dp0_out>;
+ 					};
+ 				};
++			};
++		};
++
++		remoteproc_wpss: remoteproc@97000000 {
++			compatible = "qcom,eliza-wpss-pas";
++			reg = <0x0 0x97000000 0x0 0x10000>;
++
++			interrupts-extended = <&intc GIC_SPI 200 IRQ_TYPE_EDGE_RISING>,
++					      <&smp2p_wpss_in 0 IRQ_TYPE_EDGE_RISING>,
++					      <&smp2p_wpss_in 1 IRQ_TYPE_EDGE_RISING>,
++					      <&smp2p_wpss_in 2 IRQ_TYPE_EDGE_RISING>,
++					      <&smp2p_wpss_in 3 IRQ_TYPE_EDGE_RISING>,
++					      <&smp2p_wpss_in 7 IRQ_TYPE_EDGE_RISING>;
++			interrupt-names = "wdog",
++					  "fatal",
++					  "ready",
++					  "handover",
++					  "stop-ack",
++					  "shutdown-ack";
++
++			clocks = <&rpmhcc RPMH_CXO_CLK>;
++			clock-names = "xo";
++
++			power-domains = <&rpmhpd RPMHPD_CX>,
++					<&rpmhpd RPMHPD_MX>;
++			power-domain-names = "cx",
++					     "mx";
++
++			memory-region = <&wpss_mem>;
++
++			qcom,qmp = <&aoss_qmp>;
++
++			qcom,smem-states = <&smp2p_wpss_out 0>;
++			qcom,smem-state-names = "stop";
++
++			status = "disabled";
++
++			glink-edge {
++				interrupts-extended = <&ipcc IPCC_CLIENT_WPSS
++							     IPCC_MPROC_SIGNAL_GLINK_QMP
++							     IRQ_TYPE_EDGE_RISING>;
++				mboxes = <&ipcc IPCC_CLIENT_WPSS
++						IPCC_MPROC_SIGNAL_GLINK_QMP>;
++
++				label = "wpss";
++				qcom,remote-pid = <13>;
+ 			};
+ 		};
+ 

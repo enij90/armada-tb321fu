@@ -1,0 +1,44 @@
+From: Armada <armada@armada.dev>
+Subject: [PATCH] wifi: ath12k: unwind WCN7750 probe failures
+
+Propagate PDC programming errors instead of continuing with an incomplete
+power configuration. Release the MSI DMA mapping when a later probe step
+fails, including deferred remoteproc or SMP2P lookup.
+
+---
+diff --git a/drivers/net/wireless/ath/ath12k/ahb.c b/drivers/net/wireless/ath/ath12k/ahb.c
+--- a/drivers/net/wireless/ath/ath12k/ahb.c
++++ b/drivers/net/wireless/ath/ath12k/ahb.c
+@@ -1307,7 +1307,7 @@
+ 
+ 	qmp_put(qmp);
+ 
+-	return 0;
++	return ret;
+ }
+ 
+ /* gates endpoint power save on the internal PCIe link */
+@@ -1812,11 +1812,11 @@
+ 
+ 		ret = ath12k_ahb_wcn_get_ep_power_save_state(ab);
+ 		if (ret)
+-			goto err_ce_free;
++			goto err_wcn_msi_unmap;
+ 
+ 		ret = ath12k_ahb_wcn_get_rproc(ab);
+ 		if (ret)
+-			goto err_ce_free;
++			goto err_wcn_msi_unmap;
+ 
+ 		/* before the first rproc_boot() */
+ 		ath12k_ahb_wcn_add_subdev(ab);
+@@ -1871,6 +1871,9 @@
+ err_wcn_rproc_put:
+ 	ath12k_ahb_wcn_remove_subdev(ab);
+ 	rproc_put(ab_ahb->wpss_rproc);
++
++err_wcn_msi_unmap:
++	ath12k_ahb_wcn_unmap_msi_addr(ab);
+ 
+ err_ce_free:
+ 	ath12k_ce_free_pipes(ab);

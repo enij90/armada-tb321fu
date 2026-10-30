@@ -1,0 +1,17 @@
+From: Armada <no-reply@armadaos.dev>
+Subject: [PATCH] freedreno: a7xx gen1 has no early preamble
+
+Shaders with an early preamble make HUD sprites flicker on the a7xx gen1.
+IR3_SHADER_DEBUG=noearlypreamble fixes it.
+
+Turn it off for all of a7xx gen1 (A710, A720, A722, A725, A730).
+---
+diff --git a/src/freedreno/common/freedreno_devices.py b/src/freedreno/common/freedreno_devices.py
+index fe70402..5f3b50d 100644
+--- a/src/freedreno/common/freedreno_devices.py
++++ b/src/freedreno/common/freedreno_devices.py
+@@ -839,2 +839,4 @@ a7xx_base = GPUProps(
+ a7xx_gen1 = GPUProps(
++        # Early preambles make shader output flicker on gen1.
++        has_early_preamble = False,
+         supports_uav_ubwc = True,

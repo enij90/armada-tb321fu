@@ -310,7 +310,7 @@ index c354289..cb9ad27 100644
 +   return progress;
 +}
 diff --git a/src/freedreno/ir3/ir3_nir.c b/src/freedreno/ir3/ir3_nir.c
-index 4e1961f..df8e07b 100644
+index 6e6f09e..256f7f4 100644
 --- a/src/freedreno/ir3/ir3_nir.c
 +++ b/src/freedreno/ir3/ir3_nir.c
 @@ -1058,6 +1058,9 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
@@ -336,10 +336,10 @@ index 4e9cff9..5e35cd1 100644
  nir_def *ir3_get_shared_driver_ubo(nir_builder *b,
                                     const struct ir3_driver_ubo *ubo);
 diff --git a/src/freedreno/ir3/ir3_shader.c b/src/freedreno/ir3/ir3_shader.c
-index eff9791..ef4e606 100644
+index a317656..e89fa88 100644
 --- a/src/freedreno/ir3/ir3_shader.c
 +++ b/src/freedreno/ir3/ir3_shader.c
-@@ -1391,6 +1391,12 @@ ir3_shader_get_subgroup_size(const struct ir3_compiler *compiler,
+@@ -1392,6 +1392,12 @@ ir3_shader_get_subgroup_size(const struct ir3_compiler *compiler,
     case IR3_DOUBLE_ONLY:
        *subgroup_size = *max_subgroup_size = compiler->info->threadsize_base * 2;
        break;
@@ -353,10 +353,10 @@ index eff9791..ef4e606 100644
        /* For vertex stages, we know the wavesize will never be doubled.
         * Lower subgroup_size here, to avoid having to deal with it when
 diff --git a/src/freedreno/ir3/ir3_shader.h b/src/freedreno/ir3/ir3_shader.h
-index 70bdda3..9656b52 100644
+index 87571bf..923fd03 100644
 --- a/src/freedreno/ir3/ir3_shader.h
 +++ b/src/freedreno/ir3/ir3_shader.h
-@@ -144,6 +144,8 @@ enum ir3_wavesize_option {
+@@ -145,6 +145,8 @@ enum ir3_wavesize_option {
     IR3_SINGLE_ONLY,
     IR3_SINGLE_OR_DOUBLE,
     IR3_DOUBLE_ONLY,
@@ -366,7 +366,7 @@ index 70bdda3..9656b52 100644
  
  /**
 diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.cc
-index d088eac..4cfd5ab 100644
+index 4ad2a35..fb48628 100644
 --- a/src/freedreno/vulkan/tu_device.cc
 +++ b/src/freedreno/vulkan/tu_device.cc
 @@ -211,6 +211,16 @@ tu_subgroup_size(const struct tu_physical_device *device)
@@ -410,10 +410,10 @@ index d088eac..4cfd5ab 100644
           : (VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
              VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT);
 diff --git a/src/freedreno/vulkan/tu_pipeline.cc b/src/freedreno/vulkan/tu_pipeline.cc
-index 569bf61..d314496 100644
+index d6e8361..a98bcd3 100644
 --- a/src/freedreno/vulkan/tu_pipeline.cc
 +++ b/src/freedreno/vulkan/tu_pipeline.cc
-@@ -1525,6 +1525,10 @@ tu_append_executable(struct tu_pipeline *pipeline,
+@@ -1536,6 +1536,10 @@ tu_append_executable(struct tu_pipeline *pipeline,
     struct tu_pipeline_executable exe = {
        .stage = variant->type,
        .stats = variant->info,
@@ -424,7 +424,7 @@ index 569bf61..d314496 100644
        .is_binning = variant->binning_pass,
        .nir_from_spirv = nir_from_spirv,
        .nir_final = ralloc_strdup(pipeline->executables_mem_ctx, variant->disasm_info.nir),
-@@ -5202,7 +5206,6 @@ tu_GetPipelineExecutablePropertiesKHR(
+@@ -5213,7 +5217,6 @@ tu_GetPipelineExecutablePropertiesKHR(
        uint32_t* pExecutableCount,
        VkPipelineExecutablePropertiesKHR* pProperties)
  {
@@ -432,7 +432,7 @@ index 569bf61..d314496 100644
     VK_FROM_HANDLE(tu_pipeline, pipeline, pPipelineInfo->pipeline);
     VK_OUTARRAY_MAKE_TYPED(VkPipelineExecutablePropertiesKHR, out,
                            pProperties, pExecutableCount);
-@@ -5219,8 +5222,7 @@ tu_GetPipelineExecutablePropertiesKHR(
+@@ -5230,8 +5233,7 @@ tu_GetPipelineExecutablePropertiesKHR(
  
           VK_COPY_STR(props->description, _mesa_shader_stage_to_string(stage));
  
@@ -455,10 +455,10 @@ index 31bf5c4..b3a9305 100644
  
     char *nir_from_spirv;
 diff --git a/src/freedreno/vulkan/tu_shader.cc b/src/freedreno/vulkan/tu_shader.cc
-index 5757f26..515616b 100644
+index d0fbf5f..1469fce 100644
 --- a/src/freedreno/vulkan/tu_shader.cc
 +++ b/src/freedreno/vulkan/tu_shader.cc
-@@ -4129,7 +4129,11 @@ tu_shader_key_subgroup_size(struct tu_shader_key *key,
+@@ -4201,7 +4201,11 @@ tu_shader_key_subgroup_size(struct tu_shader_key *key,
                              struct tu_device *dev)
  {
     enum ir3_wavesize_option api_wavesize, real_wavesize;

@@ -1,0 +1,35 @@
+From: Armada contributors <noreply@armada-os.org>
+Subject: [PATCH] ASoC: qcom: sc8280xp: match Pocket Duo speaker slot width
+
+The Duo AW88166 firmware configures I2SCTRL1 for 32-bit slots and a
+64-fs bit clock. The existing S16_LE backend supplies only 32-fs BCLK,
+leaving both amplifiers stuck at SYSST 0x0011 during startup.
+
+Use S32_LE on the Duo primary MI2S playback backend. The existing
+hw_params callback then supplies 3.072 MHz BCLK at 48 kHz, matching
+the amplifier configuration without changing its firmware or driver.
+Both amplifiers reach SYSST 0x0311 with this backend format. Together with
+the matching S32_LE speaker topology and q6apm playback support, speaker
+output was confirmed after a clean boot on the Duo. Headphone and capture
+formats remain unchanged.
+
+Register definitions: https://github.com/awinic-driver/aw883xx/blob/main/aw883xx_pid_2066_reg.h
+
+---
+--- a/sound/soc/qcom/sc8280xp.c
++++ b/sound/soc/qcom/sc8280xp.c
+@@ -143,7 +143,13 @@
+ 	struct snd_mask *fmt = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
+ 
+ 	rate->min = rate->max = 48000;
+-	snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S16_LE);
++	if (of_machine_is_compatible("retroidpocket,duo") &&
++	    cpu_dai->id == PRIMARY_MI2S_RX) {
++		snd_mask_none(fmt);
++		snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S32_LE);
++	} else {
++		snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S16_LE);
++	}
+ 	channels->min = 2;
+ 	channels->max = 2;
+ 	switch (cpu_dai->id) {

@@ -1,0 +1,209 @@
+From 762bc03f0c4863bad8b935e844cc570517314784 Mon Sep 17 00:00:00 2001
+From: Teguh Sobirin <teguh@sobir.in>
+Date: Wed, 9 Sep 2026 06:10:21 +0700
+Subject: [PATCH] Bluetooth: hci_qca: add WCN7750 with host-managed supplies
+
+WCN7750 is a Wi-Fi 7 combo part whose Bluetooth side is the QCC2072
+core: same TLV rampatch and NVM flow, same "orn" firmware files. Where
+it differs is power. The QCC2072 device data leaves the rails to the
+platform (num_vregs = 0); on the boards carrying WCN7750 the BT rails
+are switched by the host and vddio in particular is not always on.
+
+Backported to Armada Linux 7.2.6, retaining the existing WCN7860 support.
+
+Signed-off-by: Teguh Sobirin <teguh@sobir.in>
+
+diff --git a/drivers/bluetooth/btqca.c b/drivers/bluetooth/btqca.c
+--- a/drivers/bluetooth/btqca.c
++++ b/drivers/bluetooth/btqca.c
+@@ -923,6 +923,10 @@
+ 			snprintf(config.fwname, sizeof(config.fwname),
+ 				 "qca/gngbtfw%02x.mbn", rom_ver);
+ 			break;
++		case QCA_WCN7750:
++			snprintf(config.fwname, sizeof(config.fwname),
++				 "qca/ornbtfw%02x.tlv", rom_ver);
++			break;
+ 		default:
+ 			snprintf(config.fwname, sizeof(config.fwname),
+ 				 "qca/rampatch_%08x.bin", soc_ver);
+@@ -1021,6 +1025,10 @@
+ 			qca_get_nvm_name_by_board(config.fwname, sizeof(config.fwname),
+ 				 "gngbtnv", soc_type, ver, rom_ver, boardid);
+ 			break;
++		case QCA_WCN7750:
++			snprintf(config.fwname, sizeof(config.fwname),
++				 "qca/ornnv%02x.bin", rom_ver);
++			break;
+ 		default:
+ 			snprintf(config.fwname, sizeof(config.fwname),
+ 				 "qca/nvm_%08x.bin", soc_ver);
+@@ -1048,6 +1056,7 @@
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
+ 	case QCA_WCN7860:
++	case QCA_WCN7750:
+ 		err = qca_disable_soc_logging(hdev);
+ 		if (err < 0)
+ 			return err;
+@@ -1085,6 +1094,7 @@
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
+ 	case QCA_WCN7860:
++	case QCA_WCN7750:
+ 		/* get fw build info */
+ 		err = qca_read_fw_build_info(hdev);
+ 		if (err < 0)
+diff --git a/drivers/bluetooth/btqca.h b/drivers/bluetooth/btqca.h
+--- a/drivers/bluetooth/btqca.h
++++ b/drivers/bluetooth/btqca.h
+@@ -159,6 +159,7 @@
+ 	QCA_WCN6855,
+ 	QCA_WCN7850,
+ 	QCA_WCN7860,
++	QCA_WCN7750,
+ };
+ 
+ #if IS_ENABLED(CONFIG_BT_QCA)
+diff --git a/drivers/bluetooth/hci_qca.c b/drivers/bluetooth/hci_qca.c
+--- a/drivers/bluetooth/hci_qca.c
++++ b/drivers/bluetooth/hci_qca.c
+@@ -1383,6 +1383,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		usleep_range(1000, 10000);
+ 		break;
+@@ -1501,6 +1502,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		if (!qca_get_speed(hu, QCA_INIT_SPEED) &&
+ 		    !qca_get_speed(hu, QCA_OPER_SPEED))
+@@ -1545,6 +1547,7 @@
+ 		case QCA_WCN6750:
+ 		case QCA_WCN6855:
+ 		case QCA_WCN7850:
++		case QCA_WCN7750:
+ 		case QCA_WCN7860:
+ 			hci_uart_set_flow_control(hu, true);
+ 			break;
+@@ -1581,6 +1584,7 @@
+ 		case QCA_WCN6750:
+ 		case QCA_WCN6855:
+ 		case QCA_WCN7850:
++		case QCA_WCN7750:
+ 		case QCA_WCN7860:
+ 			hci_uart_set_flow_control(hu, false);
+ 			break;
+@@ -1898,6 +1902,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		ret = qca_regulator_init(hu);
+ 		break;
+@@ -1998,6 +2003,10 @@
+ 		soc_name = "wcn7850";
+ 		break;
+ 
++	case QCA_WCN7750:
++		soc_name = "wcn7750";
++		break;
++
+ 	case QCA_WCN7860:
+ 		soc_name = "wcn7860";
+ 		break;
+@@ -2025,6 +2034,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		if (qcadev && qcadev->bdaddr_property_broken)
+ 			hci_set_quirk(hdev, HCI_QUIRK_BDADDR_PROPERTY_BROKEN);
+@@ -2065,6 +2075,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		break;
+ 
+@@ -2281,6 +2292,23 @@
+ 			QCA_CAP_HFP_HW_OFFLOAD,
+ };
+ 
++static const struct qca_device_data qca_soc_data_wcn7750 __maybe_unused = {
++	.soc_type = QCA_WCN7750,
++	.vregs = (struct qca_vreg []) {
++		{ "vddio", 5000 },
++		{ "vddaon", 26000 },
++		{ "vdddig", 126000 },
++		{ "vddrfacmn", 12500 },
++		{ "vddrfa0p8", 102000 },
++		{ "vddrfa1p2", 257000 },
++		{ "vddrfa1p9", 302000 },
++		{ "vddrfa2p2", 1700000 },
++	},
++	.num_vregs = 8,
++	.capabilities = QCA_CAP_WIDEBAND_SPEECH | QCA_CAP_VALID_LE_STATES |
++			QCA_CAP_HFP_HW_OFFLOAD,
++};
++
+ static void qca_power_off(struct hci_uart *hu)
+ {
+ 	struct qca_serdev *qcadev;
+@@ -2491,6 +2519,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		qcadev->bt_power = devm_kzalloc(&serdev->dev,
+ 						sizeof(struct qca_power),
+@@ -2511,6 +2540,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		if (!device_property_present(&serdev->dev, "enable-gpios")) {
+ 			/*
+@@ -2554,6 +2584,7 @@
+ 		if (!qcadev->bt_en &&
+ 		    (data->soc_type == QCA_WCN6750 ||
+ 		     data->soc_type == QCA_WCN6855 ||
++		     data->soc_type == QCA_WCN7750 ||
+ 		     data->soc_type == QCA_WCN7850))
+ 			power_ctrl_enabled = false;
+ 
+@@ -2562,6 +2593,7 @@
+ 		if (IS_ERR(qcadev->sw_ctrl) &&
+ 		    (data->soc_type == QCA_WCN6750 ||
+ 		     data->soc_type == QCA_WCN6855 ||
++		     data->soc_type == QCA_WCN7750 ||
+ 		     data->soc_type == QCA_WCN7850 ||
+ 		     data->soc_type == QCA_WCN7860)) {
+ 			dev_err(&serdev->dev, "failed to acquire SW_CTRL gpio\n");
+@@ -2648,6 +2680,7 @@
+ 	case QCA_WCN6750:
+ 	case QCA_WCN6855:
+ 	case QCA_WCN7850:
++	case QCA_WCN7750:
+ 	case QCA_WCN7860:
+ 		if (power->vregs_on)
+ 			qca_power_off(&qcadev->serdev_hu);
+@@ -2852,6 +2885,7 @@
+ 	{ .compatible = "qcom,wcn6855-bt", .data = &qca_soc_data_wcn6855},
+ 	{ .compatible = "qcom,wcn7850-bt", .data = &qca_soc_data_wcn7850},
+ 	{ .compatible = "qcom,wcn7860-bt", .data = &qca_soc_data_wcn7860},
++	{ .compatible = "qcom,wcn7750-bt", .data = &qca_soc_data_wcn7750},
+ 	{ /* sentinel */ }
+ };
+ MODULE_DEVICE_TABLE(of, qca_bluetooth_of_match);

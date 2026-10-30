@@ -1,0 +1,30 @@
+From: Armada <noreply@armada>
+Subject: [PATCH] drm/msm/dpu: enable true inline rotation on Eliza
+
+Qualcomm's downstream SDE driver gives kera (SDE 12.4, Eliza) true
+inline rotator v2.0.1 on every VIG pipe. Reuse the rotation mask
+and QSEED 3.4 rot_v2 sub-block from the SM8550/SM8650/SM8750 inline
+rotation patch on Eliza's two VIG pipes.
+---
+--- a/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_12_4_eliza.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_12_4_eliza.h
+@@ -46,15 +46,15 @@
+ 	{
+ 		.name = "sspp_0", .id = SSPP_VIG0,
+ 		.base = 0x4000, .len = 0x344,
+-		.features = VIG_SDM845_MASK_SDMA,
+-		.sblk = &dpu_vig_sblk_qseed3_3_4,
++		.features = VIG_ROT_V201_MASK_SDMA,
++		.sblk = &dpu_vig_sblk_qseed3_3_4_rot_v2,
+ 		.xin_id = 0,
+ 		.type = SSPP_TYPE_VIG,
+ 	}, {
+ 		.name = "sspp_1", .id = SSPP_VIG1,
+ 		.base = 0x6000, .len = 0x344,
+-		.features = VIG_SDM845_MASK_SDMA,
+-		.sblk = &dpu_vig_sblk_qseed3_3_4,
++		.features = VIG_ROT_V201_MASK_SDMA,
++		.sblk = &dpu_vig_sblk_qseed3_3_4_rot_v2,
+ 		.xin_id = 4,
+ 		.type = SSPP_TYPE_VIG,
+ 	}, {

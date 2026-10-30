@@ -1,0 +1,22 @@
+From: Armada <armada@armada.dev>
+Subject: [PATCH] dt-bindings: ufs: allow Eliza legacy doorbell mode
+
+The Retroid Pocket Duo uses the Eliza controller with a UFS 2.2 device
+in single-doorbell mode. Its board description deliberately omits the
+MCQ register range so the existing driver falls back to that mode.
+Allow Eliza to use the common one-or-two-region constraint; keep the
+mandatory MCQ range for Nord.
+
+Reference: RetroidPocket/linux commit 314716524ae09a942064a3dd2008042b3e4b2f85.
+---
+diff --git a/Documentation/devicetree/bindings/ufs/qcom,sm8650-ufshc.yaml b/Documentation/devicetree/bindings/ufs/qcom,sm8650-ufshc.yaml
+--- a/Documentation/devicetree/bindings/ufs/qcom,sm8650-ufshc.yaml
++++ b/Documentation/devicetree/bindings/ufs/qcom,sm8650-ufshc.yaml
+@@ -77,7 +77,6 @@
+         compatible:
+           contains:
+             enum:
+-              - qcom,eliza-ufshc
+               - qcom,nord-ufshc
+     then:
+       properties:

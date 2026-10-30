@@ -1,0 +1,186 @@
+From 814e706988b98ca39714133980021b39ae3f7403 Mon Sep 17 00:00:00 2001
+From: Teguh Sobirin <teguh@sobir.in>
+Date: Tue, 8 Sep 2026 22:37:27 +0000
+Subject: [PATCH] wifi: ath12k: send ddr_range and gpio_info in host_cap
+
+Two host_cap TLVs the WPSS-hosted firmware depends on, as sent by
+downstream icnss2:
+
+ddr_range names the IOVA window the DMA allocator is confined to and
+the fixed MSA carveout, so the Q6 can open the path its companion die
+masters through.
+
+gpio_info carries the TLMM numbers of the WLAN_EN, SOL and SW_CTRL
+lines. The Q6 registers its GPIO interrupt for the companion die's
+device-SOL from this table; without it the interrupt ended up on a line
+that unrelated bus traffic toggled, and every I2C transaction on QUP2
+SE0 produced a "RISC-V watchdog bite" from the firmware.
+
+Signed-off-by: Teguh Sobirin <teguh@sobir.in>
+
+Backport to Armada Linux 7.2.6; retain existing WCN7860 and QDSS support. Use the 7.2 host-capability layout without dynamic_mem.
+Source: https://github.com/RetroidPocket/linux/commit/814e706988b98ca39714133980021b39ae3f7403
+---
+diff --git a/drivers/net/wireless/ath/ath12k/core.h b/drivers/net/wireless/ath/ath12k/core.h
+--- a/drivers/net/wireless/ath/ath12k/core.h
++++ b/drivers/net/wireless/ath/ath12k/core.h
+@@ -1060,6 +1060,12 @@
+ 	/* keeps ab->mem stable across recovery */
+ 	u64 hybrid_bar_pa;
+ 
++	/* host_cap ddr_range: IOVA window and MSA carveout */
++	u64 host_ddr_iova_start;
++	u64 host_ddr_iova_size;
++	u64 host_ddr_msa_start;
++	u64 host_ddr_msa_size;
++
+ 	struct napi_struct *napi;
+ 	struct ath12k_wmi_target_cap_arg target_caps;
+ 	u32 ext_service_bitmap[WMI_SERVICE_EXT_BM_SIZE];
+diff --git a/drivers/net/wireless/ath/ath12k/qmi.c b/drivers/net/wireless/ath/ath12k/qmi.c
+--- a/drivers/net/wireless/ath/ath12k/qmi.c
++++ b/drivers/net/wireless/ath/ath12k/qmi.c
+@@ -65,6 +65,32 @@
+ 	},
+ };
+ 
++static const struct qmi_elem_info qmi_wlanfw_host_ddr_range_ei[] = {
++	{
++		.data_type	= QMI_UNSIGNED_8_BYTE,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u64),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0,
++		.offset		= offsetof(struct qmi_wlanfw_host_ddr_range,
++					   start),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_8_BYTE,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u64),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0,
++		.offset		= offsetof(struct qmi_wlanfw_host_ddr_range,
++					   size),
++	},
++	{
++		.data_type	= QMI_EOTI,
++		.array_type	= NO_ARRAY,
++		.tlv_type	= QMI_COMMON_TLV_TYPE,
++	},
++};
++
+ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
+ 	{
+ 		.data_type	= QMI_OPT_FLAG,
+@@ -362,6 +388,7 @@
+ 		.tlv_type	= 0x1F,
+ 		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+ 					   ddr_range),
++		.ei_array	= qmi_wlanfw_host_ddr_range_ei,
+ 	},
+ 	{
+ 		.data_type	= QMI_OPT_FLAG,
+@@ -507,6 +534,33 @@
+ 		.tlv_type	= 0x27,
+ 		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+ 					   feature_list),
++	},
++	{
++		.data_type	= QMI_OPT_FLAG,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u8),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x2D,
++		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
++					   gpio_info_valid),
++	},
++	{
++		.data_type	= QMI_DATA_LEN,
++		.elem_len	= 1,
++		.elem_size	= sizeof(u8),
++		.array_type	= NO_ARRAY,
++		.tlv_type	= 0x2D,
++		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
++					   gpio_info_len),
++	},
++	{
++		.data_type	= QMI_UNSIGNED_4_BYTE,
++		.elem_len	= QMI_WLFW_MAX_NUM_GPIO_INFO_V01,
++		.elem_size	= sizeof(u32),
++		.array_type	= VAR_LEN_ARRAY,
++		.tlv_type	= 0x2D,
++		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
++					   gpio_info),
+ 	},
+ 	{
+ 		.data_type	= QMI_EOTI,
+@@ -2392,6 +2446,21 @@
+ 	req.cal_done_valid = 1;
+ 	req.cal_done = ab->qmi.cal_done;
+ 
++	/* icnss2 ddr_range: the IOVA window and the MSA carveout the companion
++	 * die masters through
++	 */
++	if (ab->host_ddr_iova_size && ab->host_ddr_msa_size) {
++		req.ddr_range_valid = 1;
++		req.ddr_range[0].start = ab->host_ddr_iova_start;
++		req.ddr_range[0].size = ab->host_ddr_iova_size;
++		req.ddr_range[1].start = ab->host_ddr_msa_start;
++		req.ddr_range[1].size = ab->host_ddr_msa_size;
++		ath12k_dbg(ab, ATH12K_DBG_QMI,
++			   "qmi host cap ddr_range iova 0x%llx+0x%llx msa 0x%llx+0x%llx\n",
++			   req.ddr_range[0].start, req.ddr_range[0].size,
++			   req.ddr_range[1].start, req.ddr_range[1].size);
++	}
++
+ 	if (ab->hw_params->qmi_cnss_feature_bitmap) {
+ 		req.feature_list_valid = 1;
+ 		req.feature_list = ab->hw_params->qmi_cnss_feature_bitmap;
+@@ -2418,6 +2487,20 @@
+ 	ret = ath12k_host_cap_parse_mlo(ab, &req);
+ 	if (ret < 0)
+ 		goto out;
++
++	/* icnss2 gpio_info: the Q6 registers its GPIO ISRs from this table */
++	if (ab->hybrid_bus) {
++		int n;
++
++		n = of_property_read_variable_u32_array(ab->dev->of_node,
++							"qcom,gpio-info",
++							req.gpio_info, 1,
++							QMI_WLFW_MAX_NUM_GPIO_INFO_V01);
++		if (n > 0) {
++			req.gpio_info_valid = 1;
++			req.gpio_info_len = n;
++		}
++	}
+ 
+ 	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+ 			   qmi_wlanfw_host_cap_resp_msg_v01_ei, &resp);
+diff --git a/drivers/net/wireless/ath/ath12k/qmi.h b/drivers/net/wireless/ath/ath12k/qmi.h
+--- a/drivers/net/wireless/ath/ath12k/qmi.h
++++ b/drivers/net/wireless/ath/ath12k/qmi.h
+@@ -158,10 +158,11 @@
+ 	struct dev_mem_info dev_mem[ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01];
+ };
+ 
+-#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		261
++#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		403
+ #define QMI_WLANFW_HOST_CAP_REQ_V01			0x0034
+ #define QMI_WLANFW_HOST_CAP_RESP_MSG_V01_MAX_LEN	7
+ #define QMI_WLFW_HOST_CAP_RESP_V01			0x0034
++#define QMI_WLFW_MAX_NUM_GPIO_INFO_V01			20
+ #define QMI_WLFW_MAX_NUM_GPIO_V01			32
+ #define QMI_WLANFW_MAX_PLATFORM_NAME_LEN_V01		64
+ #define QMI_WLANFW_MAX_HOST_DDR_RANGE_SIZE_V01		3
+@@ -259,6 +260,9 @@
+ 	u8 feature_list_valid;
+ 	u64 feature_list;
+ 
++	u8 gpio_info_valid;
++	u32 gpio_info_len;
++	u32 gpio_info[QMI_WLFW_MAX_NUM_GPIO_INFO_V01];
+ };
+ 
+ struct qmi_wlanfw_host_cap_resp_msg_v01 {

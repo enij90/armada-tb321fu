@@ -1,5 +1,5 @@
 #!/bin/bash
-# Post-BIB: stage the OpenABL flashing kit and compress.
+# Post-BIB: stage the OpenABL flashing kit and EFI boot files, and compress.
 
 set -euxo pipefail
 
@@ -16,7 +16,7 @@ if [[ ! -f "${RAW_IMAGE}" ]]; then
 fi
 
 WORK=$(mktemp -d)
-trap "sudo umount '${WORK}/mnt' 2>/dev/null || true; sudo losetup -d \"\$(cat ${WORK}/loop 2>/dev/null)\" 2>/dev/null || true; rm -rf '${WORK}'" EXIT
+trap "sudo umount '${WORK}/mnt' '${WORK}/boot' '${WORK}/root' 2>/dev/null || true; sudo losetup -d \"\$(cat ${WORK}/loop 2>/dev/null)\" 2>/dev/null || true; rm -rf '${WORK}'" EXIT
 
 ABL_SRC="${WORK}/abl"
 container=$(sudo podman create "${ARMADA_IMAGE}")
@@ -43,20 +43,33 @@ fi
 mkdir -p "${WORK}/mnt"
 sudo mount "${ESP}" "${WORK}/mnt"
 
+mkdir -p "${WORK}/boot" "${WORK}/root"
+sudo mount -o ro "${LOOP}p2" "${WORK}/boot"
+sudo mount -o ro,subvol=root "${LOOP}p3" "${WORK}/root"
+deploy=$(sudo find "${WORK}/root/ostree/deploy/default/deploy" -mindepth 1 -maxdepth 1 -type d | head -1)
+usr=${deploy}/usr
+sudo test -s "${WORK}/mnt/KERNEL"
+sudo env ESP="${WORK}/mnt" BOOTROOT="${WORK}/boot" SYSROOT="${WORK}/root" \
+    ARGS_FILE="${usr}/lib/armada/bootimg-args" \
+    "${usr}/libexec/armada/armada-efi-update"
+sudo test -s "${WORK}/mnt/EFI/BOOT/BOOTAA64.EFI"
+
 sudo mkdir -p "${WORK}/mnt/openabl"
 # One image serves all devices, so stage a self-contained folder per SoC.
 # vfat has no Unix ownership, so `cp -a` would error on chown under set -e.
 sudo cp "${ABL_KIT}/README" "${WORK}/mnt/openabl/README"
-for soc in SM8250 SM8550 SM8650 SM8750; do
-    approved_hash=$(manifest_get "ARMADA_ABL_SHA256_${soc}")
-    payload="${ABL_SRC}/abl_signed-${soc}.elf"
+for soc in SM7750 SM8250 SM8550 SM8650 SM8750; do
+    payload_soc=${soc}
+    [[ "${soc}" != SM7750 ]] || payload_soc=SM8750
+    approved_hash=$(manifest_get "ARMADA_ABL_SHA256_${payload_soc}")
+    payload="${ABL_SRC}/abl_signed-${payload_soc}.elf"
     [[ -n "${approved_hash}" && $(sha256sum "${payload}" | cut -d ' ' -f 1) == "${approved_hash}" ]] || {
         echo "ERROR: ${soc} payload does not match the ${ARMADA_ABL_NAME} ${ARMADA_ABL_VERSION} manifest" >&2
         exit 1
     }
     d="${WORK}/mnt/openabl/${soc}"
     sudo mkdir -p "$d"
-    sudo cp "${payload}" "$d/"
+    sudo cp "${payload}" "$d/abl_signed-${soc}.elf"
     printf '%s  abl_signed-%s.elf\n' "${approved_hash}" "${soc}" \
         | sudo tee "$d/abl_signed-${soc}.elf.sha256" >/dev/null
     for s in flash_abl backup_abl restore_backup_abl; do
@@ -66,10 +79,8 @@ for soc in SM8250 SM8550 SM8650 SM8750; do
     sudo chmod 0755 "$d"/*.sh
 done
 
-# Disable GRUB so ABL falls through to /KERNEL.
-if [ -d "${WORK}/mnt/EFI" ]; then sudo mv "${WORK}/mnt/EFI" "${WORK}/mnt/EFI.disabled"; fi
 sudo sync
-sudo umount "${WORK}/mnt"
+sudo umount "${WORK}/mnt" "${WORK}/boot" "${WORK}/root"
 
 # Android shows this label when copying the ABL
 sudo fatlabel "${ESP}" ARMADA

@@ -1,0 +1,46 @@
+From: Armada <noreply@armada>
+Subject: [PATCH] steamcompmgr: make the blank overlay placeholder optional
+
+The DRM backend paints a blank layer in the hidden Steam overlay's slot so
+showing the overlay does not add a plane. On the Retroid Pocket Duo that
+pins one of its two rotatable planes, so a game with an external overlay
+never scans out. GAMESCOPE_NO_BLANK_OVERLAY_LAYER=1 skips the placeholder.
+---
+diff --git a/src/steamcompmgr.cpp b/src/steamcompmgr.cpp
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -3140,6 +3140,16 @@ gamescope::ConVar<bool> cv_paint_external_overlay_plane{ "paint_external_overlay
+ gamescope::ConVar<bool> cv_paint_cursor_plane{ "paint_cursor_plane", true };
+ gamescope::ConVar<bool> cv_paint_mura_plane{ "paint_mura_plane", true };
+ 
++// The DRM backend fills the hidden Steam overlay's slot with a blank layer so
++// showing the overlay does not add a plane, which stutters on some hardware.
++// GAMESCOPE_NO_BLANK_OVERLAY_LAYER=1 frees that plane for devices with too few
++// to fit the app and an external overlay alongside it.
++static bool PaintBlankOverlayPlaceholder()
++{
++	static const bool s_bPaint = !env_to_bool( getenv( "GAMESCOPE_NO_BLANK_OVERLAY_LAYER" ) );
++	return s_bPaint;
++}
++
+ static void
+ paint_all( global_focus_t *pFocus, bool async, bool bRepeatFrame )
+ {
+@@ -3318,7 +3328,7 @@ paint_all( global_focus_t *pFocus, bool async, bool bRepeatFrame )
+ 		nReservedLayers++;
+ 	if ( cv_paint_steam_overlay_plane &&
+ 		 ( ( overlay && overlay->opacity ) ||
+-		   ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() ) ) )
++		   ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() && PaintBlankOverlayPlaceholder() ) ) )
+ 		nReservedLayers++;
+ 	if ( notification && notification->opacity )
+ 		nReservedLayers++;
+@@ -3376,7 +3386,7 @@ paint_all( global_focus_t *pFocus, bool async, bool bRepeatFrame )
+ 			if ( overlay == pFocus->inputFocusWindow && pFocus == GetCurrentMouseFocus() )
+ 				update_touch_scaling( &frameInfo );
+ 		}
+-		else if ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() )
++		else if ( !GetBackend()->UsesVulkanSwapchain() && GetBackend()->IsSessionBased() && PaintBlankOverlayPlaceholder() )
+ 		{
+ 			auto tex = vulkan_get_hacky_blank_texture();
+ 			if ( tex != nullptr && frameInfo.layers.count() < k_nMaxLayers )
