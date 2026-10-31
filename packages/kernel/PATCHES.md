@@ -951,6 +951,10 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: armada
   upstream: candidate (bug from e8ba8a2bc4f6, still in mainline)
   notes: rtc_timer_do_work() returned without pm_relax() when __rtc_read_time() failed. On the TB321FU rtc0 is rtc-efi, whose GetTime fails with EIO; the first NTP write to rtc0 (RTC_SYSTOHC, chrony rtcsync) left "rtc-efi.0" active forever, so reads of /sys/power/wakeup_count blocked and Plasma's power button and idle suspend waited 25 s for the powerdevil helper timeout.
+- `patches/0844-soc-qcom-pmic-glink-run-the-altmode-and-ucsi-work-after-resume.patch`
+  source: https://lore.kernel.org/all/20250110-soc-qcom-pmic-glink-fix-device-access-on-worker-while-suspended-v1-1-e32fd6bf322e@linaro.org/
+  upstream: proposed (Abel Vesa, pmic_glink_altmode only; not merged)
+  notes: Plugging a charger during s2idle reset the TB321FU: GLINK messages arrive with devices suspended (IRQF_NO_SUSPEND) and the altmode and UCSI works on system_wq reconfigured the Type-C switch, mux, data lanes (0841) and PHYs. Both works now go to system_freezable_wq. With pm_test, freezer survived and devices/platform reset. Tested: no reset, the tablet stays asleep and charges, G9 fine after resume. A UCSI change notified during suspend is not replayed on resume; ucsi_resume() from the driver resume hook hung the tablet.
 
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
