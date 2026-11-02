@@ -128,6 +128,18 @@ test -s "${esp}/EFI/BOOT/BOOTAA64.EFI"
 test -s "${esp}/loader/entries/armada-ostree-2.conf"
 cmp "${bootdir}/vmlinuz" "${esp}/ostree/default-test/vmlinuz"
 
+# A deployment ostree dropped leaves the ESP before the copy, even one that
+# then fails, and no entry is left pointing at it.
+rm -r "${old_bootdir}" "${boot}/loader/entries/ostree-1.conf"
+printf '#!/bin/sh\nprintf "Avail\\n1\\n"\n' > "${work}/bin/df"
+chmod +x "${work}/bin/df"
+if run 2> "${work}/error"; then exit 1; fi
+rm "${work}/bin/df"
+test ! -e "${esp}/ostree/default-old"
+if grep -rqF default-old "${esp}/loader/entries"; then exit 1; fi
+cmp "${bootdir}/vmlinuz" "${esp}/ostree/default-test/vmlinuz"
+test -s "${esp}/loader/entries/armada-ostree-2.conf"
+
 # A broken default entry fails before touching the ESP.
 rm "${bootdir}/initramfs"
 if run 2> "${work}/error"; then exit 1; fi

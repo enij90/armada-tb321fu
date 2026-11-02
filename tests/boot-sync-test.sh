@@ -27,8 +27,8 @@ touch "${TRACE}.rolled-back"
 EOF
 chmod +x "${BOOTC}"
 
-"${UPDATE}" --snapshot-prev
-printf 'bootimg --snapshot-prev\nefi \n' > "${work}/expected"
+"${UPDATE}"
+printf 'bootimg \nefi \n' > "${work}/expected"
 cmp "${work}/expected" "${TRACE}"
 
 for failed in bootimg efi; do

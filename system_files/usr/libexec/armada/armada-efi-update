@@ -83,6 +83,17 @@ done
 # lists the highest first, so the glob never needs rewriting.
 printf 'timeout 3\neditor no\ndefault armada-*\n' > "${work}/loader.conf"
 
+# Make room before copying. Entries go first so the menu never lists a missing kernel.
+stale=()
+for dir in "${ESP}/ostree"/*; do
+    [ ! -e "${dir}" ] || [ -e "${BOOTROOT}/ostree/${dir##*/}" ] || stale+=("${dir}")
+done
+for dir in "${stale[@]}"; do
+    { grep -ls "^linux /ostree/${dir##*/}/" "${ESP}/loader/entries"/armada-*.conf || true; } | xargs -r rm -f
+done
+sync
+rm -rf "${stale[@]}"
+
 sources=() targets=()
 needed=$((4 * 1024 * 1024))
 cluster=$(stat -f -c %S "${ESP}")
@@ -124,9 +135,6 @@ done
 rm -f "${ESP}/EFI/BOOT/fbaa64.efi" "${ESP}/EFI/BOOT/BOOTAA64.CSV" \
     "${ESP}/EFI/BOOT/grub.cfg" "${ESP}/EFI/BOOT/grubaa64.efi"
 rm -rf "${ESP}/EFI/fedora" "${ESP}/EFI.disabled"
-for file in "${ESP}/ostree"/*; do
-    [ ! -e "${file}" ] || [ -e "${BOOTROOT}/ostree/${file##*/}" ] || rm -rf "${file}"
-done
 for file in "${ESP}/loader/entries"/armada-*.conf; do
     [ ! -e "${file}" ] || [ -e "${work}/entries/${file##*/}" ] || rm -f "${file}"
 done
