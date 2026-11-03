@@ -66,26 +66,22 @@ It is not supported by the Armada project: please report problems here, not upst
 
 This update:
 
-- **Gyro:** it now comes through InputPlumber's own support for the Qualcomm sensor hub,
-  like on the other Armada handhelds, instead of a separate bridge service. It keeps
-  working after sleep, and the sensor hub still sleeps with the tablet.
-- **Bluetooth:** the device search now runs for 120 seconds instead of 20, so the devices
-  it finds stay in Steam's list long enough to pick one.
-- **USB-C:** a charger no longer takes the tablet's USB data connection: with a charger on
-  one port, a device on the other one (the Legion G9, a hub, a dock…) works, also when the
-  tablet starts with the charger plugged in. The ports follow the same rule as on Android.
-- **Sound on a TV or monitor over USB-C:** it's back. Before, the display often stayed
-  silent every other time it was plugged in: the tablet now stops the sound before
-  turning off the video signal, as Android does.
-- **Waydroid:** Google sign-in and app downloads work again. The current Waydroid image
-  declares a video codec service it doesn't include, which left Android without its
-  storage; the tablet now hides that entry until Waydroid fixes the image.
-- **Armada updates up to October 28.**
+- **Microphones:** they no longer stay silent after some boots. On a fresh install, or
+  whenever the saved sound settings were missing, every recording was silent until a
+  setting was changed by hand. Recordings now have sound on both channels.
+- **Charger during sleep:** plugging in a charger while the tablet sleeps no longer resets
+  it.
+- **Desktop Mode:** Steam's icon is back in the system tray, and plugging or unplugging a
+  display no longer makes Steam crash.
+- **Graphics:** Mesa 26.2.6, with Armada's Turnip fixes.
+- **Decky Loader** now runs natively on arm64.
+- **Quiver Launcher** is available in Armada's app store.
+- **Armada updates up to November 3.**
 
-Previous update (October 26): speakers no longer lose the first half second of a sound,
-both vibration motors work on every tablet, and the G9's back buttons work as L4, R4, L5
-and R5 with the custom firmware. Older changes are listed in the
-[releases](https://github.com/enij90/armada-tb321fu/releases).
+Previous update (October 28): the gyro goes through InputPlumber, the Bluetooth search
+lasts 120 seconds, a charger no longer takes the other USB-C port's data connection, sound
+on a TV over USB-C is back, and Waydroid's Google sign-in works again. Older changes are
+listed in the [releases](https://github.com/enij90/armada-tb321fu/releases).
 
 ## Known issues
 
