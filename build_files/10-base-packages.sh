@@ -50,15 +50,6 @@ pkgs=(
     python-unversioned-command
     python3-gobject
     python3-websocket-client
-    # Decky Loader runs natively (TB321FU): its Python dependencies
-    python3-aiohttp
-    python3-aiohttp-cors
-    python3-certifi
-    python3-jinja2
-    python3-multidict
-    python3-packaging
-    python3-setproctitle
-    python3-watchdog
     rsync
     tailscale
     unzip
