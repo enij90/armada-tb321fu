@@ -978,6 +978,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: mode_valid used the wide-bus-halved pixel clock for the link bandwidth check, so modes needing up to twice the link were accepted (2560x1440@120 / 3840x1600@60 over a 2-lane HBR2 hub: no picture or shaking, no audio). Bandwidth now uses the mode clock (halved only for YUV 420). Verified on the TB321FU.
 
+- `patches/0847-drm-bridge-connector-modeset-on-colorspace-or-hdr-metadata-change.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Companion of 0845. The bridge atomic_check only runs once a modeset is already needed, so toggling HDR in gamescope changed Colorspace and HDR_OUTPUT_METADATA without re-enabling the bridge: PQ pixels but no HDR InfoFrame, washed out colours and the monitor stayed in SDR (testers, three monitors). The bridge connector now flags a modeset when either changes, as the HDMI state helper does.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local

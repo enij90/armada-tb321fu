@@ -1,0 +1,55 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/bridge-connector: modeset on colorspace or HDR metadata change
+
+A DP bridge sends colorimetry and HDR metadata with the stream (VSC SDP,
+HDR InfoFrame SDP), programmed when the bridges are enabled. The bridge
+atomic_check only runs once a modeset is already needed, so it cannot
+ask for one, and the HDMI helper that does is not used for DP. Toggling
+HDR from userspace then changed the pixel encoding but never sent the
+InfoFrame, and the sink stayed in SDR with washed out colours.
+
+Flag a modeset from the connector atomic_check when either changes.
+
+---
+--- a/drivers/gpu/drm/display/drm_bridge_connector.c
++++ b/drivers/gpu/drm/display/drm_bridge_connector.c
+@@ -10,6 +10,7 @@
+ #include <linux/property.h>
+ #include <linux/slab.h>
+ 
++#include <drm/drm_atomic.h>
+ #include <drm/drm_atomic_state_helper.h>
+ #include <drm/drm_bridge.h>
+ #include <drm/drm_bridge_connector.h>
+@@ -376,9 +377,31 @@
+ 	struct drm_bridge_connector *bridge_connector =
+ 		to_drm_bridge_connector(connector);
+ 
++	struct drm_connector_state *old_state, *new_state;
++	struct drm_crtc_state *crtc_state;
++
+ 	if (bridge_connector->bridge_hdmi)
+ 		return drm_atomic_helper_connector_hdmi_check(connector, state);
+ 
++	/*
++	 * Colorimetry and HDR metadata go out with the stream (VSC SDP, HDR
++	 * InfoFrame SDP), so a change in either needs the bridges re-enabled.
++	 */
++	old_state = drm_atomic_get_old_connector_state(state, connector);
++	new_state = drm_atomic_get_new_connector_state(state, connector);
++	if (!old_state || !new_state || !new_state->crtc)
++		return 0;
++
++	if (old_state->colorspace == new_state->colorspace &&
++	    drm_connector_atomic_hdr_metadata_equal(old_state, new_state))
++		return 0;
++
++	crtc_state = drm_atomic_get_crtc_state(state, new_state->crtc);
++	if (IS_ERR(crtc_state))
++		return PTR_ERR(crtc_state);
++
++	crtc_state->mode_changed = true;
++
+ 	return 0;
+ }
+ 
