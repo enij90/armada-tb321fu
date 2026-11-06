@@ -1,0 +1,400 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: HDR output metadata and BT.2020 colorimetry
+
+The DP connector had neither HDR_OUTPUT_METADATA nor Colorspace, so a
+compositor could not switch an external monitor to HDR: gamescope offers
+the toggle, but the sink never gets the HDR InfoFrame and stays in SDR.
+
+Attach both properties to the external DP connector (not eDP). With
+metadata set, pack it as an HDR Metadata InfoFrame SDP (CTA-861 DRM
+InfoFrame without checksum, DP 1.4a) and send it on generic SDP slot 2.
+Slot 0 carries the VSC SDP, now also used for RGB with BT.2020
+colorimetry when the sink supports VSC. Both are programmed with the
+stream, so a change of either takes a modeset (atomic_check); metadata
+the sink's EDID does not accept is rejected there.
+
+A reduced port to 7.2 of the DP part of Xilin Wu's "drm/msm/dp: Add static
+HDR support for DP and eDP" v2 (freedreno, October 2026): same packing,
+same Generic2 registers, without its eDP, PSR, video-test, max bpc and
+link-state rework. Output depth stays the EDID/bandwidth choice.
+
+---
+--- a/drivers/gpu/drm/msm/dp/dp_ctrl.c
++++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+@@ -2560,6 +2560,7 @@
+ 	phy = ctrl->phy;
+ 
+ 	msm_dp_panel_disable_vsc_sdp(ctrl->panel);
++	msm_dp_panel_disable_hdr_sdp(ctrl->panel);
+ 
+ 	/* set dongle to D3 (power off) mode */
+ 	msm_dp_link_psm_config(ctrl->link, &ctrl->panel->link_info, true);
+@@ -2590,6 +2591,7 @@
+ 	phy = ctrl->phy;
+ 
+ 	msm_dp_panel_disable_vsc_sdp(ctrl->panel);
++	msm_dp_panel_disable_hdr_sdp(ctrl->panel);
+ 
+ 	msm_dp_ctrl_mainlink_disable(ctrl);
+ 
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -14,6 +14,7 @@
+ #include <linux/string_choices.h>
+ #include <drm/display/drm_dp_aux_bus.h>
+ #include <drm/display/drm_hdmi_audio_helper.h>
++#include <drm/drm_atomic.h>
+ #include <drm/drm_edid.h>
+ 
+ #include "msm_drv.h"
+@@ -27,6 +28,7 @@
+ #include "dp_drm.h"
+ #include "dp_audio.h"
+ #include "dp_debug.h"
++#include "dp_utils.h"
+ 
+ static bool psr_enabled = false;
+ module_param(psr_enabled, bool, 0);
+@@ -1348,6 +1350,35 @@
+ 	return 0;
+ }
+ 
++/* HDR metadata and colorimetry of the connector, for msm_dp_panel_timing_cfg() */
++static void msm_dp_display_set_hdr(struct msm_dp_display_private *dp,
++				   struct drm_bridge *bridge,
++				   struct drm_atomic_commit *state)
++{
++	struct msm_dp_panel *panel = dp->panel;
++	struct drm_connector_state *conn_state;
++	struct drm_connector *connector;
++
++	panel->hdr_enabled = false;
++	panel->bt2020 = false;
++	if (dp->msm_dp_display.is_edp)
++		return;
++
++	connector = drm_atomic_get_new_connector_for_encoder(state, bridge->encoder);
++	if (!connector)
++		return;
++	conn_state = drm_atomic_get_new_connector_state(state, connector);
++	if (!conn_state)
++		return;
++
++	panel->bt2020 = conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
++	if (!msm_dp_utils_pack_hdr_sdp(conn_state, &panel->hdr_sdp))
++		panel->hdr_enabled = !!conn_state->hdr_output_metadata;
++
++	drm_dbg_dp(dp->drm_dev, "hdr=%d bt2020=%d bpp=%u\n", panel->hdr_enabled,
++		   panel->bt2020, dp->msm_dp_mode.bpp);
++}
++
+ void msm_dp_bridge_atomic_enable(struct drm_bridge *drm_bridge,
+ 				 struct drm_atomic_commit *state)
+ {
+@@ -1374,6 +1405,8 @@
+ 	if (msm_dp_display->link->sink_count == 0)
+ 		return;
+ 
++	msm_dp_display_set_hdr(msm_dp_display, drm_bridge, state);
++
+ 	rc = msm_dp_display_set_mode(dp, &msm_dp_display->msm_dp_mode);
+ 	if (rc) {
+ 		DRM_ERROR("Failed to perform a mode set, rc=%d\n", rc);
+--- a/drivers/gpu/drm/msm/dp/dp_drm.c
++++ b/drivers/gpu/drm/msm/dp/dp_drm.c
+@@ -7,6 +7,7 @@
+ #include <drm/drm_atomic_helper.h>
+ #include <drm/drm_atomic.h>
+ #include <drm/drm_bridge.h>
++#include <drm/drm_atomic.h>
+ #include <drm/drm_bridge_connector.h>
+ #include <drm/drm_crtc.h>
+ 
+@@ -14,6 +15,7 @@
+ #include "msm_kms.h"
+ #include "dp_audio.h"
+ #include "dp_drm.h"
++#include "dp_utils.h"
+ 
+ /**
+  * msm_dp_bridge_get_modes - callback to add drm modes via drm_mode_probed_add()
+@@ -49,10 +51,40 @@
+ 	msm_dp_display_debugfs_init(dp, root, false);
+ }
+ 
++/*
++ * HDR metadata and colorimetry go out with the stream (HDR InfoFrame SDP,
++ * VSC SDP), so a change in either takes a modeset.
++ */
++static int msm_dp_bridge_atomic_check(struct drm_bridge *drm_bridge,
++					  struct drm_bridge_state *bridge_state,
++					  struct drm_crtc_state *crtc_state,
++					  struct drm_connector_state *conn_state)
++{
++	struct drm_connector_state *old_state;
++	struct dp_sdp sdp;
++	int ret;
++
++	if (!conn_state)
++		return 0;
++
++	ret = msm_dp_utils_pack_hdr_sdp(conn_state, &sdp);
++	if (ret)
++		return ret;
++
++	old_state = drm_atomic_get_old_connector_state(conn_state->state,
++							   conn_state->connector);
++	if (old_state && (old_state->colorspace != conn_state->colorspace ||
++			  !drm_connector_atomic_hdr_metadata_equal(old_state, conn_state)))
++		crtc_state->mode_changed = true;
++
++	return 0;
++}
++
+ static const struct drm_bridge_funcs msm_dp_bridge_ops = {
+ 	.atomic_duplicate_state = drm_atomic_helper_bridge_duplicate_state,
+ 	.atomic_destroy_state   = drm_atomic_helper_bridge_destroy_state,
+ 	.atomic_reset           = drm_atomic_helper_bridge_reset,
++	.atomic_check           = msm_dp_bridge_atomic_check,
+ 	.atomic_enable          = msm_dp_bridge_atomic_enable,
+ 	.atomic_disable         = msm_dp_bridge_atomic_disable,
+ 	.atomic_post_disable    = msm_dp_bridge_atomic_post_disable,
+@@ -322,8 +354,13 @@
+ 	if (IS_ERR(connector))
+ 		return connector;
+ 
+-	if (!msm_dp_display->is_edp)
++	if (!msm_dp_display->is_edp) {
+ 		drm_connector_attach_dp_subconnector_property(connector);
++		drm_connector_attach_hdr_output_metadata_property(connector);
++		if (!drm_mode_create_dp_colorspace_property(connector,
++								BIT(DRM_MODE_COLORIMETRY_BT2020_RGB)))
++			drm_connector_attach_colorspace_property(connector);
++	}
+ 
+ 	return connector;
+ }
+--- a/drivers/gpu/drm/msm/dp/dp_panel.c
++++ b/drivers/gpu/drm/msm/dp/dp_panel.c
+@@ -569,6 +569,77 @@
+ 	msm_dp_panel_update_sdp(panel);
+ }
+ 
++static void msm_dp_panel_enable_hdr_sdp(struct msm_dp_panel_private *panel)
++{
++	struct dp_sdp *sdp = &panel->msm_dp_panel.hdr_sdp;
++	u32 header[2], cfg, val;
++	int i;
++
++	msm_dp_utils_pack_sdp_header(&sdp->sdp_header, header);
++	msm_dp_write_link(panel, MMSS_DP_GENERIC2_0, header[0]);
++	msm_dp_write_link(panel, MMSS_DP_GENERIC2_0 + 4, header[1]);
++	for (i = 0; i < sizeof(sdp->db); i += 4) {
++		val = sdp->db[i] | (sdp->db[i + 1] << 8) | (sdp->db[i + 2] << 16) |
++			  (sdp->db[i + 3] << 24);
++		msm_dp_write_link(panel, MMSS_DP_GENERIC2_0 + 8 + i, val);
++	}
++
++	cfg = msm_dp_read_link(panel, MMSS_DP_SDP_CFG2);
++	msm_dp_write_link(panel, MMSS_DP_SDP_CFG2, cfg | GENERIC2_SDPSIZE_VALID);
++	cfg = msm_dp_read_link(panel, MMSS_DP_SDP_CFG);
++	msm_dp_write_link(panel, MMSS_DP_SDP_CFG, cfg | GEN2_SDP_EN);
++
++	drm_dbg_dp(panel->drm_dev, "hdr sdp enable=1 eotf=%u\n", sdp->db[2]);
++
++	msm_dp_panel_update_sdp(panel);
++}
++
++void msm_dp_panel_disable_hdr_sdp(struct msm_dp_panel *msm_dp_panel)
++{
++	struct msm_dp_panel_private *panel;
++	u32 cfg;
++
++	panel = container_of(msm_dp_panel, struct msm_dp_panel_private, msm_dp_panel);
++
++	cfg = msm_dp_read_link(panel, MMSS_DP_SDP_CFG);
++	if (!(cfg & GEN2_SDP_EN))
++		return;
++	msm_dp_write_link(panel, MMSS_DP_SDP_CFG, cfg & ~GEN2_SDP_EN);
++	cfg = msm_dp_read_link(panel, MMSS_DP_SDP_CFG2);
++	msm_dp_write_link(panel, MMSS_DP_SDP_CFG2, cfg & ~GENERIC2_SDPSIZE_VALID);
++
++	drm_dbg_dp(panel->drm_dev, "hdr sdp enable=0\n");
++
++	msm_dp_panel_update_sdp(panel);
++}
++
++/* RGB with BT.2020 colorimetry can only be signalled through the VSC SDP */
++static int msm_dp_panel_setup_vsc_sdp_bt2020(struct msm_dp_panel *msm_dp_panel)
++{
++	struct drm_dp_vsc_sdp vsc_sdp_data = {};
++	struct dp_sdp vsc_sdp;
++	ssize_t len;
++
++	vsc_sdp_data.sdp_type = DP_SDP_VSC;
++	vsc_sdp_data.revision = 0x05;
++	vsc_sdp_data.length = 0x13;
++	vsc_sdp_data.pixelformat = DP_PIXELFORMAT_RGB;
++	vsc_sdp_data.colorimetry = DP_COLORIMETRY_BT2020_RGB;
++	vsc_sdp_data.bpc = msm_dp_panel->msm_dp_mode.bpp / 3;
++	vsc_sdp_data.dynamic_range = DP_DYNAMIC_RANGE_VESA;
++	vsc_sdp_data.content_type = DP_CONTENT_TYPE_GRAPHICS;
++
++	len = drm_dp_vsc_sdp_pack(&vsc_sdp_data, &vsc_sdp);
++	if (len < 0) {
++		DRM_ERROR("unable to pack vsc sdp\n");
++		return len;
++	}
++
++	msm_dp_panel_enable_vsc_sdp(msm_dp_panel, &vsc_sdp);
++
++	return 0;
++}
++
+ static int msm_dp_panel_setup_vsc_sdp_yuv_420(struct msm_dp_panel *msm_dp_panel)
+ {
+ 	struct msm_dp_display_mode *msm_dp_mode;
+@@ -683,6 +754,13 @@
+ 
+ 	if (msm_dp_panel->msm_dp_mode.out_fmt_is_yuv_420)
+ 		msm_dp_panel_setup_vsc_sdp_yuv_420(msm_dp_panel);
++	else if (msm_dp_panel->bt2020 && msm_dp_panel->vsc_sdp_supported)
++		msm_dp_panel_setup_vsc_sdp_bt2020(msm_dp_panel);
++
++	if (msm_dp_panel->hdr_enabled)
++		msm_dp_panel_enable_hdr_sdp(panel);
++	else
++		msm_dp_panel_disable_hdr_sdp(msm_dp_panel);
+ 
+ 	panel->panel_on = true;
+ 
+--- a/drivers/gpu/drm/msm/dp/dp_panel.h
++++ b/drivers/gpu/drm/msm/dp/dp_panel.h
+@@ -39,6 +39,11 @@
+ 	struct msm_dp_panel_psr psr_cap;
+ 	bool video_test;
+ 	bool vsc_sdp_supported;
++
++	/* From the connector state, before the stream is programmed */
++	bool hdr_enabled;
++	bool bt2020;
++	struct dp_sdp hdr_sdp;
+ 	u32 hw_revision;
+ 
+ 	u32 max_bw_code;
+@@ -62,6 +67,7 @@
+ 
+ void msm_dp_panel_enable_vsc_sdp(struct msm_dp_panel *msm_dp_panel, struct dp_sdp *vsc_sdp);
+ void msm_dp_panel_disable_vsc_sdp(struct msm_dp_panel *msm_dp_panel);
++void msm_dp_panel_disable_hdr_sdp(struct msm_dp_panel *msm_dp_panel);
+ 
+ /**
+  * is_link_rate_valid() - validates the link rate
+--- a/drivers/gpu/drm/msm/dp/dp_reg.h
++++ b/drivers/gpu/drm/msm/dp/dp_reg.h
+@@ -231,10 +231,12 @@
+ 
+ #define MMSS_DP_SDP_CFG				(0x00000228)
+ #define GEN0_SDP_EN				(0x00020000)
++#define GEN2_SDP_EN				BIT(19)
+ #define MMSS_DP_SDP_CFG2			(0x0000022C)
+ #define MMSS_DP_AUDIO_TIMESTAMP_0		(0x00000230)
+ #define MMSS_DP_AUDIO_TIMESTAMP_1		(0x00000234)
+ #define GENERIC0_SDPSIZE_VALID			(0x00010000)
++#define GENERIC2_SDPSIZE_VALID			BIT(20)
+ 
+ #define MMSS_DP_AUDIO_STREAM_0			(0x00000240)
+ #define MMSS_DP_AUDIO_STREAM_1			(0x00000244)
+@@ -289,6 +291,8 @@
+ #define MMSS_DP_GENERIC1_8			(0x00000348)
+ #define MMSS_DP_GENERIC1_9			(0x0000034C)
+ 
++#define MMSS_DP_GENERIC2_0			(0x000003D8)
++
+ #define MMSS_DP_VSCEXT_0			(0x000002D0)
+ #define MMSS_DP_VSCEXT_1			(0x000002D4)
+ #define MMSS_DP_VSCEXT_2			(0x000002D8)
+--- a/drivers/gpu/drm/msm/dp/dp_utils.c
++++ b/drivers/gpu/drm/msm/dp/dp_utils.c
+@@ -3,8 +3,12 @@
+  * Copyright (c) 2024, The Linux Foundation. All rights reserved.
+  */
+ 
++#include <linux/hdmi.h>
+ #include <linux/types.h>
+ 
++#include <drm/display/drm_hdmi_helper.h>
++#include <drm/drm_connector.h>
++
+ #include "dp_utils.h"
+ 
+ #define DP_SDP_HEADER_SIZE		8
+@@ -86,3 +90,57 @@
+ 		FIELD_PREP(HEADER_3_MASK, sdp_header->HB3) |
+ 		FIELD_PREP(PARITY_3_MASK, msm_dp_utils_calculate_parity(sdp_header->HB3));
+ }
++
++/*
++ * Pack HDR_OUTPUT_METADATA into an HDR Metadata InfoFrame SDP (DP 1.4a): the
++ * CTA-861 DRM InfoFrame payload with version and length in the first two data
++ * bytes and no checksum. Returns 0 with a zeroed packet when the connector has
++ * no metadata, -EINVAL when the sink can't take it.
++ */
++int msm_dp_utils_pack_hdr_sdp(const struct drm_connector_state *conn_state,
++				  struct dp_sdp *sdp)
++{
++	const struct hdr_output_metadata *metadata;
++	const struct hdr_static_metadata *sink;
++	struct hdmi_drm_infoframe frame;
++	u8 buffer[HDMI_INFOFRAME_HEADER_SIZE + HDMI_DRM_INFOFRAME_SIZE];
++	int ret;
++
++	memset(sdp, 0, sizeof(*sdp));
++	if (!conn_state->hdr_output_metadata)
++		return 0;
++
++	if (conn_state->hdr_output_metadata->length != sizeof(*metadata))
++		return -EINVAL;
++
++	metadata = conn_state->hdr_output_metadata->data;
++	sink = &conn_state->connector->display_info.hdr_sink_metadata.hdmi_type1;
++	if (metadata->metadata_type != HDMI_STATIC_METADATA_TYPE1 ||
++		metadata->hdmi_metadata_type1.metadata_type != HDMI_STATIC_METADATA_TYPE1 ||
++		metadata->hdmi_metadata_type1.eotf > HDMI_EOTF_BT_2100_HLG)
++		return -EINVAL;
++
++	if (!(sink->metadata_type & BIT(HDMI_STATIC_METADATA_TYPE1)) ||
++		!(sink->eotf & BIT(metadata->hdmi_metadata_type1.eotf)))
++		return -EINVAL;
++
++	ret = drm_hdmi_infoframe_set_hdr_metadata(&frame,
++						  (struct drm_connector_state *)conn_state);
++	if (ret)
++		return ret;
++
++	ret = hdmi_drm_infoframe_pack_only(&frame, buffer, sizeof(buffer));
++	if (ret < 0)
++		return ret;
++
++	sdp->sdp_header.HB0 = 0;
++	sdp->sdp_header.HB1 = HDMI_INFOFRAME_TYPE_DRM;
++	sdp->sdp_header.HB2 = 0x1d;
++	sdp->sdp_header.HB3 = 0x13 << 2;
++	sdp->db[0] = frame.version;
++	sdp->db[1] = frame.length;
++	memcpy(&sdp->db[2], &buffer[HDMI_INFOFRAME_HEADER_SIZE],
++		   HDMI_DRM_INFOFRAME_SIZE);
++
++	return 0;
++}
+--- a/drivers/gpu/drm/msm/dp/dp_utils.h
++++ b/drivers/gpu/drm/msm/dp/dp_utils.h
+@@ -33,4 +33,8 @@
+ u8 msm_dp_utils_calculate_parity(u32 data);
+ void msm_dp_utils_pack_sdp_header(struct dp_sdp_header *sdp_header, u32 header_buff[2]);
+ 
++struct drm_connector_state;
++int msm_dp_utils_pack_hdr_sdp(const struct drm_connector_state *conn_state,
++			      struct dp_sdp *sdp);
++
+ #endif /* _DP_UTILS_H_ */

@@ -968,6 +968,16 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: proposed (Abel Vesa, pmic_glink_altmode only; not merged)
   notes: Plugging a charger during s2idle reset the TB321FU: GLINK messages arrive with devices suspended (IRQF_NO_SUSPEND) and the altmode and UCSI works on system_wq reconfigured the Type-C switch, mux, data lanes (0841) and PHYs. Both works now go to system_freezable_wq. With pm_test, freezer survived and devices/platform reset. Tested: no reset, the tablet stays asleep and charges, G9 fine after resume. A UCSI change notified during suspend is not replayed on resume; ucsi_resume() from the driver resume hook hung the tablet.
 
+- `patches/0845-drm-msm-dp-hdr-output-metadata-and-bt2020-colorimetry.patch`
+  source: armada (reduced port of Xilin Wu, "drm/msm/dp: Add static HDR support for DP and eDP" v2, freedreno 2026-10)
+  upstream: proposed (full series, not merged)
+  notes: HDR_OUTPUT_METADATA and Colorspace (BT2020_RGB) on the external DP connector; HDR InfoFrame SDP on generic slot 2, BT.2020 in the VSC SDP; a change takes a modeset. Lets gamescope switch an external monitor to HDR10. Properties verified on the TB321FU; end-to-end HDR not yet (test hub strips the HDR block from the EDID).
+
+- `patches/0846-drm-msm-dp-check-link-bandwidth-with-the-full-pixel-clock.patch`
+  source: armada
+  upstream: not yet sent
+  notes: mode_valid used the wide-bus-halved pixel clock for the link bandwidth check, so modes needing up to twice the link were accepted (2560x1440@120 / 3840x1600@60 over a 2-lane HBR2 hub: no picture or shaking, no audio). Bandwidth now uses the mode clock (halved only for YUV 420). Verified on the TB321FU.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local
