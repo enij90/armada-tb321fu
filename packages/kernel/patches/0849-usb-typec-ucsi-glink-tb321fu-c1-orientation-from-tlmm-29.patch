@@ -1,0 +1,43 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] usb: typec: ucsi: glink: TB321FU C1 orientation from TLMM 29
+
+The TB321FU firmware sends an altmode notification, and so an orientation
+and a mux state, only for DisplayPort partners. A USB-only partner on the
+long-side port (a phone, a drive) left the PS5169 redriver and the QMP PHY
+parked and every such device ran at USB 2.0.
+
+TLMM 29 follows the plug orientation on that port (measured: high with
+the plug reversed, low with it normal, matching the redriver state the
+firmware sets for a DP hub), like the orientation-gpios line of the SM8650
+reference boards. Use it as the C1 orientation line, sharing the
+descriptor already taken as the secondary audio detect line.
+
+---
+--- a/drivers/usb/typec/ucsi/ucsi_glink.c	2026-11-07 08:47:42.491155025 +0100
++++ b/drivers/usb/typec/ucsi/ucsi_glink.c	2026-11-07 08:47:42.491267684 +0100
+@@ -5,6 +5,7 @@
+  */
+ #include <linux/auxiliary_bus.h>
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/mutex.h>
+ #include <linux/of_device.h>
+ #include <linux/property.h>
+@@ -629,6 +630,17 @@
+ 		ucsi->port_orientation[port] = desc;
+ 	}
+ 
++	/*
++	 * TB321FU: TLMM 29, read above as the secondary audio detect line,
++	 * follows the plug orientation on the long-side port (C1), like the
++	 * orientation line of the SM8650 reference boards. Without it a
++	 * USB-only partner gets no orientation and the SuperSpeed lanes stay
++	 * parked, since the firmware only reports one for DisplayPort.
++	 */
++	if (!ucsi->port_orientation[0] && ucsi->secondary_audio_detect &&
++	    of_machine_is_compatible("lenovo,tb321fu"))
++		ucsi->port_orientation[0] = ucsi->secondary_audio_detect;
++
+ 	ucsi->client = devm_pmic_glink_client_alloc(dev, PMIC_GLINK_OWNER_USBC,
+ 						    pmic_glink_ucsi_callback,
+ 						    pmic_glink_ucsi_pdr_notify,

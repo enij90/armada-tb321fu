@@ -1,0 +1,184 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] usb: dwc3: qcom: host SS power-up and USB2 PHY re-init quirks (TB321FU)
+
+The TB321FU device tree selects the UTMI clock as the PIPE clock
+(qcom,select-utmi-as-pipe-clk) and asks for the host SS power-up and
+USB2 PHY re-init quirks, but the code for the two quirks was missing:
+QSCRATCH_GENERAL_CFG stayed at PIPE_UTMI_CLK_SEL | PIPE3_PHYSTATUS_SW
+and every SuperSpeed link stayed down, so both ports ran at USB 2.0.
+
+Apply the Lenovo downstream dwc3-msm host SS power-up sequence when the
+controller becomes a host, as in GUF296 TB321FU kernel.
+
+Based on GUF296 work.
+---
+diff --git a/drivers/usb/dwc3/dwc3-qcom.c b/drivers/usb/dwc3/dwc3-qcom.c
+index f43f73ac3..db8d51c06 100644
+--- a/drivers/usb/dwc3/dwc3-qcom.c
++++ b/drivers/usb/dwc3/dwc3-qcom.c
+@@ -34,6 +34,7 @@
+ #define PIPE_UTMI_CLK_SEL			BIT(0)
+ #define PIPE3_PHYSTATUS_SW			BIT(3)
+ #define PIPE_UTMI_CLK_DIS			BIT(8)
++#define QSCRATCH_PWR_EVNT_IRQ_STAT_1		0x1e4
+ 
+ #define PWR_EVNT_LPM_IN_L2_MASK			BIT(4)
+ #define PWR_EVNT_LPM_OUT_L2_MASK		BIT(5)
+@@ -85,6 +86,8 @@ struct dwc3_qcom {
+ 	struct icc_path		*icc_path_apps;
+ 
+ 	enum usb_role		current_role;
++	bool			host_ss_powerup_quirk;
++	bool			host_usb2_phy_reinit_quirk;
+ };
+ 
+ #define to_dwc3_qcom(d) container_of((d), struct dwc3_qcom, dwc)
+@@ -436,6 +439,96 @@ static void dwc3_qcom_select_utmi_clk(struct dwc3_qcom *qcom)
+ 			  PIPE_UTMI_CLK_DIS);
+ }
+ 
++static void dwc3_qcom_host_ss_powerup_quirk(struct dwc3_qcom *qcom)
++{
++	/*
++	 * Lenovo Y700 downstream dwc3-msm performs this sequence during host
++	 * SS power-up.  It differs from select-utmi-as-pipe-clk: for the
++	 * active host path it clears PIPE_UTMI_CLK_SEL/PIPE3_PHYSTATUS_SW and
++	 * clears the second power-event LPM-out bit.
++	 */
++	dwc3_qcom_setbits(qcom->qscratch_base, QSCRATCH_GENERAL_CFG,
++			  PIPE_UTMI_CLK_DIS);
++	usleep_range(100, 1000);
++
++	dwc3_qcom_clrbits(qcom->qscratch_base, QSCRATCH_GENERAL_CFG,
++			  PIPE_UTMI_CLK_SEL | PIPE3_PHYSTATUS_SW);
++	usleep_range(100, 1000);
++
++	dwc3_qcom_clrbits(qcom->qscratch_base, QSCRATCH_GENERAL_CFG,
++			  PIPE_UTMI_CLK_DIS);
++	dwc3_qcom_clrbits(qcom->qscratch_base, QSCRATCH_PWR_EVNT_IRQ_STAT_1,
++			  PWR_EVNT_LPM_OUT_L2_MASK);
++
++	dev_dbg(qcom->dev, "applied host SS powerup quirk\n");
++}
++
++static void dwc3_qcom_reinit_usb2_phys(struct dwc3_qcom *qcom)
++{
++	struct dwc3 *dwc = &qcom->dwc;
++	struct phy *phy;
++	bool was_powered;
++	int ret;
++	int i;
++
++	for (i = 0; i < dwc->num_usb2_ports; i++) {
++		phy = dwc->usb2_generic_phy[i];
++		if (!phy)
++			continue;
++
++		dev_dbg(qcom->dev, "reinit usb2 phy%d init=%d power=%d\n",
++			i, phy->init_count, phy->power_count);
++
++		if (!phy->init_count) {
++			dev_dbg(qcom->dev,
++				"skip usb2 phy%d reinit: not initialized\n", i);
++			continue;
++		}
++
++		was_powered = phy->power_count > 0;
++		if (was_powered) {
++			ret = phy_power_off(phy);
++			if (ret) {
++				dev_warn(qcom->dev,
++					 "usb2 phy%d power off failed: %d\n",
++					 i, ret);
++				continue;
++			}
++		}
++
++		ret = phy_exit(phy);
++		if (ret) {
++			dev_warn(qcom->dev, "usb2 phy%d exit failed: %d\n",
++				 i, ret);
++			if (was_powered)
++				phy_power_on(phy);
++			continue;
++		}
++
++		usleep_range(1000, 2000);
++
++		ret = phy_init(phy);
++		if (ret) {
++			dev_warn(qcom->dev, "usb2 phy%d init failed: %d\n",
++				 i, ret);
++			continue;
++		}
++
++		if (was_powered) {
++			ret = phy_power_on(phy);
++			if (ret)
++				dev_warn(qcom->dev,
++					 "usb2 phy%d power on failed: %d\n",
++					 i, ret);
++		}
++
++		ret = phy_set_mode(phy, PHY_MODE_USB_HOST);
++		if (ret)
++			dev_warn(qcom->dev, "usb2 phy%d host mode failed: %d\n",
++				 i, ret);
++	}
++}
++
+ static int dwc3_qcom_request_irq(struct dwc3_qcom *qcom, int irq,
+ 				 const char *name)
+ {
+@@ -562,8 +655,14 @@ static void dwc3_qcom_set_role_notifier(struct dwc3 *dwc, enum usb_role next_rol
+ {
+ 	struct dwc3_qcom *qcom = to_dwc3_qcom(dwc);
+ 
+-	if (qcom->current_role == next_role)
++	if (qcom->current_role == next_role) {
++		dev_dbg(qcom->dev, "role no-op current=%d next=%d xhci=%p\n",
++			qcom->current_role, next_role, qcom->dwc.xhci);
+ 		return;
++	}
++
++	dev_dbg(qcom->dev, "role change current=%d next=%d xhci=%p\n",
++		qcom->current_role, next_role, qcom->dwc.xhci);
+ 
+ 	if (pm_runtime_resume_and_get(qcom->dev)) {
+ 		dev_dbg(qcom->dev, "Failed to resume device\n");
+@@ -575,6 +674,13 @@ static void dwc3_qcom_set_role_notifier(struct dwc3 *dwc, enum usb_role next_rol
+ 	else if (qcom->current_role != USB_ROLE_DEVICE)
+ 		dwc3_qcom_vbus_override_enable(qcom, true);
+ 
++	if (next_role == USB_ROLE_HOST && qcom->host_usb2_phy_reinit_quirk &&
++	    qcom->current_role == USB_ROLE_NONE)
++		dwc3_qcom_reinit_usb2_phys(qcom);
++
++	if (next_role == USB_ROLE_HOST && qcom->host_ss_powerup_quirk)
++		dwc3_qcom_host_ss_powerup_quirk(qcom);
++
+ 	pm_runtime_mark_last_busy(qcom->dev);
+ 	pm_runtime_put_sync(qcom->dev);
+ 
+@@ -683,6 +789,11 @@ static int dwc3_qcom_probe(struct platform_device *pdev)
+ 	if (ignore_pipe_clk)
+ 		dwc3_qcom_select_utmi_clk(qcom);
+ 
++	qcom->host_ss_powerup_quirk = device_property_read_bool(dev,
++				"qcom,host-ss-powerup-quirk");
++	qcom->host_usb2_phy_reinit_quirk = device_property_read_bool(dev,
++				"qcom,host-usb2-phy-reinit-quirk");
++
+ 	qcom->mode = usb_get_dr_mode(dev);
+ 
+ 	if (qcom->mode == USB_DR_MODE_HOST) {
+@@ -711,6 +822,9 @@ static int dwc3_qcom_probe(struct platform_device *pdev)
+ 		goto clk_disable;
+ 	}
+ 
++	if (qcom->host_ss_powerup_quirk && qcom->current_role == USB_ROLE_HOST)
++		dwc3_qcom_host_ss_powerup_quirk(qcom);
++
+ 	ret = dwc3_qcom_interconnect_init(qcom);
+ 	if (ret)
+ 		goto remove_core;
