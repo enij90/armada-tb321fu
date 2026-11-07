@@ -26,6 +26,7 @@ It is not supported by the Armada project: please report problems here, not upst
 | Wi-Fi (WCN7850) | ✅ |
 | Bluetooth | ✅ |
 | USB-C charging, charges to 100% | ✅ |
+| USB 3 on the long-side port (5 Gbps tested); the short-side port is USB 2.0 by design | ✅ |
 | USB-C display output (DisplayPort Alt Mode), video | ✅ |
 | USB-C display output, audio | ✅ |
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
@@ -66,22 +67,18 @@ It is not supported by the Armada project: please report problems here, not upst
 
 This update:
 
-- **Microphones:** they no longer stay silent after some boots. On a fresh install, or
-  whenever the saved sound settings were missing, every recording was silent until a
-  setting was changed by hand. Recordings now have sound on both channels.
-- **Charger during sleep:** plugging in a charger while the tablet sleeps no longer resets
-  it.
-- **Desktop Mode:** Steam's icon is back in the system tray, and plugging or unplugging a
-  display no longer makes Steam crash.
-- **Graphics:** Mesa 26.2.6, with Armada's Turnip fixes.
-- **Decky Loader** now runs natively on arm64.
-- **Quiver Launcher** is available in Armada's app store.
-- **Armada updates up to November 3.**
+- **USB 3:** the long-side port now runs at USB 3 speed. Until now every device ran at
+  USB 2.0 speed. This covers devices plugged in directly and through a hub, in both plug
+  orientations, also with a display on the same hub. Tested at 5 Gbps; 10 Gbps devices
+  have not been tested yet. The short-side port is USB 2.0 by design.
+- **Armada upstream updates up to November 5:**
+  - Flatpak apps use Armada's Mesa drivers;
+  - FEX loads x86 thunk libraries from the Arch guest and the Steam runtime.
 
-Previous update (October 28): the gyro goes through InputPlumber, the Bluetooth search
-lasts 120 seconds, a charger no longer takes the other USB-C port's data connection, sound
-on a TV over USB-C is back, and Waydroid's Google sign-in works again. Older changes are
-listed in the [releases](https://github.com/enij90/armada-tb321fu/releases).
+Previous update (November 3): the microphones no longer stay silent after some boots, a
+charger plugged in during sleep no longer resets the tablet, Steam's tray icon is back in
+Desktop Mode, Mesa 26.2.6, and Decky Loader runs natively. Older changes are listed in the
+[releases](https://github.com/enij90/armada-tb321fu/releases).
 
 ## Known issues
 
