@@ -30,6 +30,7 @@ case "$model" in
     "Lenovo Legion Y700 2025 / TB321FU") profile=lenovo-legion-tab ;;
     "Lenovo Legion Y700 (2025) / TB321FU") profile=lenovo-legion-tab ;;
     "AYN Odin 3") profile=ayn-odin-3 ;;
+    "AYN Odin 3 Portal") profile=ayn-odin-3-portal ;;
     "Retroid Pocket 5") profile=retroid-pocket-5 ;;
     "Retroid Pocket 5 Visionox") profile=retroid-pocket-5-visionox ;;
     "Retroid Pocket Flip2") profile=retroid-pocket-flip2 ;;
@@ -125,6 +126,7 @@ vars=(
     ARMADA_BACKLIGHT_GAMMA
     ARMADA_BACKLIGHT_INPUT_MIN
     ARMADA_BACKLIGHT_MIN
+    ARMADA_BACKLIGHT_MAX
     ARMADA_SECONDARY_CONNECTOR
     ARMADA_SECONDARY_BACKLIGHT
     ARMADA_VIRTUAL_KEYBOARD_CONNECTOR

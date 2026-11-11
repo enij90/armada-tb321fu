@@ -187,6 +187,7 @@ mod tests {
             "AYN Thor",
             "AYN Thor Lite",
             "AYN Odin 3",
+            "AYN Odin 3 Portal",
             "KONKR Pocket FIT Elite",
             "MANGMI Air Y Pro",
             "MANGMI Pocket Max",

@@ -19,7 +19,9 @@ to a commit, or `armada` if it's original; a URL source with no `notes` is verba
   source: armada
 - `patches/0008-feat-ssc-suspend-source-devices-across-system-sleep.patch`
   source: armada
-- `patches/0009-fix-evdev-keep-the-Legion-G9-Legion-button-held-through-chords.patch`
+- `patches/0009-feat-ssc-mount-correction-from-the-environment.patch`
+  source: armada
+- `patches/0010-fix-evdev-keep-the-Legion-G9-Legion-button-held-through-chords.patch`
   source: armada
   notes: The Legion G9 (3537:1134) hides BTN_MODE while another button is held with it;
   keep it held through the chord and delay its release by 200 ms.

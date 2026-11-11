@@ -135,13 +135,21 @@ def suspend_swipe_gestures(suspended):
 def gyro_state():
     try:
         state = call("get_gyro")
-        return {"supported": bool(state["supported"]), "enabled": bool(state["enabled"])}
+        return {
+            "supported": bool(state["supported"]),
+            "enabled": bool(state["enabled"]),
+            "orientation": state["orientation"],
+        }
     except Exception:
-        return {"supported": False, "enabled": False}
+        return {"supported": False, "enabled": False, "orientation": "default"}
 
 
 def set_gyro_enabled(enabled):
     return bool(call("set_gyro_enabled", enabled=enabled)["enabled"])
+
+
+def set_gyro_orientation(orientation):
+    return call("set_gyro_orientation", orientation=orientation)["orientation"]
 
 
 def set_ssh_enabled(enabled):
