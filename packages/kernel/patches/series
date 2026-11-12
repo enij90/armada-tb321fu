@@ -312,6 +312,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0845-drm-msm-dp-hdr-output-metadata-and-bt2020-colorimetry.patch
 0846-drm-msm-dp-check-link-bandwidth-with-the-full-pixel-clock.patch
 0847-drm-bridge-connector-modeset-on-colorspace-or-hdr-metadata-change.patch
+0850-drm-msm-dp-put-dp-to-hdmi-converters-in-hdmi-mode.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
 0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch
