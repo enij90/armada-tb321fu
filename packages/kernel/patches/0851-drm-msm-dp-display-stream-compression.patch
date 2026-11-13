@@ -1,0 +1,930 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: Display Stream Compression on external DisplayPort
+
+The msm DP driver has no DSC, so modes above the link bandwidth drop to
+6 bpc or are not offered at all: 4K60 or 1440p144 through a 2-lane USB-C
+dock, 10 bpc HDR at high refresh rates.
+
+Read the sink DSC and FEC caps and, per mode, decide whether to compress
+(msm.dp_dsc: 0 off, 1 when the mode does not fit at 8 bpc, the default,
+2 when it does not fit at the monitor bpc, 3 always). The stream goes out
+at 8 bpp with 2, 4 or 8 slices from two DSC engines merged into the DP
+interface. On the DP side: FEC_READY before link training, the DSC DTO,
+the PPS SDP and COMPRESSION_MODE_CTRL before SEND_VIDEO, DP_DSC_ENABLE in
+the sink, FEC after the stream starts, and the PPS with a peripheral flush
+on every frame. On the DPU side the encoder takes the DSC config from the
+DP display and the interface gets the data window the DTO expects.
+
+Register use and the DTO arithmetic follow Qualcomm's downstream driver
+(Lenovo GPL release, display-drivers/msm/dp and sde) and Kuogee Hsieh's
+"add display port DSC feature" series (dri-devel, January 2023).
+
+---
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c	2026-11-13 08:40:11.657364195 +0100
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c	2026-11-13 08:53:39.413232500 +0100
+@@ -711,6 +711,10 @@ struct drm_dsc_config *dpu_encoder_get_d
+ 	if (dpu_enc->disp_info.intf_type == INTF_DSI)
+ 		return msm_dsi_get_dsc_config(priv->kms->dsi[index]);
+ 
++	/* DP: the config of the mode set on the bridge, NULL without DSC */
++	if (dpu_enc->disp_info.intf_type == INTF_DP)
++		return msm_dp_get_dsc_config(priv->kms->dp[index]);
++
+ 	return NULL;
+ }
+ 
+@@ -727,6 +731,7 @@ void dpu_encoder_update_topology(struct
+ 	struct drm_connector_state *conn_state;
+ 	struct drm_framebuffer *fb;
+ 	struct drm_dsc_config *dsc;
++	bool use_dsc;
+ 
+ 	int i;
+ 
+@@ -734,10 +739,20 @@ void dpu_encoder_update_topology(struct
+ 		if (dpu_enc->phys_encs[i])
+ 			topology->num_intf++;
+ 
+-	dsc = dpu_encoder_get_dsc_config(drm_enc);
++	/*
++	 * DP decides per mode, and the bridge has not seen this mode yet:
++	 * ask with the mode being checked instead of the current config.
++	 */
++	if (disp_info->intf_type == INTF_DP) {
++		use_dsc = msm_dp_mode_uses_dsc(priv->kms->dp[disp_info->h_tile_instance[0]],
++					       adj_mode);
++	} else {
++		dsc = dpu_encoder_get_dsc_config(drm_enc);
++		use_dsc = !!dsc;
++	}
+ 
+ 	/* We only support 2 DSC mode (with 2 LM and 1 INTF) */
+-	if (dsc) {
++	if (use_dsc) {
+ 		/*
+ 		 * Use 2 DSC encoders, 2 layer mixers and 1 or 2 interfaces
+ 		 * when Display Stream Compression (DSC) is enabled,
+@@ -1737,6 +1752,18 @@ static void _dpu_encoder_trigger_flush(s
+ 	}
+ 
+ 
++	/*
++	 * DP with DSC: resend the PPS and flush the DP peripheral with every
++	 * frame, as Qualcomm's downstream sde_encoder.c does.
++	 */
++	if (phys->hw_intf && phys->hw_intf->cap->type == INTF_DP && dpu_enc->dsc &&
++	    ctl->ops.update_pending_flush_periph) {
++		struct msm_drm_private *priv = drm_enc->dev->dev_private;
++
++		msm_dp_dsc_pps_flush(priv->kms->dp[dpu_enc->disp_info.h_tile_instance[0]]);
++		ctl->ops.update_pending_flush_periph(ctl, phys->hw_intf->idx);
++	}
++
+ 	if (extra_flush_bits && ctl->ops.update_pending_flush)
+ 		ctl->ops.update_pending_flush(ctl, extra_flush_bits);
+ 
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c	2026-11-13 08:40:11.776822801 +0100
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c	2026-11-13 08:47:02.154805700 +0100
+@@ -123,6 +123,23 @@ static void drm_mode_to_intf_timing_para
+ 	}
+ 
+ 	/*
++	 * DP with DSC keeps the (wide bus) timing of the uncompressed mode: the
++	 * DP controller's DTO paces the compressed data. The interface only
++	 * needs to know how many clocks of each line carry data, plus a few
++	 * extra clocks when the last DTO period of the line is too short.
++	 */
++	if (phys_enc->hw_intf->cap->type == INTF_DP && timing->compression_en) {
++		struct drm_dsc_config *dsc =
++		       dpu_encoder_get_dsc_config(phys_enc->parent);
++		u32 extra = msm_dsc_dp_extra_width(dsc);
++
++		timing->dce_bytes_per_line = msm_dsc_get_bytes_per_line(dsc);
++		timing->extra_dto_cycles = msm_dsc_dp_pclk_per_line(dsc);
++		timing->width += extra;
++		timing->h_back_porch += extra;
++	}
++
++	/*
+ 	 * for DSI, if compression is enabled, then divide the horizonal active
+ 	 * timing parameters by compression ratio. bits of 3 components(R/G/B)
+ 	 * is compressed into bits of 1 pixel.
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c	2026-11-13 08:40:11.574472829 +0100
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c	2026-11-13 08:46:47.107460400 +0100
+@@ -197,9 +197,7 @@ static void dpu_hw_intf_setup_timing_eng
+ 		data_width = p->width >> 1;
+ 	}
+ 
+-	/* TODO: handle DSC+DP case, we only handle DSC+DSI case so far */
+-	if (p->compression_en && !dp_intf &&
+-	    intf->mdss_ver->core_major_ver >= 7)
++	if (p->compression_en && intf->mdss_ver->core_major_ver >= 7)
+ 		intf_cfg2 |= INTF_CFG2_DCE_DATA_COMPRESS;
+ 
+ 	hsync_data_start_x = hsync_start_x;
+@@ -221,6 +219,17 @@ static void dpu_hw_intf_setup_timing_eng
+ 		display_hctl = active_hctl;
+ 
+ 		intf_cfg |= INTF_CFG_ACTIVE_H_EN | INTF_CFG_ACTIVE_V_EN;
++
++		/*
++		 * DSC: the DP controller's DTO takes the compressed line in
++		 * extra_dto_cycles clocks from the start of the active area,
++		 * as in Qualcomm's downstream sde_hw_intf.c.
++		 */
++		if (p->compression_en) {
++			active_data_hctl = ((hsync_start_x + p->extra_dto_cycles) << 16) |
++					   hsync_start_x;
++			display_data_hctl = active_data_hctl;
++		}
+ 	}
+ 
+ 	den_polarity = 0;
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h	2026-11-13 08:40:11.574247772 +0100
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h	2026-11-13 08:46:53.621283000 +0100
+@@ -36,6 +36,7 @@ struct dpu_hw_intf_timing_params {
+ 	bool wide_bus_en;
+ 	bool compression_en;
+ 	u32 dce_bytes_per_line;
++	u32 extra_dto_cycles;	/* DP + DSC: data clocks per line */
+ };
+ 
+ struct dpu_hw_intf_prog_fetch {
+--- a/drivers/gpu/drm/msm/dp/dp_ctrl.c	2026-11-13 08:40:11.839811464 +0100
++++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c	2026-11-13 08:58:13.314811700 +0100
+@@ -315,8 +315,11 @@ static void msm_dp_ctrl_mainlink_enable(
+ 
+ 	mainlink_ctrl = msm_dp_read_link(ctrl, REG_DP_MAINLINK_CTRL);
+ 
++	/* FEC starts after training (msm_dp_ctrl_enable_fec()) */
+ 	mainlink_ctrl &= ~(DP_MAINLINK_CTRL_RESET |
+-					DP_MAINLINK_CTRL_ENABLE);
++					DP_MAINLINK_CTRL_ENABLE |
++					DP_MAINLINK_CTRL_FEC_EN |
++					DP_MAINLINK_CTRL_FEC_SEQ_MODE);
+ 	msm_dp_write_link(ctrl, REG_DP_MAINLINK_CTRL, mainlink_ctrl);
+ 
+ 	mainlink_ctrl |= DP_MAINLINK_CTRL_RESET;
+@@ -337,10 +340,42 @@ static void msm_dp_ctrl_mainlink_disable
+ 	drm_dbg_dp(ctrl->drm_dev, "disable\n");
+ 
+ 	mainlink_ctrl = msm_dp_read_link(ctrl, REG_DP_MAINLINK_CTRL);
+-	mainlink_ctrl &= ~DP_MAINLINK_CTRL_ENABLE;
++	mainlink_ctrl &= ~(DP_MAINLINK_CTRL_ENABLE | DP_MAINLINK_CTRL_FEC_EN |
++			   DP_MAINLINK_CTRL_FEC_SEQ_MODE);
+ 	msm_dp_write_link(ctrl, REG_DP_MAINLINK_CTRL, mainlink_ctrl);
+ }
+ 
++/*
++ * DSC over DP runs with FEC. The sink was told FEC_READY before training;
++ * now switch the encoder on and wait for the sink to see the FEC_DECODE_EN
++ * sequence. Downstream retries because the sequence can collide with BS
++ * symbols.
++ */
++static void msm_dp_ctrl_enable_fec(struct msm_dp_ctrl_private *ctrl)
++{
++	u32 mainlink_ctrl;
++	u8 status = 0;
++	int i;
++
++	for (i = 0; i < 3; i++) {
++		mainlink_ctrl = msm_dp_read_link(ctrl, REG_DP_MAINLINK_CTRL);
++		/* flush mode and FB boundary are set already */
++		mainlink_ctrl |= DP_MAINLINK_CTRL_FEC_EN | DP_MAINLINK_CTRL_FEC_SEQ_MODE;
++		msm_dp_write_link(ctrl, REG_DP_MAINLINK_CTRL, mainlink_ctrl);
++
++		usleep_range(900, 1000);
++
++		if (!drm_dp_dpcd_read_byte(ctrl->aux, DP_FEC_STATUS, &status) &&
++		    (status & DP_FEC_DECODE_EN_DETECTED))
++			break;
++	}
++
++	if (i == 3)
++		DRM_ERROR("sink did not detect FEC (status 0x%x)\n", status);
++	else
++		drm_dbg_dp(ctrl->drm_dev, "FEC on after %d tries\n", i + 1);
++}
++
+ static void msm_dp_setup_peripheral_flush(struct msm_dp_ctrl_private *ctrl)
+ {
+ 	u32 mainlink_ctrl;
+@@ -1251,11 +1286,22 @@ static void msm_dp_ctrl_calc_tu_paramete
+ 	in.nlanes = ctrl->link->link_params.num_lanes;
+ 	in.bpp = ctrl->panel->msm_dp_mode.bpp;
+ 	in.pixel_enc = ctrl->panel->msm_dp_mode.out_fmt_is_yuv_420 ? 420 : 444;
+-	in.dsc_en = 0;
+ 	in.async_en = 0;
+-	in.fec_en = 0;
+-	in.num_of_dsc_slices = 0;
+-	in.compress_ratio = 100;
++	if (ctrl->panel->msm_dp_mode.dsc_en) {
++		const struct drm_dsc_config *dsc = &ctrl->panel->msm_dp_mode.dsc;
++
++		/* bpp stays the uncompressed one, the ratio brings it to 8 */
++		in.dsc_en = 1;
++		in.fec_en = 1;
++		in.num_of_dsc_slices = dsc->slice_count;
++		in.compress_ratio = DIV_ROUND_CLOSEST(in.bpp * 100,
++						      dsc->bits_per_pixel >> 4);
++	} else {
++		in.dsc_en = 0;
++		in.fec_en = 0;
++		in.num_of_dsc_slices = 0;
++		in.compress_ratio = 100;
++	}
+ 
+ 	_dp_ctrl_calc_tu(ctrl, &in, tu_table);
+ }
+@@ -1691,6 +1737,11 @@ static int msm_dp_ctrl_setup_main_link(s
+ 	 * a link training pattern, we have to first do soft reset.
+ 	 */
+ 
++	/* DSC needs FEC: tell the sink before training, as downstream does */
++	if (ctrl->panel->dsc_supported)
++		drm_dp_dpcd_write_byte(ctrl->aux, DP_FEC_CONFIGURATION,
++				       ctrl->panel->msm_dp_mode.dsc_en ? DP_FEC_READY : 0);
++
+ 	ret = msm_dp_ctrl_link_train(ctrl, training_step);
+ 
+ 	return ret;
+@@ -2533,16 +2584,26 @@ int msm_dp_ctrl_on_stream(struct msm_dp_
+ 		pixel_rate_orig,
+ 		ctrl->panel->msm_dp_mode.out_fmt_is_yuv_420);
+ 
+-	msm_dp_panel_clear_dsc_dto(ctrl->panel);
++	/* DTO, PPS and compression mode, or all of them off */
++	msm_dp_panel_config_dsc(ctrl->panel);
+ 
+ 	msm_dp_ctrl_setup_tr_unit(ctrl);
+ 
++	/* Sink decompression on before the first compressed frame */
++	if (ctrl->panel->dsc_supported)
++		drm_dp_dpcd_write_byte(ctrl->aux, DP_DSC_ENABLE,
++				       ctrl->panel->msm_dp_mode.dsc_en ? DP_DECOMPRESSION_EN : 0);
++
+ 	msm_dp_write_link(ctrl, REG_DP_STATE_CTRL, DP_STATE_CTRL_SEND_VIDEO);
+ 
+ 	ret = msm_dp_ctrl_wait4video_ready(ctrl);
+ 	if (ret)
+ 		return ret;
+ 
++	/* After training and with the stream running, as downstream */
++	if (ctrl->panel->msm_dp_mode.dsc_en)
++		msm_dp_ctrl_enable_fec(ctrl);
++
+ 	mainlink_ready = msm_dp_ctrl_mainlink_ready(ctrl);
+ 	drm_dbg_dp(ctrl->drm_dev,
+ 		"mainlink %s\n", mainlink_ready ? "READY" : "NOT READY");
+--- a/drivers/gpu/drm/msm/dp/dp_display.c	2026-11-13 08:40:11.874795271 +0100
++++ b/drivers/gpu/drm/msm/dp/dp_display.c	2026-11-13 08:53:52.295262400 +0100
+@@ -599,6 +599,8 @@ static int msm_dp_display_set_mode(struc
+ 	drm_mode_copy(&dp->panel->msm_dp_mode.drm_mode, &mode->drm_mode);
+ 	dp->panel->msm_dp_mode.bpp = mode->bpp;
+ 	dp->panel->msm_dp_mode.out_fmt_is_yuv_420 = mode->out_fmt_is_yuv_420;
++	dp->panel->msm_dp_mode.dsc_en = mode->dsc_en;
++	dp->panel->msm_dp_mode.dsc = mode->dsc;
+ 	msm_dp_panel_init_panel_info(dp->panel);
+ 	return 0;
+ }
+@@ -741,12 +743,86 @@ enum drm_mode_status msm_dp_bridge_mode_
+ 	mode_rate_khz = link_pclk_khz * mode_bpp;
+ 	supported_rate_khz = link_info->num_lanes * link_info->rate * 8;
+ 
++	/* Too much even at 6 bpc: only DSC (8 bpp on the link) can carry it */
+ 	if (mode_rate_khz > supported_rate_khz)
+-		return MODE_BAD;
++		return msm_dp_mode_uses_dsc(dp, mode) ? MODE_OK : MODE_BAD;
+ 
+ 	return MODE_OK;
+ }
+ 
++static u32 msm_dp_display_max_bpp(struct msm_dp *dp)
++{
++	u32 bpp = dp->connector->display_info.bpc * 3;
++
++	return bpp ? bpp : 24;
++}
++
++/**
++ * msm_dp_mode_uses_dsc - would this mode be sent with DSC?
++ * @dp: the DP display
++ * @mode: the adjusted mode being checked
++ *
++ * For the DPU topology at atomic_check, before the bridge sees the mode.
++ */
++bool msm_dp_mode_uses_dsc(struct msm_dp *dp, const struct drm_display_mode *mode)
++{
++	struct msm_dp_display_private *msm_dp_display;
++	struct drm_dsc_config *dsc;
++	bool ret;
++
++	if (!dp || !dp->connector || dp->is_edp)
++		return false;
++
++	msm_dp_display = container_of(dp, struct msm_dp_display_private, msm_dp_display);
++
++	dsc = kzalloc(sizeof(*dsc), GFP_KERNEL);
++	if (!dsc)
++		return false;
++
++	ret = msm_dp_panel_dsc_compute(msm_dp_display->panel, mode,
++				       msm_dp_display_max_bpp(dp),
++				       msm_dp_display->wide_bus_supported, dsc);
++	kfree(dsc);
++
++	return ret;
++}
++
++/**
++ * msm_dp_get_dsc_config - DSC config of the mode set on the bridge
++ * @dp: the DP display
++ *
++ * Returns: the config, or NULL when the current mode goes out uncompressed.
++ */
++struct drm_dsc_config *msm_dp_get_dsc_config(struct msm_dp *dp)
++{
++	struct msm_dp_display_private *msm_dp_display;
++
++	if (!dp)
++		return NULL;
++
++	msm_dp_display = container_of(dp, struct msm_dp_display_private, msm_dp_display);
++
++	return msm_dp_display->msm_dp_mode.dsc_en ? &msm_dp_display->msm_dp_mode.dsc : NULL;
++}
++
++/**
++ * msm_dp_dsc_pps_flush - queue the PPS SDP for the next DPU flush
++ * @dp: the DP display
++ *
++ * Called by the DPU with every frame while DSC is on.
++ */
++void msm_dp_dsc_pps_flush(struct msm_dp *dp)
++{
++	struct msm_dp_display_private *msm_dp_display;
++
++	if (!dp || !dp->power_on)
++		return;
++
++	msm_dp_display = container_of(dp, struct msm_dp_display_private, msm_dp_display);
++	if (msm_dp_display->panel->msm_dp_mode.dsc_en)
++		msm_dp_panel_flush_pps(msm_dp_display->panel);
++}
++
+ int msm_dp_display_get_modes(struct msm_dp *dp)
+ {
+ 	struct msm_dp_display_private *msm_dp_display;
+@@ -1294,7 +1370,12 @@ void __exit msm_dp_unregister(void)
+ bool msm_dp_needs_periph_flush(const struct msm_dp *msm_dp_display,
+ 			       const struct drm_display_mode *mode)
+ {
+-	return drm_mode_is_420_only(&msm_dp_display->connector->display_info, mode);
++	const struct msm_dp_display_private *dp =
++		container_of(msm_dp_display, struct msm_dp_display_private, msm_dp_display);
++
++	/* The PPS SDP of DSC goes out with the peripheral flush too */
++	return drm_mode_is_420_only(&msm_dp_display->connector->display_info, mode) ||
++	       dp->msm_dp_mode.dsc_en;
+ }
+ 
+ bool msm_dp_wide_bus_available(const struct msm_dp *msm_dp_display)
+@@ -1543,6 +1624,19 @@ void msm_dp_bridge_mode_set(struct drm_b
+ 	/* populate wide_bus_support to different layers */
+ 	msm_dp_display->ctrl->wide_bus_en =
+ 		msm_dp_display->msm_dp_mode.out_fmt_is_yuv_420 ? false : msm_dp_display->wide_bus_supported;
++
++	/* Same choice as msm_dp_mode_uses_dsc() made for the DPU topology */
++	msm_dp_display->msm_dp_mode.dsc_en = !dp->is_edp &&
++		msm_dp_panel_dsc_compute(msm_dp_panel, adjusted_mode,
++					 msm_dp_display_max_bpp(dp),
++					 msm_dp_display->ctrl->wide_bus_en,
++					 &msm_dp_display->msm_dp_mode.dsc);
++	if (msm_dp_display->msm_dp_mode.dsc_en)
++		drm_info(dp->drm_dev, "DP %ux%u@%u with DSC: %u slices, %u bpc in, 8 bpp out\n",
++			 adjusted_mode->hdisplay, adjusted_mode->vdisplay,
++			 drm_mode_vrefresh(adjusted_mode),
++			 msm_dp_display->msm_dp_mode.dsc.slice_count,
++			 msm_dp_display->msm_dp_mode.dsc.bits_per_component);
+ }
+ 
+ void msm_dp_bridge_hpd_enable(struct drm_bridge *bridge)
+--- a/drivers/gpu/drm/msm/dp/dp_panel.c	2026-11-13 08:40:11.841056614 +0100
++++ b/drivers/gpu/drm/msm/dp/dp_panel.c	2026-11-13 08:57:24.184166400 +0100
+@@ -6,18 +6,39 @@
+ #include "dp_panel.h"
+ #include "dp_reg.h"
+ #include "dp_utils.h"
++#include "msm_dsc_helper.h"
+ 
+ #include <drm/drm_connector.h>
+ #include <drm/drm_edid.h>
+ #include <drm/drm_of.h>
+ #include <drm/drm_print.h>
++#include <drm/display/drm_dp_helper.h>
++#include <drm/display/drm_dsc_helper.h>
+ 
+ #include <linux/io.h>
++#include <linux/module.h>
+ #include <linux/types.h>
+ #include <asm/byteorder.h>
+ 
+ #define DP_INTF_CONFIG_DATABUS_WIDEN     BIT(4)
+ 
++/*
++ * DSC on the external DP link. 1: only for modes that do not fit at 8 bpc
++ * (they would drop to 6 bpc or not be offered at all). 2: also for modes
++ * that only fit below the monitor's bpc, e.g. 10 bpc for HDR. 3: every mode
++ * the sink can decode (for testing). 0: never.
++ */
++static int dp_dsc = 1;
++module_param(dp_dsc, int, 0644);
++MODULE_PARM_DESC(dp_dsc, "DSC on DisplayPort: 0 off, 1 below 8 bpc (default), 2 below the monitor's bpc, 3 always");
++
++#define MSM_DP_DSC_BPP		8	/* compressed bits per pixel, as downstream */
++#define MSM_DP_DSC_BE_IN_LANE	10	/* SST */
++#define MSM_DP_PPS_WORDS	(88 / 4)	/* DSC_1_1_PPS_PARAMETER_SET_ELEMENTS */
++
++struct msm_dp_panel_private;
++static void msm_dp_panel_read_dsc_caps(struct msm_dp_panel_private *panel);
++
+ struct msm_dp_panel_private {
+ 	struct device *dev;
+ 	struct drm_device *drm_dev;
+@@ -274,6 +295,8 @@ int msm_dp_panel_read_sink_caps(struct m
+ 	if (rc)
+ 		return rc;
+ 
++	msm_dp_panel_read_dsc_caps(panel);
++
+ 	drm_edid_free(msm_dp_panel->drm_edid);
+ 
+ 	msm_dp_panel->drm_edid = drm_edid_read_ddc(connector, &panel->aux->ddc);
+@@ -299,6 +322,7 @@ void msm_dp_panel_unplugged(struct msm_d
+ 	drm_edid_connector_update(connector, NULL);
+ 	drm_edid_free(msm_dp_panel->drm_edid);
+ 	msm_dp_panel->drm_edid = NULL;
++	msm_dp_panel->dsc_supported = false;
+ }
+ 
+ u32 msm_dp_panel_get_mode_bpp(struct msm_dp_panel *msm_dp_panel,
+@@ -484,6 +508,260 @@ void msm_dp_panel_clear_dsc_dto(struct m
+ 	msm_dp_write_p0(panel, MMSS_DP_DSC_DTO, 0x0);
+ }
+ 
++static void msm_dp_panel_read_dsc_caps(struct msm_dp_panel_private *panel)
++{
++	struct msm_dp_panel *msm_dp_panel = &panel->msm_dp_panel;
++	u8 *caps = msm_dp_panel->dsc_dpcd;
++	u8 fec = 0;
++
++	memset(caps, 0, sizeof(msm_dp_panel->dsc_dpcd));
++	msm_dp_panel->dsc_supported = false;
++
++	if (msm_dp_panel->dpcd[DP_DPCD_REV] < DP_DPCD_REV_14)
++		return;
++
++	if (drm_dp_dpcd_read_data(panel->aux, DP_DSC_SUPPORT, caps,
++				  sizeof(msm_dp_panel->dsc_dpcd)) ||
++	    drm_dp_dpcd_read_byte(panel->aux, DP_FEC_CAPABILITY, &fec))
++		return;
++
++	/* DSC over DP needs FEC; the DPU only sends RGB */
++	msm_dp_panel->dsc_supported = drm_dp_sink_supports_dsc(caps) &&
++		(fec & DP_FEC_CAPABLE) &&
++		drm_dp_dsc_sink_supports_format(caps, DP_DSC_RGB);
++
++	drm_info(panel->drm_dev,
++		 "DP sink DSC %u.%u fec %u slices 0x%x max width %u bpc 0x%x: %s\n",
++		 caps[DP_DSC_REV - DP_DSC_SUPPORT] & DP_DSC_MAJOR_MASK,
++		 (caps[DP_DSC_REV - DP_DSC_SUPPORT] & DP_DSC_MINOR_MASK) >> DP_DSC_MINOR_SHIFT,
++		 fec & DP_FEC_CAPABLE, drm_dp_dsc_sink_slice_count_mask(caps, false),
++		 drm_dp_dsc_sink_max_slice_width(caps),
++		 caps[DP_DSC_DEC_COLOR_DEPTH_CAP - DP_DSC_SUPPORT],
++		 msm_dp_panel->dsc_supported ? "usable" : "not usable");
++}
++
++/* Can the link carry this pixel clock compressed (8 bpp, FEC, a little slack)? */
++bool msm_dp_panel_dsc_fits(struct msm_dp_panel *msm_dp_panel, u32 pclk_khz)
++{
++	const struct msm_dp_link_info *link = &msm_dp_panel->link_info;
++	u64 need = (u64)pclk_khz * MSM_DP_DSC_BPP * 1020;	/* +2% EOC */
++	u64 have = (u64)link->num_lanes * link->rate * 8 * 976;	/* -2.4% FEC */
++
++	return msm_dp_panel->dsc_supported && dp_dsc > 0 && need <= have;
++}
++
++/**
++ * msm_dp_panel_dsc_compute - pick DSC for a mode, and fill its config
++ * @msm_dp_panel: the DP panel, with the sink's DSC caps and current link
++ * @mode: the mode to check
++ * @max_bpp: uncompressed bits per pixel the monitor takes (bpc * 3)
++ * @wide_bus: the DPU feeds this controller 2 pixels per clock
++ * @dsc: filled when DSC is used
++ *
++ * Returns true when @mode needs DSC on this link under the dp_dsc policy and
++ * the sink can decode a stream this driver can produce.
++ */
++bool msm_dp_panel_dsc_compute(struct msm_dp_panel *msm_dp_panel,
++			      const struct drm_display_mode *mode, u32 max_bpp,
++			      bool wide_bus, struct drm_dsc_config *dsc)
++{
++	static const u8 slice_counts[] = { 2, 4, 8 };
++	static const u8 slice_heights[] = { 108, 16, 12, 10, 8, 6, 4, 2 };
++	const struct msm_dp_link_info *link = &msm_dp_panel->link_info;
++	const u8 *caps = msm_dp_panel->dsc_dpcd;
++	u64 data_rate = (u64)link->num_lanes * link->rate * 8;
++	u32 want_bpp, bpc = 0, slice_count = 0, slice_height = 0;
++	u32 max_slice_width, slice_mask, throughput, minor;
++	u8 bpcs[3];
++	int i, n;
++
++	if (dp_dsc <= 0 || !msm_dp_panel->dsc_supported || !wide_bus ||
++	    msm_dp_panel->video_test || !mode->clock)
++		return false;
++
++	/* YUV 420 modes go out uncompressed at half rate */
++	if (msm_dp_panel->connector &&
++	    drm_mode_is_420_only(&msm_dp_panel->connector->display_info, mode))
++		return false;
++
++	max_bpp = clamp(max_bpp, 24u, 30u);
++	want_bpp = dp_dsc >= 2 ? max_bpp : 24;
++	if (dp_dsc < 3 && (u64)mode->clock * want_bpp <= data_rate)
++		return false;
++
++	if (!msm_dp_panel_dsc_fits(msm_dp_panel, mode->clock))
++		return false;
++
++	/* Deepest input the source has (8 or 10 bpc) that the decoder takes */
++	n = drm_dp_dsc_sink_supported_input_bpcs(caps, bpcs);
++	for (i = 0; i < n; i++)
++		if (bpcs[i] <= max_bpp / 3 && bpcs[i] <= 10 && bpcs[i] > bpc)
++			bpc = bpcs[i];
++	if (bpc != 8 && bpc != 10)
++		return false;
++
++	max_slice_width = drm_dp_dsc_sink_max_slice_width(caps);
++	if (!max_slice_width)
++		max_slice_width = 2560;
++	slice_mask = drm_dp_dsc_sink_slice_count_mask(caps, false);
++	throughput = drm_dp_dsc_sink_max_slice_throughput(caps, mode->clock, true);
++
++	/* Two DSC engines are merged into one interface: slices come in pairs */
++	for (i = 0; i < ARRAY_SIZE(slice_counts); i++) {
++		n = slice_counts[i];
++		if (mode->hdisplay % n || mode->hdisplay / n > max_slice_width ||
++		    mode->hdisplay / n > 2560)
++			continue;
++		if (!(slice_mask & drm_dp_dsc_slice_count_to_mask(n)))
++			continue;
++		if (throughput && DIV_ROUND_UP(mode->clock, n) > throughput)
++			continue;
++		slice_count = n;
++		break;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(slice_heights); i++) {
++		if (!(mode->vdisplay % slice_heights[i])) {
++			slice_height = slice_heights[i];
++			break;
++		}
++	}
++
++	if (!slice_count || !slice_height)
++		return false;
++
++	minor = (caps[DP_DSC_REV - DP_DSC_SUPPORT] & DP_DSC_MINOR_MASK) >> DP_DSC_MINOR_SHIFT;
++
++	memset(dsc, 0, sizeof(*dsc));
++	dsc->dsc_version_major = 1;
++	dsc->dsc_version_minor = minor >= 2 ? 2 : 1;
++	dsc->pic_width = mode->hdisplay;
++	dsc->pic_height = mode->vdisplay;
++	dsc->slice_count = slice_count;
++	dsc->slice_width = mode->hdisplay / slice_count;
++	dsc->slice_height = slice_height;
++	dsc->bits_per_component = bpc;
++	dsc->bits_per_pixel = MSM_DP_DSC_BPP << 4;
++	dsc->convert_rgb = 1;
++	dsc->block_pred_enable = !!(caps[DP_DSC_BLK_PREDICTION_SUPPORT - DP_DSC_SUPPORT] &
++				    DP_DSC_BLK_PREDICTION_IS_SUPPORTED);
++
++	drm_dsc_set_const_params(dsc);
++	drm_dsc_set_rc_buf_thresh(dsc);
++	if (drm_dsc_setup_rc_params(dsc, dsc->dsc_version_minor == 1 ?
++				    DRM_DSC_1_1_PRE_SCR : DRM_DSC_1_2_444))
++		return false;
++
++	dsc->initial_scale_value = drm_dsc_initial_scale_value(dsc);
++	dsc->line_buf_depth = bpc + 1;
++	n = drm_dp_dsc_sink_line_buf_depth(caps);
++	if (n >= 8 && n < dsc->line_buf_depth)
++		dsc->line_buf_depth = n;
++
++	return !drm_dsc_compute_rc_parameters(dsc);
++}
++
++/* ECC parity of a 32-bit SDP data word, as downstream dp_header_get_parity() */
++static u8 msm_dp_panel_pps_parity(u32 data)
++{
++	u8 x0 = 0, x1 = 0, ci;
++	int i, nibbles = data > 0xff ? 8 : 2;
++
++	for (i = 0; i < nibbles; i++) {
++		ci = ((data >> (i * 4)) & 0xf) ^ x1;
++		x1 = x0 ^ msm_dp_utils_get_g1_value(ci);
++		x0 = msm_dp_utils_get_g0_value(ci);
++	}
++
++	return x1 | (x0 << 4);
++}
++
++/*
++ * Mark the PPS SDP for sending; it goes out with the DPU's peripheral flush.
++ * Downstream leaves the continuous-PPS bit alone too.
++ */
++void msm_dp_panel_flush_pps(struct msm_dp_panel *msm_dp_panel)
++{
++	struct msm_dp_panel_private *panel =
++		container_of(msm_dp_panel, struct msm_dp_panel_private, msm_dp_panel);
++
++	msm_dp_write_link(panel, MMSS_DP_FLUSH,
++			  msm_dp_read_link(panel, MMSS_DP_FLUSH) | DP_FLUSH_PPS);
++}
++
++/*
++ * Program the DSC part of the stream before SEND_VIDEO: the DTO that paces
++ * the compressed data, the PPS SDP and COMPRESSION_MODE_CTRL. Register use
++ * follows Qualcomm's downstream dp_catalog_panel_dsc_cfg().
++ */
++void msm_dp_panel_config_dsc(struct msm_dp_panel *msm_dp_panel)
++{
++	struct msm_dp_panel_private *panel =
++		container_of(msm_dp_panel, struct msm_dp_panel_private, msm_dp_panel);
++	const struct drm_dsc_config *dsc = &msm_dp_panel->msm_dp_mode.dsc;
++	struct drm_dsc_picture_parameter_set pps;
++	const u8 *b = (const u8 *)&pps;
++	u8 parity[sizeof(pps) / 4];
++	u32 word, val;
++	int i;
++
++	if (!msm_dp_panel->msm_dp_mode.dsc_en) {
++		msm_dp_write_link(panel, REG_DP_COMPRESSION_MODE_CTRL, 0);
++		msm_dp_write_p0(panel, MMSS_DP_DSC_DTO, 0);
++		return;
++	}
++
++	msm_dp_write_p0(panel, MMSS_DP_DSC_DTO_COUNT, msm_dsc_dp_pclk_per_line(dsc));
++	msm_dp_write_p0(panel, MMSS_DP_DSC_DTO, DP_DSC_DTO_EN | DP_DSC_DTO_EN2 |
++			(MSM_DSC_DP_DTO_N << DP_DSC_DTO_N_SHIFT) |
++			(MSM_DSC_DP_DTO_D << DP_DSC_DTO_D_SHIFT));
++
++	drm_dsc_pps_payload_pack(&pps, dsc);
++
++	/* HB0..3 = 00 10 7f 00 (PPS SDP), PB0..3 their parity */
++	msm_dp_write_link(panel, REG_DP_PPS_HB_0_3, 0x007f1000);
++	msm_dp_write_link(panel, REG_DP_PPS_PB_0_3, 0x00a22300);
++
++	/*
++	 * Only the 88 bytes DSC 1.1/1.2 define (22 words, 0x1a8..0x1fc): the
++	 * audio registers start at 0x200. Their parity takes 6 words.
++	 */
++	memset(parity, 0, sizeof(parity));
++	for (i = 0; i < MSM_DP_PPS_WORDS; i++) {
++		word = b[4 * i] | (b[4 * i + 1] << 8) | (b[4 * i + 2] << 16) |
++		       ((u32)b[4 * i + 3] << 24);
++		parity[i] = msm_dp_panel_pps_parity(word);
++	}
++
++	for (i = 0; i < MSM_DP_PPS_WORDS / 4 + 1; i++)
++		msm_dp_write_link(panel, REG_DP_PPS_PB_4_7 + 4 * i,
++				  parity[4 * i] | (parity[4 * i + 1] << 8) |
++				  (parity[4 * i + 2] << 16) |
++				  ((u32)parity[4 * i + 3] << 24));
++
++	for (i = 0; i < MSM_DP_PPS_WORDS; i++) {
++		word = b[4 * i] | (b[4 * i + 1] << 8) | (b[4 * i + 2] << 16) |
++		       ((u32)b[4 * i + 3] << 24);
++		msm_dp_write_link(panel, REG_DP_PPS_PPS_0_3 + 4 * i, word);
++	}
++
++	val = DP_COMPRESSION_MODE_EN;
++	val |= msm_dsc_dp_eol_bytes(dsc) << DP_COMPRESSION_EOL_BYTES_SHIFT;
++	val |= (dsc->slice_count - 1) << DP_COMPRESSION_SLICE_PER_PKT_SHIFT;
++	val |= MSM_DP_DSC_BE_IN_LANE << DP_COMPRESSION_BE_IN_LANE_SHIFT;
++	val |= dsc->slice_chunk_size << DP_COMPRESSION_BYTES_PER_PKT_SHIFT;
++	msm_dp_write_link(panel, REG_DP_COMPRESSION_MODE_CTRL, val);
++
++	msm_dp_panel_flush_pps(msm_dp_panel);
++
++	drm_dbg_dp(panel->drm_dev,
++		   "dsc %ux%u slices %u x %u bpc %u chunk %u pclk/line %u eol %u extra %u ctrl 0x%x\n",
++		   dsc->pic_width, dsc->pic_height, dsc->slice_count,
++		   dsc->slice_height, dsc->bits_per_component,
++		   dsc->slice_chunk_size, msm_dsc_dp_pclk_per_line(dsc),
++		   msm_dsc_dp_eol_bytes(dsc), msm_dsc_dp_extra_width(dsc), val);
++}
++
+ static void msm_dp_panel_send_vsc_sdp(struct msm_dp_panel_private *panel, struct dp_sdp *vsc_sdp)
+ {
+ 	u32 header[2];
+@@ -797,8 +1075,14 @@ int msm_dp_panel_init_panel_info(struct
+ 				drm_mode->clock);
+ 	drm_dbg_dp(panel->drm_dev, "bpp = %d\n", msm_dp_panel->msm_dp_mode.bpp);
+ 
+-	msm_dp_panel->msm_dp_mode.bpp = msm_dp_panel_get_mode_bpp(msm_dp_panel, msm_dp_panel->msm_dp_mode.bpp,
+-						      msm_dp_panel->msm_dp_mode.drm_mode.clock);
++	/* With DSC the input keeps its depth: the link carries 8 bpp */
++	if (msm_dp_panel->msm_dp_mode.dsc_en)
++		msm_dp_panel->msm_dp_mode.bpp =
++			msm_dp_panel->msm_dp_mode.dsc.bits_per_component * 3;
++	else
++		msm_dp_panel->msm_dp_mode.bpp =
++			msm_dp_panel_get_mode_bpp(msm_dp_panel, msm_dp_panel->msm_dp_mode.bpp,
++						  msm_dp_panel->msm_dp_mode.drm_mode.clock);
+ 
+ 	drm_dbg_dp(panel->drm_dev, "updated bpp = %d\n",
+ 				msm_dp_panel->msm_dp_mode.bpp);
+--- a/drivers/gpu/drm/msm/dp/dp_panel.h	2026-11-13 08:40:11.841167192 +0100
++++ b/drivers/gpu/drm/msm/dp/dp_panel.h	2026-11-13 08:54:02.011471000 +0100
+@@ -8,6 +8,8 @@
+ 
+ #include <drm/drm_modes.h>
+ #include <drm/msm_drm.h>
++#include <drm/display/drm_dp.h>
++#include <drm/display/drm_dsc.h>
+ 
+ #include "dp_aux.h"
+ #include "dp_link.h"
+@@ -20,6 +22,9 @@ struct msm_dp_display_mode {
+ 	u32 h_active_low;
+ 	u32 v_active_low;
+ 	bool out_fmt_is_yuv_420;
++	/* DSC: bpp above is the uncompressed one, the link carries 8 */
++	bool dsc_en;
++	struct drm_dsc_config dsc;
+ };
+ 
+ struct msm_dp_panel_psr {
+@@ -40,6 +45,10 @@ struct msm_dp_panel {
+ 	bool video_test;
+ 	bool vsc_sdp_supported;
+ 
++	/* Sink DSC decoder (DPCD 0x60..0x6f) and FEC, both needed for DSC */
++	u8 dsc_dpcd[DP_DSC_RECEIVER_CAP_SIZE];
++	bool dsc_supported;
++
+ 	/* From the connector state, before the stream is programmed */
+ 	bool hdr_enabled;
+ 	bool bt2020;
+@@ -64,6 +73,12 @@ void msm_dp_panel_handle_sink_request(st
+ void msm_dp_panel_tpg_config(struct msm_dp_panel *msm_dp_panel, bool enable);
+ 
+ void msm_dp_panel_clear_dsc_dto(struct msm_dp_panel *msm_dp_panel);
++bool msm_dp_panel_dsc_compute(struct msm_dp_panel *msm_dp_panel,
++			      const struct drm_display_mode *mode, u32 max_bpp,
++			      bool wide_bus, struct drm_dsc_config *dsc);
++bool msm_dp_panel_dsc_fits(struct msm_dp_panel *msm_dp_panel, u32 pclk_khz);
++void msm_dp_panel_config_dsc(struct msm_dp_panel *msm_dp_panel);
++void msm_dp_panel_flush_pps(struct msm_dp_panel *msm_dp_panel);
+ 
+ void msm_dp_panel_enable_vsc_sdp(struct msm_dp_panel *msm_dp_panel, struct dp_sdp *vsc_sdp);
+ void msm_dp_panel_disable_vsc_sdp(struct msm_dp_panel *msm_dp_panel);
+--- a/drivers/gpu/drm/msm/dp/dp_reg.h	2026-11-13 08:40:11.841246401 +0100
++++ b/drivers/gpu/drm/msm/dp/dp_reg.h	2026-11-13 08:48:58.263921700 +0100
+@@ -221,6 +221,24 @@
+ #define MMSS_DP_PSR_CRC_B			(0x00000158)
+ 
+ #define REG_DP_COMPRESSION_MODE_CTRL		(0x00000180)
++#define DP_COMPRESSION_MODE_EN			BIT(0)
++#define DP_COMPRESSION_EOL_BYTES_SHIFT		3
++#define DP_COMPRESSION_SLICE_PER_PKT_SHIFT	5
++#define DP_COMPRESSION_BE_IN_LANE_SHIFT		10
++#define DP_COMPRESSION_BYTES_PER_PKT_SHIFT	16
++/* PPS SDP: header, parity bytes, then the 128 byte payload */
++#define REG_DP_PPS_HB_0_3			(0x00000184)
++#define REG_DP_PPS_PB_0_3			(0x00000188)
++#define REG_DP_PPS_PB_4_7			(0x0000018C)
++#define REG_DP_PPS_PPS_0_3			(0x000001A8)
++
++#define MMSS_DP_FLUSH				(0x000002F8)
++#define DP_FLUSH_PPS				BIT(0)
++#define DP_FLUSH_CONTINUOUS_PPS			BIT(2)
++
++/* MAINLINK_CTRL bits that switch FEC on (Qualcomm downstream) */
++#define DP_MAINLINK_CTRL_FEC_EN			BIT(12)
++#define DP_MAINLINK_CTRL_FEC_SEQ_MODE		BIT(22)
+ 
+ #define MMSS_DP_AUDIO_CFG			(0x00000200)
+ #define MMSS_DP_AUDIO_STATUS			(0x00000204)
+@@ -330,6 +348,12 @@
+ 
+ #define MMSS_DP_TPG_MAIN_CONTROL		(0x00000060)
+ #define MMSS_DP_DSC_DTO				(0x0000007C)
++#define DP_DSC_DTO_EN				BIT(0)
++#define DP_DSC_DTO_ACK				BIT(1)
++#define DP_DSC_DTO_EN2				BIT(3)
++#define DP_DSC_DTO_N_SHIFT			8
++#define DP_DSC_DTO_D_SHIFT			16
++#define MMSS_DP_DSC_DTO_COUNT			(0x00000084)
+ #define DP_TPG_CHECKERED_RECT_PATTERN		(0x00000100)
+ 
+ #define MMSS_DP_TPG_VIDEO_CONFIG		(0x00000064)
+--- a/drivers/gpu/drm/msm/msm_drv.h	2026-11-13 08:40:11.576042951 +0100
++++ b/drivers/gpu/drm/msm/msm_drv.h	2026-11-13 08:53:39.880767600 +0100
+@@ -364,6 +364,10 @@ void msm_dp_snapshot(struct msm_disp_sta
+ bool msm_dp_needs_periph_flush(const struct msm_dp *dp_display,
+ 			       const struct drm_display_mode *mode);
+ bool msm_dp_wide_bus_available(const struct msm_dp *dp_display);
++bool msm_dp_mode_uses_dsc(struct msm_dp *dp_display,
++			  const struct drm_display_mode *mode);
++struct drm_dsc_config *msm_dp_get_dsc_config(struct msm_dp *dp_display);
++void msm_dp_dsc_pps_flush(struct msm_dp *dp_display);
+ 
+ #else
+ static inline int __init msm_dp_register(void)
+@@ -396,6 +400,21 @@ static inline bool msm_dp_wide_bus_avail
+ 	return false;
+ }
+ 
++static inline bool msm_dp_mode_uses_dsc(struct msm_dp *dp_display,
++					const struct drm_display_mode *mode)
++{
++	return false;
++}
++
++static inline struct drm_dsc_config *msm_dp_get_dsc_config(struct msm_dp *dp_display)
++{
++	return NULL;
++}
++
++static inline void msm_dp_dsc_pps_flush(struct msm_dp *dp_display)
++{
++}
++
+ #endif
+ 
+ #ifdef CONFIG_DRM_MSM_MDP4
+--- a/drivers/gpu/drm/msm/msm_dsc_helper.h	2026-09-14 13:41:11.000000000 +0200
++++ b/drivers/gpu/drm/msm/msm_dsc_helper.h	2026-11-13 08:46:31.690806100 +0100
+@@ -24,4 +24,59 @@ static inline u32 msm_dsc_get_bytes_per_
+ 	return dsc->slice_count * dsc->slice_chunk_size;
+ }
+ 
++/*
++ * DisplayPort with DSC. The DP controller packs all slices of a line in one
++ * packet and paces the compressed stream with a DTO that, at 8 bpp, lets one
++ * pixel clock in three through. The interface and the DP controller must
++ * agree on the number of clocks that carry data, so both use these helpers.
++ * Numbers from Qualcomm's downstream dp_panel.c (DSC_TGT_BPP 8, wide bus).
++ */
++#define MSM_DSC_DP_DTO_N	1
++#define MSM_DSC_DP_DTO_D	3
++
++/* Bytes of padding that round the compressed line up to a multiple of 3 */
++static inline u32 msm_dsc_dp_eol_bytes(const struct drm_dsc_config *dsc)
++{
++	u32 bytes = msm_dsc_get_bytes_per_line(dsc);
++
++	return (3 - bytes % 3) % 3;
++}
++
++/* Wide bus clocks (6 bytes each) that carry the compressed line */
++static inline u32 msm_dsc_dp_data_clocks(const struct drm_dsc_config *dsc)
++{
++	return DIV_ROUND_UP(msm_dsc_get_bytes_per_line(dsc), 6);
++}
++
++/* Value for MMSS_DP_DSC_DTO_COUNT and the interface data window */
++static inline u32 msm_dsc_dp_pclk_per_line(const struct drm_dsc_config *dsc)
++{
++	return msm_dsc_dp_data_clocks(dsc) - 1;
++}
++
++/*
++ * Pixel clocks the interface must add to the active width when the last,
++ * incomplete DTO period of the line cannot hold the remaining data clocks.
++ */
++static inline u32 msm_dsc_dp_extra_width(const struct drm_dsc_config *dsc)
++{
++	u32 line_width = dsc->pic_width / 2;
++	u32 n = MSM_DSC_DP_DTO_N, d = MSM_DSC_DP_DTO_D;
++	int last_few_ack, accum = 0, needed = 0;
++	u32 remainder = n, start;
++	u32 last_few_pclk = line_width % d;
++
++	last_few_ack = msm_dsc_dp_data_clocks(dsc) - (line_width / d) * n;
++
++	while (accum < last_few_ack) {
++		needed++;
++		start = remainder >= n ? remainder : remainder + d;
++		remainder = start - n;
++		if (remainder < n)
++			accum++;
++	}
++
++	return last_few_pclk < needed ? needed - last_few_pclk : 0;
++}
++
+ #endif /* MSM_DSC_HELPER_H_ */

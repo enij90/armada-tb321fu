@@ -986,6 +986,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: Companion of 0845. The bridge atomic_check only runs once a modeset is already needed, so toggling HDR in gamescope changed Colorspace and HDR_OUTPUT_METADATA without re-enabling the bridge: PQ pixels but no HDR InfoFrame, washed out colours and the monitor stayed in SDR (testers, three monitors). The bridge connector now flags a modeset when either changes, as the HDMI state helper does.
 
+- `patches/0851-drm-msm-dp-display-stream-compression.patch`
+  source: armada
+  upstream: not yet sent
+  notes: DSC on external DP, which upstream msm lacks. Per mode (msm.dp_dsc, default 1 = only when the mode does not fit at 8 bpc): 8 bpp, 2/4/8 slices from two merged DSC engines, FEC, PPS SDP and DTO programmed as in the downstream driver (Lenovo GPL) and the unmerged 2023 series by Kuogee Hsieh. Only the 88 PPS bytes are written: the audio registers start at 0x200.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local
