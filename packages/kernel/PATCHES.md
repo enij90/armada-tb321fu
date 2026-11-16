@@ -991,6 +991,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: DSC on external DP, which upstream msm lacks. Per mode (msm.dp_dsc, default 1 = only when the mode does not fit at 8 bpc): 8 bpp, 2/4/8 slices from two merged DSC engines, FEC, PPS SDP and DTO programmed as in the downstream driver (Lenovo GPL) and the unmerged 2023 series by Kuogee Hsieh. Only the 88 PPS bytes are written: the audio registers start at 0x200.
 
+- `patches/0852-drm-msm-dp-dsc-keep-hdmi-converters-under-their-tmds-clock.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Companion of 0851. A DP to HDMI converter that decodes DSC sends the stream out over TMDS at the input bpc: 1440p144 at 10 bpc needs 725 MHz and a 600 MHz HDMI 2.0 port stayed black (tester dock, DP side locked, no DSC/FEC errors). The DSC input bpc now stays within the downstream port TMDS clock and max bpc.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local
