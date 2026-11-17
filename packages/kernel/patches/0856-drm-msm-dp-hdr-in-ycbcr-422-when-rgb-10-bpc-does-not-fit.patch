@@ -1,0 +1,309 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: HDR in YCbCr 4:2:2 when RGB 10 bpc does not fit
+
+Monitors go into HDR only with 10 bpc input. On 2 lanes, or behind a DP
+to HDMI converter with a 600 MHz TMDS port, 1440p120/144 do not fit as
+RGB at 10 bpc and went out with DSC at 8 bpc or as RGB 8 bpc, so the
+monitor stayed SDR. YCbCr 4:2:2 at 10 bpc takes 20 bits per pixel on the
+link and the pixel clock on HDMI, so it fits; an iPhone sends exactly
+that through the same dock. With HDR metadata or BT.2020 colorimetry,
+pick 4:2:2 when RGB 10 bpc does not fit and 4:2:2 does, instead of DSC
+(DPU topology and bridge mode_set make the same choice). msm.dp_hdr_422
+(default on) turns it off.
+
+---
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -242,19 +242,19 @@
+ };
+ 
+ /**
+- * dpu_encoder_dp_ycbcr444 - whether DP sends YCbCr 4:4:4 (msm.dp_ycbcr)
++ * dpu_encoder_dp_ycbcr - YCbCr encoding DP sends (0 RGB, 444 or 422)
+  * @phys_enc: Pointer to physical encoder structure
+  */
+-bool dpu_encoder_dp_ycbcr444(struct dpu_encoder_phys *phys_enc)
++int dpu_encoder_dp_ycbcr(struct dpu_encoder_phys *phys_enc)
+ {
+ 	struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(phys_enc->parent);
+ 	struct msm_drm_private *priv = phys_enc->parent->dev->dev_private;
+ 
+ 	if (dpu_enc->disp_info.intf_type != INTF_DP || !dpu_enc->connector)
+-		return false;
++		return 0;
+ 
+-	return msm_dp_ycbcr444(priv->kms->dp[dpu_enc->disp_info.h_tile_instance[0]],
+-			       dpu_enc->connector->state, &phys_enc->cached_mode);
++	return msm_dp_ycbcr_mode(priv->kms->dp[dpu_enc->disp_info.h_tile_instance[0]],
++				 dpu_enc->connector->state, &phys_enc->cached_mode);
+ }
+ 
+ /**
+@@ -774,8 +774,15 @@
+ 	 * ask with the mode being checked instead of the current config.
+ 	 */
+ 	if (disp_info->intf_type == INTF_DP) {
+-		use_dsc = msm_dp_mode_uses_dsc(priv->kms->dp[disp_info->h_tile_instance[0]],
+-					       adj_mode);
++		struct msm_dp *dp = priv->kms->dp[disp_info->h_tile_instance[0]];
++		struct drm_connector *dp_conn =
++			drm_atomic_get_new_connector_for_encoder(state, drm_enc);
++		struct drm_connector_state *dp_cs = dp_conn ?
++			drm_atomic_get_new_connector_state(state, dp_conn) : NULL;
++
++		/* HDR in YCbCr 4:2:2 replaces DSC where RGB 10 bpc does not fit */
++		use_dsc = msm_dp_ycbcr_mode(dp, dp_cs, adj_mode) != 422 &&
++			  msm_dp_mode_uses_dsc(dp, adj_mode);
+ 	} else {
+ 		dsc = dpu_encoder_get_dsc_config(drm_enc);
+ 		use_dsc = !!dsc;
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
+@@ -323,7 +323,7 @@
+ 
+ extern const struct msm_format dpu_dp_ycbcr444_fmt;
+ extern const struct msm_format dpu_dp_ycbcr422_fmt;
+-bool dpu_encoder_dp_ycbcr444(struct dpu_encoder_phys *phys_enc);
++int dpu_encoder_dp_ycbcr(struct dpu_encoder_phys *phys_enc);
+ 
+ void dpu_encoder_helper_phys_setup_cdm(struct dpu_encoder_phys *phys_enc,
+ 				       const struct msm_format *dpu_fmt,
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
+@@ -540,13 +540,14 @@
+ static void dpu_encoder_phys_vid_enable(struct dpu_encoder_phys *phys_enc)
+ {
+ 	struct dpu_hw_ctl *ctl;
+-	const struct msm_format *fmt;
++	const struct msm_format *fmt, *cdm_fmt;
+ 	u32 fmt_fourcc;
+ 	u32 mode_3d;
+ 
+ 	ctl = phys_enc->hw_ctl;
+ 	fmt_fourcc = dpu_encoder_get_drm_fmt(phys_enc);
+ 	fmt = mdp_get_format(&phys_enc->dpu_kms->base, fmt_fourcc, 0);
++	cdm_fmt = fmt;
+ 	mode_3d = dpu_encoder_helper_get_3d_blend_mode(phys_enc);
+ 
+ 	DPU_DEBUG_VIDENC(phys_enc, "\n");
+@@ -556,11 +557,18 @@
+ 
+ 	dpu_encoder_helper_split_config(phys_enc, phys_enc->hw_intf->idx);
+ 
+-	dpu_encoder_helper_phys_setup_cdm(phys_enc,
+-					  !dpu_encoder_dp_ycbcr444(phys_enc) ? fmt :
+-					  msm_dp_ycbcr422() ? &dpu_dp_ycbcr422_fmt :
+-					  &dpu_dp_ycbcr444_fmt,
+-					  CDM_CDWN_OUTPUT_HDMI);
++	switch (dpu_encoder_dp_ycbcr(phys_enc)) {
++	case 422:
++		cdm_fmt = &dpu_dp_ycbcr422_fmt;
++		break;
++	case 444:
++		cdm_fmt = &dpu_dp_ycbcr444_fmt;
++		break;
++	default:
++		cdm_fmt = fmt;
++		break;
++	}
++	dpu_encoder_helper_phys_setup_cdm(phys_enc, cdm_fmt, CDM_CDWN_OUTPUT_HDMI);
+ 
+ 	dpu_encoder_phys_vid_setup_timing_engine(phys_enc);
+ 
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -1479,26 +1479,81 @@
+  * atomic_check (CDM in the topology) and at enable (CDM setup), and by the
+  * bridge at enable (MISC0, VSC).
+  */
+-bool msm_dp_ycbcr444(struct msm_dp *dp, const struct drm_connector_state *conn_state,
+-		     const struct drm_display_mode *mode)
++/* Can @mode go out at 10 bpc, as RGB or as YCbCr 4:2:2 (20 bits per pixel)? */
++static bool msm_dp_fits_10bpc(struct msm_dp *dp, const struct drm_display_mode *mode,
++			      bool ycbcr422)
+ {
+-	int param = msm_dp_panel_ycbcr_param();
++	struct msm_dp_display_private *msm_dp_display =
++		container_of(dp, struct msm_dp_display_private, msm_dp_display);
++	struct msm_dp_panel *panel = msm_dp_display->panel;
++	const struct msm_dp_link_info *link = &panel->link_info;
++	u64 data_rate = (u64)link->num_lanes * link->rate * 8;
++	int tmds, max_bpc;
+ 
+-	if (!dp || dp->is_edp || !dp->connector || !conn_state || !mode || param <= 0)
++	if (!data_rate || (u64)mode->clock * (ycbcr422 ? 20 : 30) > data_rate)
+ 		return false;
+-	if (drm_mode_is_420_only(&dp->connector->display_info, mode))
++	if (!drm_dp_is_branch(panel->dpcd))
++		return true;
++
++	max_bpc = drm_dp_downstream_max_bpc(panel->dpcd, panel->downstream_ports,
++					    panel->drm_edid);
++	if (max_bpc > 0 && max_bpc < 10)
+ 		return false;
+-	if (msm_dp_mode_uses_dsc(dp, mode))
++
++	/* HDMI carries 4:2:2 in a 12 bit container at the pixel clock */
++	tmds = drm_dp_downstream_max_tmds_clock(panel->dpcd, panel->downstream_ports,
++						panel->drm_edid);
++	if (tmds > 0 && (u64)mode->clock * (ycbcr422 ? 8 : 10) > (u64)tmds * 8)
+ 		return false;
+ 
+-	return param == 2 || param >= 4 ||
+-	       conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
++	return true;
++}
++
++/**
++ * msm_dp_ycbcr_mode - pixel encoding on the DP link for @mode
++ *
++ * Returns 0 for RGB, 444 or 422 for YCbCr at 10 bpc. HDR (HDR metadata or
++ * BT.2020 colorimetry) takes 4:2:2 when RGB at 10 bpc does not fit but 4:2:2
++ * does (msm.dp_hdr_422); msm.dp_ycbcr forces it for testing.
++ */
++int msm_dp_ycbcr_mode(struct msm_dp *dp, const struct drm_connector_state *conn_state,
++		      const struct drm_display_mode *mode)
++{
++	int param = msm_dp_panel_ycbcr_param();
++	bool hdr;
++
++	if (!dp || dp->is_edp || !dp->connector || !conn_state || !mode || !mode->clock)
++		return 0;
++	if (drm_mode_is_420_only(&dp->connector->display_info, mode))
++		return 0;
++
++	hdr = conn_state->hdr_output_metadata ||
++	      conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
++
++	switch (param) {
++	case 1:
++	case 2:
++		if ((param == 2 || hdr) && !msm_dp_mode_uses_dsc(dp, mode))
++			return 444;
++		break;
++	case 3:
++	case 4:
++		if ((param == 4 || hdr) && msm_dp_fits_10bpc(dp, mode, true))
++			return 422;
++		break;
++	}
++
++	if (hdr && msm_dp_panel_hdr_422() && !msm_dp_fits_10bpc(dp, mode, false) &&
++	    msm_dp_fits_10bpc(dp, mode, true))
++		return 422;
++
++	return 0;
+ }
+ 
+-/* With msm_dp_ycbcr444() true: 4:2:2 instead of 4:4:4 */
+-bool msm_dp_ycbcr422(void)
++bool msm_dp_ycbcr444(struct msm_dp *dp, const struct drm_connector_state *conn_state,
++		     const struct drm_display_mode *mode)
+ {
+-	return msm_dp_panel_ycbcr_param() >= 3;
++	return msm_dp_ycbcr_mode(dp, conn_state, mode) != 0;
+ }
+ 
+ /* HDR metadata and colorimetry of the connector, for msm_dp_panel_timing_cfg() */
+@@ -1509,6 +1564,7 @@
+ 	struct msm_dp_panel *panel = dp->panel;
+ 	struct drm_connector_state *conn_state;
+ 	struct drm_connector *connector;
++	int ycbcr;
+ 
+ 	panel->hdr_enabled = false;
+ 	panel->bt2020 = false;
+@@ -1525,9 +1581,10 @@
+ 		return;
+ 
+ 	panel->bt2020 = conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
+-	panel->ycbcr444 = msm_dp_ycbcr444(&dp->msm_dp_display, conn_state,
+-					  &dp->msm_dp_mode.drm_mode);
+-	panel->ycbcr422 = panel->ycbcr444 && msm_dp_ycbcr422();
++	ycbcr = msm_dp_ycbcr_mode(&dp->msm_dp_display, conn_state,
++				  &dp->msm_dp_mode.drm_mode);
++	panel->ycbcr444 = ycbcr != 0;
++	panel->ycbcr422 = ycbcr == 422;
+ 	if (panel->ycbcr444)
+ 		drm_info(dp->drm_dev, "DP: YCbCr %s out (%s)\n",
+ 			 panel->ycbcr422 ? "4:2:2" : "4:4:4",
+@@ -1706,6 +1763,10 @@
+ 					 msm_dp_display_max_bpp(dp, adjusted_mode),
+ 					 msm_dp_display->ctrl->wide_bus_en,
+ 					 &msm_dp_display->msm_dp_mode.dsc);
++	/* HDR in YCbCr 4:2:2 at 10 bpc instead (same choice as the DPU topology) */
++	if (msm_dp_display->msm_dp_mode.dsc_en &&
++	    msm_dp_ycbcr_mode(dp, dp->connector->state, adjusted_mode) == 422)
++		msm_dp_display->msm_dp_mode.dsc_en = false;
+ 	if (msm_dp_display->msm_dp_mode.dsc_en)
+ 		drm_info(dp->drm_dev, "DP %ux%u@%u with DSC: %u slices, %u bpc in, 8 bpp out\n",
+ 			 adjusted_mode->hdisplay, adjusted_mode->vdisplay,
+--- a/drivers/gpu/drm/msm/dp/dp_panel.c
++++ b/drivers/gpu/drm/msm/dp/dp_panel.c
+@@ -56,6 +56,20 @@
+ module_param(dp_ycbcr_yuv_bit, bool, 0644);
+ MODULE_PARM_DESC(dp_ycbcr_yuv_bit, "Set the YUV bit of CONFIGURATION_CTRL for YCbCr 4:4:4 (testing)");
+ 
++/*
++ * HDR needs 10 bpc. When a mode does not fit as RGB at 10 bpc (link, or the
++ * TMDS clock of a DP to HDMI converter) but does as YCbCr 4:2:2 at 10 bpc,
++ * send that instead of compressing (DSC) or dropping to 8 bpc.
++ */
++static bool dp_hdr_422 = true;
++module_param(dp_hdr_422, bool, 0644);
++MODULE_PARM_DESC(dp_hdr_422, "HDR: YCbCr 4:2:2 10 bpc instead of DSC or 8 bpc when RGB 10 bpc does not fit (default on)");
++
++bool msm_dp_panel_hdr_422(void)
++{
++	return dp_hdr_422;
++}
++
+ int msm_dp_panel_ycbcr_param(void)
+ {
+ 	return dp_ycbcr;
+@@ -1151,6 +1165,9 @@
+ 	if (msm_dp_panel->msm_dp_mode.dsc_en)
+ 		msm_dp_panel->msm_dp_mode.bpp =
+ 			msm_dp_panel->msm_dp_mode.dsc.bits_per_component * 3;
++	else if (msm_dp_panel->ycbcr422)
++		/* checked to fit at 10 bpc as 4:2:2: 20 bits per pixel on the link */
++		msm_dp_panel->msm_dp_mode.bpp = 30;
+ 	else
+ 		msm_dp_panel->msm_dp_mode.bpp =
+ 			msm_dp_panel_get_mode_bpp(msm_dp_panel, msm_dp_panel->msm_dp_mode.bpp,
+--- a/drivers/gpu/drm/msm/dp/dp_panel.h
++++ b/drivers/gpu/drm/msm/dp/dp_panel.h
+@@ -87,6 +87,7 @@
+ void msm_dp_panel_disable_vsc_sdp(struct msm_dp_panel *msm_dp_panel);
+ int msm_dp_panel_ycbcr_param(void);
+ bool msm_dp_panel_ycbcr_yuv_bit(void);
++bool msm_dp_panel_hdr_422(void);
+ void msm_dp_panel_disable_hdr_sdp(struct msm_dp_panel *msm_dp_panel);
+ 
+ /**
+--- a/drivers/gpu/drm/msm/msm_drv.h
++++ b/drivers/gpu/drm/msm/msm_drv.h
+@@ -370,7 +370,8 @@
+ void msm_dp_dsc_pps_flush(struct msm_dp *dp_display);
+ bool msm_dp_ycbcr444(struct msm_dp *dp, const struct drm_connector_state *conn_state,
+ 		     const struct drm_display_mode *mode);
+-bool msm_dp_ycbcr422(void);
++int msm_dp_ycbcr_mode(struct msm_dp *dp, const struct drm_connector_state *conn_state,
++		      const struct drm_display_mode *mode);
+ 
+ #else
+ static inline int __init msm_dp_register(void)
+@@ -416,9 +417,11 @@
+ 	return false;
+ }
+ 
+-static inline bool msm_dp_ycbcr422(void)
++static inline int msm_dp_ycbcr_mode(struct msm_dp *dp,
++				    const struct drm_connector_state *conn_state,
++				    const struct drm_display_mode *mode)
+ {
+-	return false;
++	return 0;
+ }
+ 
+ static inline struct drm_dsc_config *msm_dp_get_dsc_config(struct msm_dp *dp_display)

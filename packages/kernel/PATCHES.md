@@ -1011,6 +1011,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: Fix for 0845. DP >= 1.2 controllers run in SDE_PERIPH_UPDATE flush mode and only send updated SDPs on a DPU peripheral flush, which the DPU requested only for YUV 4:2:0 and DSC. The HDR metadata SDP (and BT.2020 VSC) were written but never sent (tester monitor OSD: EOTF none with HDR on). The flush is now also requested for HDR metadata, BT.2020 colorimetry and the YCbCr test output.
 
+- `patches/0856-drm-msm-dp-hdr-in-ycbcr-422-when-rgb-10-bpc-does-not-fit.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Monitors only go into HDR with 10 bpc input. 1440p120/144 on 2 lanes or behind a 600 MHz HDMI converter did not fit as RGB 10 bpc (DSC 8 bpc / RGB 8 bpc, monitor SDR, tester OSD). With HDR, YCbCr 4:2:2 10 bpc (20 bpp on the link, pixel clock on HDMI, like an iPhone through the same dock) is picked instead when it fits; DPU topology and mode_set agree. msm.dp_hdr_422 (default on). Builds on 0854.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local
