@@ -1,0 +1,43 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: peripheral flush for the HDR and colorimetry SDPs
+
+From DP 1.2 the controller runs in SDE_PERIPH_UPDATE flush mode: SDPs
+written to the GENERIC registers only go out after a DPU peripheral
+flush, and msm_dp_panel_update_sdp() does nothing there. The DPU asks for
+that flush only for YUV 4:2:0 and DSC, so the HDR metadata SDP (and the
+VSC SDP for BT.2020) were programmed but never sent: monitors behind a
+DP to HDMI converter showed EOTF "none" with HDR on. Ask for the flush
+also when the connector carries HDR metadata or BT.2020 colorimetry, or
+YCbCr output is requested. Decided from the connector state, since the
+DPU asks at encoder enable, before the bridge programs the packets.
+
+---
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -1397,9 +1397,24 @@
+ 	const struct msm_dp_display_private *dp =
+ 		container_of(msm_dp_display, struct msm_dp_display_private, msm_dp_display);
+ 
++	const struct drm_connector_state *conn_state =
++		msm_dp_display->connector ? msm_dp_display->connector->state : NULL;
++
+ 	/* The PPS SDP of DSC goes out with the peripheral flush too */
+-	return drm_mode_is_420_only(&msm_dp_display->connector->display_info, mode) ||
+-	       dp->msm_dp_mode.dsc_en;
++	if (drm_mode_is_420_only(&msm_dp_display->connector->display_info, mode) ||
++	    dp->msm_dp_mode.dsc_en)
++		return true;
++
++	/*
++	 * So do the HDR metadata SDP and the VSC SDP for BT.2020 or YCbCr: from
++	 * DP 1.2 the controller only sends updated SDPs on a peripheral flush.
++	 * Asked at encoder enable, before the bridge programs the packets, so
++	 * decide from the connector state.
++	 */
++	return !msm_dp_display->is_edp && conn_state &&
++	       (conn_state->hdr_output_metadata ||
++		conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB ||
++		msm_dp_panel_ycbcr_param() > 0);
+ }
+ 
+ bool msm_dp_wide_bus_available(const struct msm_dp *msm_dp_display)

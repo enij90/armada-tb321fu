@@ -1006,6 +1006,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: Test parameter. A tester dock (MegaChips DP to HDMI converter) keeps the monitor in SDR with RGB + HDR metadata, while an iPhone through the same dock sends YCbCr 4:2:2 and gets HDR. msm.dp_ycbcr: 1/2 YCbCr 4:4:4 with HDR/always, 3/4 YCbCr 4:2:2 with HDR/always, 10 bpc. CDM conversion (BT.2020/BT.709 limited), MISC0 YCbCr BT.709, TU 4:2:2 encoding, VSC SDP with the real colorimetry when it can be sent. msm.dp_ycbcr_yuv_bit also sets the YUV bit of CONFIGURATION_CTRL. Default off.
 
+- `patches/0855-drm-msm-dp-peripheral-flush-for-hdr-and-colorimetry-sdps.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Fix for 0845. DP >= 1.2 controllers run in SDE_PERIPH_UPDATE flush mode and only send updated SDPs on a DPU peripheral flush, which the DPU requested only for YUV 4:2:0 and DSC. The HDR metadata SDP (and BT.2020 VSC) were written but never sent (tester monitor OSD: EOTF none with HDR on). The flush is now also requested for HDR metadata, BT.2020 colorimetry and the YCbCr test output.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local
