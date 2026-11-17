@@ -316,6 +316,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0851-drm-msm-dp-display-stream-compression.patch
 0852-drm-msm-dp-dsc-keep-hdmi-converters-under-their-tmds-clock.patch
 0853-drm-msm-dp-parameter-to-force-the-bt2020-vsc-sdp.patch
+0854-drm-msm-dp-ycbcr-444-output-parameter.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
 0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch

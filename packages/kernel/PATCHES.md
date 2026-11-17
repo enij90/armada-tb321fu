@@ -1001,6 +1001,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: Test parameter. A tester dock (MegaChips DP to HDMI converter) does not advertise VSC SDP support, so HDR in RGB never carries BT.2020 colorimetry and the monitor stays SDR. msm.dp_vsc_force=1 sends the BT.2020 VSC SDP anyway at the next modeset. Default off.
 
+- `patches/0854-drm-msm-dp-ycbcr-444-output-parameter.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Test parameter. A tester dock (MegaChips DP to HDMI converter) keeps the monitor in SDR with RGB + HDR metadata, while an iPhone through the same dock sends YCbCr 4:2:2 and gets HDR. msm.dp_ycbcr=1 sends YCbCr 4:4:4 10 bpc when the connector asks for BT.2020 (2: always): CDM conversion (BT.2020/BT.709 limited), MISC0 YCbCr 4:4:4 BT.709, VSC SDP with the real colorimetry when it can be sent. msm.dp_ycbcr_yuv_bit also sets the YUV bit of CONFIGURATION_CTRL. Default off.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local
