@@ -996,6 +996,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: Companion of 0851. A DP to HDMI converter that decodes DSC sends the stream out over TMDS at the input bpc: 1440p144 at 10 bpc needs 725 MHz and a 600 MHz HDMI 2.0 port stayed black (tester dock, DP side locked, no DSC/FEC errors). The DSC input bpc now stays within the downstream port TMDS clock and max bpc.
 
+- `patches/0853-drm-msm-dp-parameter-to-force-the-bt2020-vsc-sdp.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Test parameter. A tester dock (MegaChips DP to HDMI converter) does not advertise VSC SDP support, so HDR in RGB never carries BT.2020 colorimetry and the monitor stays SDR. msm.dp_vsc_force=1 sends the BT.2020 VSC SDP anyway at the next modeset. Default off.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local

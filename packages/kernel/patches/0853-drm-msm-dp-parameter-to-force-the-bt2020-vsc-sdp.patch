@@ -1,0 +1,41 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: parameter to force the BT.2020 VSC SDP
+
+HDR through a DP to HDMI converter dock stays SDR on the monitor. The
+dock does not advertise VSC SDP support, so RGB BT.2020 colorimetry is
+never signalled. msm.dp_vsc_force=1 sends the VSC SDP anyway, for
+testing; it takes effect at the next modeset.
+
+---
+--- a/drivers/gpu/drm/msm/dp/dp_panel.c
++++ b/drivers/gpu/drm/msm/dp/dp_panel.c
+@@ -32,6 +32,15 @@
+ module_param(dp_dsc, int, 0644);
+ MODULE_PARM_DESC(dp_dsc, "DSC on DisplayPort: 0 off, 1 below 8 bpc (default), 2 below the monitor's bpc, 3 always");
+ 
++/*
++ * Send the VSC SDP with BT.2020 colorimetry for HDR even when the sink does
++ * not advertise VSC support. Some DP-to-HDMI converters leave the bit clear
++ * and still need the colorimetry to switch the HDMI side to BT.2020 (testing).
++ */
++static bool dp_vsc_force;
++module_param(dp_vsc_force, bool, 0644);
++MODULE_PARM_DESC(dp_vsc_force, "Send the BT.2020 VSC SDP even if the sink does not advertise VSC (default off)");
++
+ #define MSM_DP_DSC_BPP		8	/* compressed bits per pixel, as downstream */
+ #define MSM_DP_DSC_BE_IN_LANE	10	/* SST */
+ #define MSM_DP_PPS_WORDS	(88 / 4)	/* DSC_1_1_PPS_PARAMETER_SET_ELEMENTS */
+@@ -1056,8 +1065,12 @@
+ 
+ 	if (msm_dp_panel->msm_dp_mode.out_fmt_is_yuv_420)
+ 		msm_dp_panel_setup_vsc_sdp_yuv_420(msm_dp_panel);
+-	else if (msm_dp_panel->bt2020 && msm_dp_panel->vsc_sdp_supported)
++	else if (msm_dp_panel->bt2020 &&
++		 (msm_dp_panel->vsc_sdp_supported || dp_vsc_force)) {
++		if (!msm_dp_panel->vsc_sdp_supported)
++			drm_info(panel->drm_dev, "DP: forcing the BT.2020 VSC SDP\n");
+ 		msm_dp_panel_setup_vsc_sdp_bt2020(msm_dp_panel);
++	}
+ 
+ 	if (msm_dp_panel->hdr_enabled)
+ 		msm_dp_panel_enable_hdr_sdp(panel);
