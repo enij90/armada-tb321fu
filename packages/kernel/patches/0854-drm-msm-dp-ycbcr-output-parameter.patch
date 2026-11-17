@@ -1,20 +1,22 @@
 From: enij90 <226572015+enij90@users.noreply.github.com>
-Subject: [PATCH] drm/msm/dp: YCbCr 4:4:4 output parameter
+Subject: [PATCH] drm/msm/dp: YCbCr output parameter (4:4:4 and 4:2:2)
 
 A DP to HDMI converter dock (MegaChips) keeps the monitor in SDR when
 the source sends RGB with HDR metadata; an iPhone through the same dock
-sends YCbCr and the monitor switches to HDR. msm.dp_ycbcr=1 sends YCbCr
-4:4:4 at 10 bpc when the connector asks for BT.2020 (2: always). The
-DPU converts through the CDM (BT.2020 or BT.709, limited range), MISC0
-signals YCbCr 4:4:4 BT.709, and the VSC SDP carries the real colorimetry
-when it can be sent (sink support or msm.dp_vsc_force).
-msm.dp_ycbcr_yuv_bit also sets the YUV bit of DP_CONFIGURATION_CTRL.
-Testing only, default off.
+sends YCbCr 4:2:2 (12 bit on HDMI, ST2084) and the monitor switches to
+HDR. msm.dp_ycbcr sends YCbCr at 10 bpc: 1 4:4:4 when the connector asks
+for BT.2020, 2 4:4:4 always, 3 4:2:2 when the connector asks for
+BT.2020, 4 4:2:2 always. The DPU converts through the CDM (BT.2020 or
+BT.709, limited range; 4:2:2 in the HDMI-style pack), MISC0 signals
+YCbCr 4:4:4/4:2:2 BT.709, the TU uses the 4:2:2 pixel encoding, and the
+VSC SDP carries the real colorimetry when it can be sent (sink support or
+msm.dp_vsc_force). msm.dp_ycbcr_yuv_bit also sets the YUV bit of
+DP_CONFIGURATION_CTRL. Testing only, default off.
 
 ---
 --- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
 +++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
-@@ -227,6 +227,29 @@
+@@ -227,6 +227,36 @@
  	15, 7, 13, 5, 3, 11, 1, 9, 12, 4, 14, 6, 0, 8, 2, 10
  };
  
@@ -22,6 +24,13 @@ Testing only, default off.
 +const struct msm_format dpu_dp_ycbcr444_fmt = {
 +	.pixel_format = DRM_FORMAT_YUV444,
 +	.chroma_sample = CHROMA_FULL,
++	.flags = MSM_FORMAT_FLAG_YUV | MSM_FORMAT_FLAG_DX,
++};
++
++/* Same, chroma halved horizontally: YCbCr 4:2:2 in the HDMI-style pack */
++const struct msm_format dpu_dp_ycbcr422_fmt = {
++	.pixel_format = DRM_FORMAT_YUYV,
++	.chroma_sample = CHROMA_H2V1,
 +	.flags = MSM_FORMAT_FLAG_YUV | MSM_FORMAT_FLAG_DX,
 +};
 +
@@ -44,7 +53,7 @@ Testing only, default off.
  /**
   * dpu_encoder_get_drm_fmt - return DRM fourcc format
   * @phys_enc: Pointer to physical encoder structure
-@@ -786,7 +809,11 @@
+@@ -786,7 +816,11 @@
  		if (fb && MSM_FORMAT_IS_YUV(msm_framebuffer_format(fb)))
  			topology->num_cdm++;
  	} else if (disp_info->intf_type == INTF_DP) {
@@ -57,11 +66,11 @@ Testing only, default off.
  			topology->num_cdm++;
  	}
  }
-@@ -2555,6 +2582,13 @@
+@@ -2555,6 +2589,13 @@
  	cdm_cfg->output_bit_depth = MSM_FORMAT_IS_DX(dpu_fmt) ?
  			CDM_CDWN_OUTPUT_10BIT : CDM_CDWN_OUTPUT_8BIT;
  	cdm_cfg->csc_cfg = &dpu_csc10_rgb2yuv_601l;
-+	if (dpu_fmt == &dpu_dp_ycbcr444_fmt) {
++	if (dpu_fmt == &dpu_dp_ycbcr444_fmt || dpu_fmt == &dpu_dp_ycbcr422_fmt) {
 +		struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(phys_enc->parent);
 +		bool bt2020 = dpu_enc->connector && dpu_enc->connector->state &&
 +			dpu_enc->connector->state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
@@ -73,11 +82,12 @@ Testing only, default off.
  	switch (cdm_cfg->output_fmt->chroma_sample) {
 --- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
 +++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
-@@ -321,6 +321,9 @@
+@@ -321,6 +321,10 @@
  void dpu_encoder_helper_phys_setup_cwb(struct dpu_encoder_phys *phys_enc,
  				       bool enable);
  
 +extern const struct msm_format dpu_dp_ycbcr444_fmt;
++extern const struct msm_format dpu_dp_ycbcr422_fmt;
 +bool dpu_encoder_dp_ycbcr444(struct dpu_encoder_phys *phys_enc);
 +
  void dpu_encoder_helper_phys_setup_cdm(struct dpu_encoder_phys *phys_enc,
@@ -85,14 +95,15 @@ Testing only, default off.
  				       u32 output_type);
 --- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
 +++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
-@@ -556,7 +556,10 @@
+@@ -556,7 +556,11 @@
  
  	dpu_encoder_helper_split_config(phys_enc, phys_enc->hw_intf->idx);
  
 -	dpu_encoder_helper_phys_setup_cdm(phys_enc, fmt, CDM_CDWN_OUTPUT_HDMI);
 +	dpu_encoder_helper_phys_setup_cdm(phys_enc,
-+					  dpu_encoder_dp_ycbcr444(phys_enc) ?
-+					  &dpu_dp_ycbcr444_fmt : fmt,
++					  !dpu_encoder_dp_ycbcr444(phys_enc) ? fmt :
++					  msm_dp_ycbcr422() ? &dpu_dp_ycbcr422_fmt :
++					  &dpu_dp_ycbcr444_fmt,
 +					  CDM_CDWN_OUTPUT_HDMI);
  
  	dpu_encoder_phys_vid_setup_timing_engine(phys_enc);
@@ -160,15 +171,25 @@ Testing only, default off.
  	misc_val &= ~(0x07 << DP_MISC0_TEST_BITS_DEPTH_SHIFT);
 +	/* and component format, range and YCbCr colorimetry (bits 4:1) */
 +	misc_val &= ~(0x0f << DP_MISC0_COLORIMETRY_CFG_SHIFT);
-+	/* YCbCr 4:4:4 (10b), CTA range, BT.709; BT.2020 needs the VSC SDP */
++	/* YCbCr 4:4:4 (10b) or 4:2:2 (01b), CTA range, BT.709; BT.2020 needs the VSC SDP */
 +	if (ctrl->panel->ycbcr444)
-+		colorimetry_cfg = 0x0e;
++		colorimetry_cfg = ctrl->panel->ycbcr422 ? 0x0d : 0x0e;
  	misc_val |= colorimetry_cfg << DP_MISC0_COLORIMETRY_CFG_SHIFT;
  	misc_val |= test_bits_depth << DP_MISC0_TEST_BITS_DEPTH_SHIFT;
  	/* Configure clock to synchronous mode */
+@@ -1285,7 +1292,8 @@
+ 	in.hporch = drm_mode->htotal - drm_mode->hdisplay;
+ 	in.nlanes = ctrl->link->link_params.num_lanes;
+ 	in.bpp = ctrl->panel->msm_dp_mode.bpp;
+-	in.pixel_enc = ctrl->panel->msm_dp_mode.out_fmt_is_yuv_420 ? 420 : 444;
++	in.pixel_enc = ctrl->panel->msm_dp_mode.out_fmt_is_yuv_420 ? 420 :
++		       ctrl->panel->ycbcr422 ? 422 : 444;
+ 	in.async_en = 0;
+ 	if (ctrl->panel->msm_dp_mode.dsc_en) {
+ 		const struct drm_dsc_config *dsc = &ctrl->panel->msm_dp_mode.dsc;
 --- a/drivers/gpu/drm/msm/dp/dp_display.c
 +++ b/drivers/gpu/drm/msm/dp/dp_display.c
-@@ -1459,6 +1459,26 @@
+@@ -1459,6 +1459,33 @@
  	return 0;
  }
  
@@ -189,28 +210,38 @@ Testing only, default off.
 +	if (msm_dp_mode_uses_dsc(dp, mode))
 +		return false;
 +
-+	return param >= 2 || conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
++	return param == 2 || param >= 4 ||
++	       conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
++}
++
++/* With msm_dp_ycbcr444() true: 4:2:2 instead of 4:4:4 */
++bool msm_dp_ycbcr422(void)
++{
++	return msm_dp_panel_ycbcr_param() >= 3;
 +}
 +
  /* HDR metadata and colorimetry of the connector, for msm_dp_panel_timing_cfg() */
  static void msm_dp_display_set_hdr(struct msm_dp_display_private *dp,
  				   struct drm_bridge *bridge,
-@@ -1470,6 +1490,7 @@
+@@ -1470,6 +1497,8 @@
  
  	panel->hdr_enabled = false;
  	panel->bt2020 = false;
 +	panel->ycbcr444 = false;
++	panel->ycbcr422 = false;
  	if (dp->msm_dp_display.is_edp)
  		return;
  
-@@ -1481,6 +1502,11 @@
+@@ -1481,6 +1510,13 @@
  		return;
  
  	panel->bt2020 = conn_state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB;
 +	panel->ycbcr444 = msm_dp_ycbcr444(&dp->msm_dp_display, conn_state,
 +					  &dp->msm_dp_mode.drm_mode);
++	panel->ycbcr422 = panel->ycbcr444 && msm_dp_ycbcr422();
 +	if (panel->ycbcr444)
-+		drm_info(dp->drm_dev, "DP: YCbCr 4:4:4 out (%s)\n",
++		drm_info(dp->drm_dev, "DP: YCbCr %s out (%s)\n",
++			 panel->ycbcr422 ? "4:2:2" : "4:4:4",
 +			 panel->bt2020 ? "BT.2020" : "BT.709");
  	if (!msm_dp_utils_pack_hdr_sdp(conn_state, &panel->hdr_sdp))
  		panel->hdr_enabled = !!conn_state->hdr_output_metadata;
@@ -229,7 +260,7 @@ Testing only, default off.
 + */
 +static int dp_ycbcr;
 +module_param(dp_ycbcr, int, 0644);
-+MODULE_PARM_DESC(dp_ycbcr, "YCbCr 4:4:4 on DisplayPort (testing): 0 off, 1 with HDR (BT.2020), 2 always");
++MODULE_PARM_DESC(dp_ycbcr, "YCbCr on DisplayPort (testing): 0 off, 1 4:4:4 with HDR (BT.2020), 2 4:4:4 always, 3 4:2:2 with HDR, 4 4:2:2 always");
 +
 +/* Also set the YUV bit of DP_CONFIGURATION_CTRL with YCbCr 4:4:4 (testing) */
 +static bool dp_ycbcr_yuv_bit;
@@ -260,14 +291,15 @@ Testing only, default off.
  {
  	struct drm_dp_vsc_sdp vsc_sdp_data = {};
  	struct dp_sdp vsc_sdp;
-@@ -934,10 +959,17 @@
+@@ -934,10 +959,18 @@
  	vsc_sdp_data.sdp_type = DP_SDP_VSC;
  	vsc_sdp_data.revision = 0x05;
  	vsc_sdp_data.length = 0x13;
 -	vsc_sdp_data.pixelformat = DP_PIXELFORMAT_RGB;
 -	vsc_sdp_data.colorimetry = DP_COLORIMETRY_BT2020_RGB;
 +	if (msm_dp_panel->ycbcr444) {
-+		vsc_sdp_data.pixelformat = DP_PIXELFORMAT_YUV444;
++		vsc_sdp_data.pixelformat = msm_dp_panel->ycbcr422 ?
++			DP_PIXELFORMAT_YUV422 : DP_PIXELFORMAT_YUV444;
 +		vsc_sdp_data.colorimetry = msm_dp_panel->bt2020 ?
 +			DP_COLORIMETRY_BT2020_YCC : DP_COLORIMETRY_BT709_YCC;
 +		vsc_sdp_data.dynamic_range = DP_DYNAMIC_RANGE_CTA;
@@ -281,7 +313,7 @@ Testing only, default off.
  	vsc_sdp_data.content_type = DP_CONTENT_TYPE_GRAPHICS;
  
  	len = drm_dp_vsc_sdp_pack(&vsc_sdp_data, &vsc_sdp);
-@@ -1065,11 +1097,12 @@
+@@ -1065,11 +1098,13 @@
  
  	if (msm_dp_panel->msm_dp_mode.out_fmt_is_yuv_420)
  		msm_dp_panel_setup_vsc_sdp_yuv_420(msm_dp_panel);
@@ -292,6 +324,7 @@ Testing only, default off.
 -			drm_info(panel->drm_dev, "DP: forcing the BT.2020 VSC SDP\n");
 -		msm_dp_panel_setup_vsc_sdp_bt2020(msm_dp_panel);
 +			drm_info(panel->drm_dev, "DP: forcing the %s VSC SDP\n",
++				 msm_dp_panel->ycbcr422 ? "YCbCr 4:2:2" :
 +				 msm_dp_panel->ycbcr444 ? "YCbCr 4:4:4" : "BT.2020");
 +		msm_dp_panel_setup_vsc_sdp_colorimetry(msm_dp_panel);
  	}
@@ -299,15 +332,16 @@ Testing only, default off.
  	if (msm_dp_panel->hdr_enabled)
 --- a/drivers/gpu/drm/msm/dp/dp_panel.h
 +++ b/drivers/gpu/drm/msm/dp/dp_panel.h
-@@ -53,6 +53,7 @@
+@@ -53,6 +53,8 @@
  	/* From the connector state, before the stream is programmed */
  	bool hdr_enabled;
  	bool bt2020;
-+	bool ycbcr444;
++	bool ycbcr444;	/* YCbCr out (4:4:4 or 4:2:2) */
++	bool ycbcr422;
  	struct dp_sdp hdr_sdp;
  	u32 hw_revision;
  
-@@ -83,6 +84,8 @@
+@@ -83,6 +85,8 @@
  
  void msm_dp_panel_enable_vsc_sdp(struct msm_dp_panel *msm_dp_panel, struct dp_sdp *vsc_sdp);
  void msm_dp_panel_disable_vsc_sdp(struct msm_dp_panel *msm_dp_panel);
@@ -318,16 +352,17 @@ Testing only, default off.
  /**
 --- a/drivers/gpu/drm/msm/msm_drv.h
 +++ b/drivers/gpu/drm/msm/msm_drv.h
-@@ -368,6 +368,8 @@
+@@ -368,6 +368,9 @@
  			  const struct drm_display_mode *mode);
  struct drm_dsc_config *msm_dp_get_dsc_config(struct msm_dp *dp_display);
  void msm_dp_dsc_pps_flush(struct msm_dp *dp_display);
 +bool msm_dp_ycbcr444(struct msm_dp *dp, const struct drm_connector_state *conn_state,
 +		     const struct drm_display_mode *mode);
++bool msm_dp_ycbcr422(void);
  
  #else
  static inline int __init msm_dp_register(void)
-@@ -405,6 +407,13 @@
+@@ -405,6 +408,18 @@
  {
  	return false;
  }
@@ -335,6 +370,11 @@ Testing only, default off.
 +static inline bool msm_dp_ycbcr444(struct msm_dp *dp,
 +				   const struct drm_connector_state *conn_state,
 +				   const struct drm_display_mode *mode)
++{
++	return false;
++}
++
++static inline bool msm_dp_ycbcr422(void)
 +{
 +	return false;
 +}
