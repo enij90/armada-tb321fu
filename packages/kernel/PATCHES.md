@@ -996,6 +996,46 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: proposed (Abel Vesa, pmic_glink_altmode only; not merged)
   notes: Plugging a charger during s2idle reset the TB321FU: GLINK messages arrive with devices suspended (IRQF_NO_SUSPEND) and the altmode and UCSI works on system_wq reconfigured the Type-C switch, mux, data lanes (0841) and PHYs. Both works now go to system_freezable_wq. With pm_test, freezer survived and devices/platform reset. Tested: no reset, the tablet stays asleep and charges, G9 fine after resume. A UCSI change notified during suspend is not replayed on resume; ucsi_resume() from the driver resume hook hung the tablet.
 
+- `patches/0845-drm-msm-dp-hdr-output-metadata-and-bt2020-colorimetry.patch`
+  source: armada (reduced port of Xilin Wu, "drm/msm/dp: Add static HDR support for DP and eDP" v2, freedreno 2026-10)
+  upstream: proposed (full series, not merged)
+  notes: HDR_OUTPUT_METADATA and Colorspace (BT2020_RGB) on the external DP connector; HDR InfoFrame SDP on generic slot 2, BT.2020 in the VSC SDP; a change takes a modeset. Lets gamescope switch an external monitor to HDR10. Properties verified on the TB321FU; end-to-end HDR not yet (test hub strips the HDR block from the EDID).
+
+- `patches/0846-drm-msm-dp-check-link-bandwidth-with-the-full-pixel-clock.patch`
+  source: armada
+  upstream: not yet sent
+  notes: mode_valid used the wide-bus-halved pixel clock for the link bandwidth check, so modes needing up to twice the link were accepted (2560x1440@120 / 3840x1600@60 over a 2-lane HBR2 hub: no picture or shaking, no audio). Bandwidth now uses the mode clock (halved only for YUV 420). Verified on the TB321FU.
+
+- `patches/0847-drm-bridge-connector-modeset-on-colorspace-or-hdr-metadata-change.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Companion of 0845. The bridge atomic_check only runs once a modeset is already needed, so toggling HDR in gamescope changed Colorspace and HDR_OUTPUT_METADATA without re-enabling the bridge: PQ pixels but no HDR InfoFrame, washed out colours and the monitor stayed in SDR (testers, three monitors). The bridge connector now flags a modeset when either changes, as the HDMI state helper does.
+
+- `patches/0851-drm-msm-dp-display-stream-compression.patch`
+  source: armada
+  upstream: not yet sent
+  notes: DSC on external DP, which upstream msm lacks. Per mode (msm.dp_dsc, default 1 = only when the mode does not fit at 8 bpc): 8 bpp, 2/4/8 slices from two merged DSC engines, FEC, PPS SDP and DTO programmed as in the downstream driver (Lenovo GPL) and the unmerged 2023 series by Kuogee Hsieh. Only the 88 PPS bytes are written: the audio registers start at 0x200.
+
+- `patches/0852-drm-msm-dp-dsc-keep-hdmi-converters-under-their-tmds-clock.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Companion of 0851. A DP to HDMI converter that decodes DSC sends the stream out over TMDS at the input bpc: 1440p144 at 10 bpc needs 725 MHz and a 600 MHz HDMI 2.0 port stayed black (tester dock, DP side locked, no DSC/FEC errors). The DSC input bpc now stays within the downstream port TMDS clock and max bpc.
+
+- `patches/0853-drm-msm-dp-parameter-to-force-the-bt2020-vsc-sdp.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Test parameter. A tester dock (MegaChips DP to HDMI converter) does not advertise VSC SDP support, so HDR in RGB never carries BT.2020 colorimetry and the monitor stays SDR. msm.dp_vsc_force=1 sends the BT.2020 VSC SDP anyway at the next modeset. Default off.
+
+- `patches/0854-drm-msm-dp-ycbcr-output-parameter.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Test parameter. A tester dock (MegaChips DP to HDMI converter) keeps the monitor in SDR with RGB + HDR metadata, while an iPhone through the same dock sends YCbCr 4:2:2 and gets HDR. msm.dp_ycbcr: 1/2 YCbCr 4:4:4 with HDR/always, 3/4 YCbCr 4:2:2 with HDR/always, 10 bpc. CDM conversion (BT.2020/BT.709 limited), MISC0 YCbCr BT.709, TU 4:2:2 encoding, VSC SDP with the real colorimetry when it can be sent. msm.dp_ycbcr_yuv_bit also sets the YUV bit of CONFIGURATION_CTRL. Default off. 4:4:4 works; 4:2:2 gives no picture on SM8650 (Parade and MegaChips converters, with and without CONFIGURATION_CTRL bits 11/12): the DP controller does not seem to pack 4:2:2.
+
+- `patches/0855-drm-msm-dp-peripheral-flush-for-hdr-and-colorimetry-sdps.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Fix for 0845. DP >= 1.2 controllers run in SDE_PERIPH_UPDATE flush mode and only send updated SDPs on a DPU peripheral flush, which the DPU requested only for YUV 4:2:0 and DSC. The HDR metadata SDP (and BT.2020 VSC) were written but never sent (tester monitor OSD: EOTF none with HDR on). The flush is now also requested for HDR metadata, BT.2020 colorimetry and the YCbCr test output.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local

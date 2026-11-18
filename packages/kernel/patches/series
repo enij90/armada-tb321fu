@@ -325,6 +325,15 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0843-drm-msm-dp-stop-audio-before-the-main-link-goes-idle.patch
 0848-usb-dwc3-qcom-host-ss-powerup-and-usb2-phy-reinit-quirks.patch
 0849-usb-typec-ucsi-glink-tb321fu-c1-orientation-from-tlmm-29.patch
+0845-drm-msm-dp-hdr-output-metadata-and-bt2020-colorimetry.patch
+0846-drm-msm-dp-check-link-bandwidth-with-the-full-pixel-clock.patch
+0847-drm-bridge-connector-modeset-on-colorspace-or-hdr-metadata-change.patch
+0850-drm-msm-dp-put-dp-to-hdmi-converters-in-hdmi-mode.patch
+0851-drm-msm-dp-display-stream-compression.patch
+0852-drm-msm-dp-dsc-keep-hdmi-converters-under-their-tmds-clock.patch
+0853-drm-msm-dp-parameter-to-force-the-bt2020-vsc-sdp.patch
+0854-drm-msm-dp-ycbcr-output-parameter.patch
+0855-drm-msm-dp-peripheral-flush-for-hdr-and-colorimetry-sdps.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
 0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch

@@ -1,0 +1,69 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: DSC, keep DP to HDMI converters under their TMDS clock
+
+A converter that decodes DSC sends the stream out over HDMI at the bpc
+it was compressed from. 1440p144 at 10 bpc needs 725 MHz, more than a
+600 MHz HDMI 2.0 port: the monitor stays black although the DP side is
+locked with no DSC or FEC errors. Pick the input bpc within the port's
+TMDS clock and max bpc.
+
+---
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -750,11 +750,35 @@
+ 	return MODE_OK;
+ }
+ 
+-static u32 msm_dp_display_max_bpp(struct msm_dp *dp)
++/*
++ * Deepest uncompressed bpp the monitor takes for @mode. Behind a DP to HDMI
++ * converter the decoded stream goes out over TMDS: stay under the port's
++ * clock and bpc, or the converter shows nothing (1440p144 at 10 bpc needs
++ * 725 MHz, a 600 MHz HDMI 2.0 port only takes it at 8 bpc).
++ */
++static u32 msm_dp_display_max_bpp(struct msm_dp *dp,
++				  const struct drm_display_mode *mode)
+ {
+-	u32 bpp = dp->connector->display_info.bpc * 3;
++	struct msm_dp_display_private *msm_dp_display =
++		container_of(dp, struct msm_dp_display_private, msm_dp_display);
++	struct msm_dp_panel *panel = msm_dp_display->panel;
++	u32 bpc = dp->connector->display_info.bpc ?: 8;
++	int tmds, max_bpc;
++
++	if (!drm_dp_is_branch(panel->dpcd))
++		return bpc * 3;
++
++	max_bpc = drm_dp_downstream_max_bpc(panel->dpcd, panel->downstream_ports,
++					    panel->drm_edid);
++	if (max_bpc > 0 && bpc > max_bpc)
++		bpc = max_bpc;
++
++	tmds = drm_dp_downstream_max_tmds_clock(panel->dpcd, panel->downstream_ports,
++						panel->drm_edid);
++	while (tmds > 0 && bpc > 8 && (u64)mode->clock * bpc > (u64)tmds * 8)
++		bpc -= 2;
+ 
+-	return bpp ? bpp : 24;
++	return bpc * 3;
+ }
+ 
+ /**
+@@ -780,7 +804,7 @@
+ 		return false;
+ 
+ 	ret = msm_dp_panel_dsc_compute(msm_dp_display->panel, mode,
+-				       msm_dp_display_max_bpp(dp),
++				       msm_dp_display_max_bpp(dp, mode),
+ 				       msm_dp_display->wide_bus_supported, dsc);
+ 	kfree(dsc);
+ 
+@@ -1628,7 +1652,7 @@
+ 	/* Same choice as msm_dp_mode_uses_dsc() made for the DPU topology */
+ 	msm_dp_display->msm_dp_mode.dsc_en = !dp->is_edp &&
+ 		msm_dp_panel_dsc_compute(msm_dp_panel, adjusted_mode,
+-					 msm_dp_display_max_bpp(dp),
++					 msm_dp_display_max_bpp(dp, adjusted_mode),
+ 					 msm_dp_display->ctrl->wide_bus_en,
+ 					 &msm_dp_display->msm_dp_mode.dsc);
+ 	if (msm_dp_display->msm_dp_mode.dsc_en)

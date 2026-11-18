@@ -1,0 +1,49 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dp: put DP-to-HDMI converters in HDMI mode
+
+A DP-to-HDMI protocol converter starts in DVI mode, which carries no
+InfoFrames: the HDR metadata SDP never becomes an HDMI DRM InfoFrame and
+the TV or monitor stays in SDR. Before link training, set
+DP_PROTOCOL_CONVERTER_CONTROL_0 to HDMI mode when the branch device has
+an HDMI sink behind it, as i915 does in
+intel_dp_configure_protocol_converter().
+
+---
+--- a/drivers/gpu/drm/msm/dp/dp_display.c	2026-11-12 17:52:49.619148952 +0100
++++ b/drivers/gpu/drm/msm/dp/dp_display.c	2026-11-12 17:52:49.600267011 +0100
+@@ -1383,6 +1383,26 @@
+ 		   panel->bt2020, dp->msm_dp_mode.bpp);
+ }
+ 
++/*
++ * A DP-to-HDMI converter starts in DVI mode, which carries no InfoFrames, so
++ * the HDR metadata never reaches an HDMI sink. Put it in HDMI mode when the
++ * sink behind it is HDMI, like i915 does.
++ */
++static void msm_dp_display_config_protocol_converter(struct msm_dp_display_private *dp)
++{
++	const u8 *dpcd = dp->panel->dpcd;
++	u8 val;
++	int ret;
++
++	if (dpcd[DP_DPCD_REV] < 0x13 || !drm_dp_is_branch(dpcd))
++		return;
++
++	val = dp->msm_dp_display.connector->display_info.is_hdmi ?
++		DP_HDMI_DVI_OUTPUT_CONFIG : 0;
++	ret = drm_dp_dpcd_writeb(dp->aux, DP_PROTOCOL_CONVERTER_CONTROL_0, val);
++	drm_dbg_dp(dp->drm_dev, "protocol converter hdmi=%u ret=%d\n", val, ret);
++}
++
+ void msm_dp_bridge_atomic_enable(struct drm_bridge *drm_bridge,
+ 				 struct drm_atomic_commit *state)
+ {
+@@ -1422,6 +1442,8 @@
+ 		force_link_train = true;
+ 	}
+ 
++	msm_dp_display_config_protocol_converter(msm_dp_display);
++
+ 	rc = msm_dp_ctrl_on_link(msm_dp_display->ctrl);
+ 	if (rc) {
+ 		DRM_ERROR("Failed link training (rc=%d)\n", rc);
