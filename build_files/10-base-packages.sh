@@ -209,6 +209,8 @@ dnf5 -y install --setopt=install_weak_deps=False \
     --repofrompath 'negativo-multimedia,https://negativo17.org/repos/multimedia/fedora-$releasever/$basearch/' \
     --setopt=negativo-multimedia.gpgcheck=0 \
     --setopt=negativo-multimedia.repo_gpgcheck=0 \
+    --enablerepo=updates-testing \
+    --setopt=updates-testing.includepkgs="openapv*" \
     ffmpeg \
     ffmpeg-libs \
     gstreamer1-plugin-libav \
