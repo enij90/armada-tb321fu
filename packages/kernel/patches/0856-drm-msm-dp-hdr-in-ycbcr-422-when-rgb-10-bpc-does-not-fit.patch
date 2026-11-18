@@ -249,9 +249,9 @@ pick 4:2:2 when RGB 10 bpc does not fit and 4:2:2 does, instead of DSC
 + * TMDS clock of a DP to HDMI converter) but does as YCbCr 4:2:2 at 10 bpc,
 + * send that instead of compressing (DSC) or dropping to 8 bpc.
 + */
-+static bool dp_hdr_422 = true;
++static bool dp_hdr_422;
 +module_param(dp_hdr_422, bool, 0644);
-+MODULE_PARM_DESC(dp_hdr_422, "HDR: YCbCr 4:2:2 10 bpc instead of DSC or 8 bpc when RGB 10 bpc does not fit (default on)");
++MODULE_PARM_DESC(dp_hdr_422, "HDR: YCbCr 4:2:2 10 bpc instead of DSC or 8 bpc when RGB 10 bpc does not fit (default off: no picture on SM8650)");
 +
 +bool msm_dp_panel_hdr_422(void)
 +{
