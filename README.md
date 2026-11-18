@@ -28,6 +28,7 @@ It is not supported by the Armada project: please report problems here, not upst
 | USB-C charging, charges to 100% | ✅ |
 | USB 3 on the long-side port (5 Gbps tested); the short-side port is USB 2.0 by design | ✅ |
 | USB-C display output (DisplayPort Alt Mode), video | ✅ |
+| USB-C display output, HDR (10-bit: up to 1440p 60 Hz or 1080p 144 Hz through an HDMI 2.0 dock) | ✅ |
 | USB-C display output, audio | ✅ |
 | Lenovo Legion G9 controller (short-side port), see below | ✅ |
 | Headphones on the G9's jack | ✅ |
@@ -71,7 +72,21 @@ This update:
   USB 2.0 speed. This covers devices plugged in directly and through a hub, in both plug
   orientations, also with a display on the same hub. Tested at 5 Gbps; 10 Gbps devices
   have not been tested yet. The short-side port is USB 2.0 by design.
-- **Armada upstream updates up to November 5:**
+- **USB-C display output:**
+  - HDR on external displays: turn it on in Steam's display settings. The monitor gets
+    10-bit RGB with HDR10 metadata. Through a USB-C dock with an HDMI 2.0 output this fits
+    up to 1440p at 60 Hz or 1080p at 144 Hz;
+  - high refresh rates at high resolutions (for example 1440p at 144 Hz) through docks that
+    support DSC compression. These modes are SDR;
+  - HBR3 link rate (8.1 Gbps per lane) on docks that support it;
+  - modes the connection cannot carry are no longer offered. Before, some monitors showed
+    no picture or a shaking one in those modes (for example 1440p at 120 Hz or 3840×1600).
+- **Armada upstream updates up to November 17:**
+  - Mesa 26.3.0; GL games respect Steam's frame limiter;
+  - KDE Plasma 6.8.3 in Desktop Mode;
+  - gyro orientation setting in Armada Control;
+  - Steam's brightness slider no longer lags;
+  - power profiles also apply CPU governor tunables;
   - Flatpak apps use Armada's Mesa drivers;
   - FEX loads x86 thunk libraries from the Arch guest and the Steam runtime.
 
@@ -82,9 +97,9 @@ Desktop Mode, Mesa 26.2.6, and Decky Loader runs natively. Older changes are lis
 
 ## Known issues
 
-- CSOT panel: the 165 Hz modes and variable refresh rate have not been tested on a CSOT
-  unit yet. Reports are welcome; if the screen misbehaves, turn VRR off in Steam's display
-  settings.
+- HDR through a dock with an HDMI 2.0 output: 1440p at 120/144 Hz stays SDR. 10-bit at
+  those rates needs YCbCr 4:2:2, which the tablet's DisplayPort controller does not send.
+  On some monitors HDR also does not turn on at 1080p 60 Hz; 1080p 120/144 Hz works.
 - Sometimes, after GRUB, the tablet restarts once or twice before booting. It then
   starts normally.
 - Camera image quality is not tuned yet: the second rear camera is a macro camera and is
