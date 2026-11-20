@@ -1036,6 +1036,11 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   upstream: not yet sent
   notes: Fix for 0845. DP >= 1.2 controllers run in SDE_PERIPH_UPDATE flush mode and only send updated SDPs on a DPU peripheral flush, which the DPU requested only for YUV 4:2:0 and DSC. The HDR metadata SDP (and BT.2020 VSC) were written but never sent (tester monitor OSD: EOTF none with HDR on). The flush is now also requested for HDR metadata, BT.2020 colorimetry and the YCbCr test output.
 
+- `patches/0857-drm-msm-dpu-preload-seven-pixels-in-the-qseed-3-3-scaler-without-rotation.patch`
+  source: armada
+  upstream: not yet sent
+  notes: Follow-up to 0818. On SM8650 an unrotated upscaled layer split over two pipes (1080p UI on a 1440p144 DP monitor) showed a broken column at the mixer seam with the default horizontal preload of 4; 7 removes it (registers held live, then this kernel on the tablet). Limited to scaler version 3.3.
+
 - `patches/1303-serial-qcom-geni-allow-shorter-rx-dma-transfer.patch`
   source: armada
   upstream: local

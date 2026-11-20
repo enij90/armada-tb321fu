@@ -1,0 +1,51 @@
+From: enij90 <226572015+enij90@users.noreply.github.com>
+Subject: [PATCH] drm/msm/dpu: preload seven pixels in the QSEED 3.3 scaler
+ without rotation
+
+Patch 0818 measured that QSEED4 on SM8650 needs a horizontal preload of 7
+behind the inline rotator. Unrotated upscaling is just as late with the
+default of 4. It shows when a layer is upscaled and split over two pipes at
+the mixer seam: the Steam UI renders at 1080p, the DP output is 2560x1440 at
+144 Hz (580 MHz, above the single-pipe clock), and each half is scaled
+960 -> 1280 on its own pipe. The middle of the screen then has a broken
+column (text and logos visibly cut). At 120 Hz one pipe is enough and the
+seam is gone.
+
+Holding the preload at 7 on the four pipes through the registers removed
+the seam on the monitor, and a kernel with this patch shows none.
+
+Use a preload of 7 for unrotated pipes on the QSEED 3.3 scaler (SM8650)
+only; other QSEED4 versions keep the default until measured.
+---
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_plane.c
+@@ -64,6 +64,13 @@
+  * upscaled): 4 -> 3 lines late, 5 -> 2, 6 -> 1, 7 -> exact, 8 -> 1 early.
+  */
+ #define DPU_QSEED4_ROT90_PRELOAD_H 0x7
++/*
++ * The QSEED 3.3 scaler (SM8650) is just as late without the rotator: a
++ * 1080p layer upscaled to 1440p and split over two pipes at the mixer seam
++ * (DP at 144 Hz) shows a broken column in the middle of the screen with
++ * the default of 4, and none with 7.
++ */
++#define DPU_QSEED4_3_3_PRELOAD_H 0x7
+ 
+ #define DEFAULT_REFRESH_RATE	60
+ 
+@@ -480,9 +487,12 @@
+ 		}
+ 
+ 		if (pipe_hw->cap->sblk->scaler_blk.version >= 0x3000) {
+-			scale_cfg->preload_x[i] = inline_rotation ?
+-				DPU_QSEED4_ROT90_PRELOAD_H :
+-				DPU_QSEED4_DEFAULT_PRELOAD_H;
++			if (inline_rotation)
++				scale_cfg->preload_x[i] = DPU_QSEED4_ROT90_PRELOAD_H;
++			else if (pipe_hw->cap->sblk->scaler_blk.version == 0x30003)
++				scale_cfg->preload_x[i] = DPU_QSEED4_3_3_PRELOAD_H;
++			else
++				scale_cfg->preload_x[i] = DPU_QSEED4_DEFAULT_PRELOAD_H;
+ 			scale_cfg->preload_y[i] = DPU_QSEED4_DEFAULT_PRELOAD_V;
+ 		} else {
+ 			scale_cfg->preload_x[i] = DPU_QSEED3_DEFAULT_PRELOAD_H;
