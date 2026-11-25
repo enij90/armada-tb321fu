@@ -186,7 +186,6 @@ v9_20260801_sachin_garg_media_iris_cache_work_mode_in_iris_set_stage.patch
 0902-power-supply-qcom-battmgr-expose-charge-now.patch
 0903-power-supply-qcom-battmgr-expose-the-charge-current-limit.patch
 0904-power-supply-qcom-battmgr-report-charge-threshold-set-failures.patch
-0905-power-supply-qcom-battmgr-tb321fu-lenovo-charge-properties.patch
 0540-arm64-signal-reapply-the-ssbs-policy-on-sigreturn.patch
 
 # ============== SM8650 (AYANEO Pocket S2, KONKR Pocket FIT) ==============
@@ -338,6 +337,7 @@ v2_20260420_neil_armstrong_arm64_qcom_sm8650_misc_enhancements.patch
 0830-backlight-ktz8866-use-linear-mapping-and-ignore-the-pwm-input.patch
 0831-ASoC-aw882xx-speaker-volume-with-a-linear-db-curve.patch
 0832-power-supply-qcom-battmgr-tb321fu-current-sign-guf296.patch
+0905-power-supply-qcom-battmgr-tb321fu-lenovo-charge-properties.patch
 0835-ASoC-qcom-q6apm-lpass-dais-release-the-secondary-tdm-clock-across-system-suspend.patch
 0838-rtc-interface-release-the-wakeup-source-when-the-rtc-cannot-be-read.patch
 # 0837-drm-msm-dp-wait-for-the-display-in-audio-prepare-during-a-modeset.patch  # not enough for DP audio, kept out (see handoff)
