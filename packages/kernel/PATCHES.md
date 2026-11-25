@@ -577,7 +577,7 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   source: https://github.com/ROCKNIX/distribution/blob/807c74fc46c124891d8aa9b57a68533d38e9a6b2/projects/ROCKNIX/devices/SM8250/patches/linux/0063_Mangmi-Pocket-Max-HL7139-charge-pump.patch
   upstream: unknown
 - `patches/0011-qcom-pm8150b-charger.patch`
-  source: https://github.com/ROCKNIX/distribution/blob/bcf3b5bc574990b96543484575b06f912153a715/projects/ROCKNIX/devices/SM8250/patches/linux/0011-qcom-pm8150b-charger.patch
+  source: https://github.com/ROCKNIX/distribution/blob/7b4da83200a051c27b691f4b86c0e06bb79d2bdb/projects/ROCKNIX/devices/SM8250/patches/linux/0011-qcom-pm8150b-charger.patch
   upstream: unknown
   notes: Armada refreshed only the Makefile context for Linux 7.2's expanded Surface power-supply entries; charger and fuel-gauge behavior is unchanged.
 - `patches/0005-sm8250-uart.patch`
@@ -928,7 +928,7 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
   notes: Armada selects the accepted Pocket S2 WSA2 sound-card mapping after copying the ROCKNIX DTS.
 - `dts/sm8650-konkr-pf.dts.patch`
   source: armada
-  notes: Armada selects the shared WSA2 channel mapping through a Pocket FIT-specific sound-card compatible and binds `konkr_sysbtn` to the controller MCU UART, and loads its own ADSP firmware.
+  notes: Armada selects the shared WSA2 channel mapping through a Pocket FIT-specific sound-card compatible and binds `konkr_sysbtn` to the controller MCU UART, and loads its own ADSP firmware, marks the WCD939x headphone jack switches normally-closed so MBHC detects a plug (without them the jack never reports inserted), and sets up RX SoundWire port 9 (PCM timing and format enable) for the HPH PCM path the UCM profile uses.
 
 - `patches/0505-arm64-emulate-unaligned-atomics.patch`
   source: https://github.com/bylaws/linux/commit/7ae989a43ae7e3cb8007ac21c28dacc24c9d8320
