@@ -1,0 +1,147 @@
+From: Armada <noreply@armada.local>
+Subject: [PATCH] power: supply: qcom_battmgr: expose the TB321FU Lenovo charge properties
+
+Lenovo keeps the Android battery protection limit (start and end SoC,
+e.g. 070080) in a vendor property of the charger firmware, separate from
+the Qualcomm charge control thresholds, and it survives flashing another
+OS. Expose it and its neighbours (opcodes 0x60/0x61, ids 28-31 in
+Lenovo qti_battery_charger.c) as lenovo_* attributes of the battery
+supply so userspace can clear a limit left by Android.
+---
+--- a/drivers/power/supply/qcom_battmgr.c
++++ b/drivers/power/supply/qcom_battmgr.c
+@@ -48,6 +48,13 @@
+ 
+ #define BATTMGR_BAT_PROPERTY_GET	0x30
+ #define BATTMGR_BAT_PROPERTY_SET	0x31
++/* Lenovo TB321FU (Huaqin) vendor properties: battery care limit etc. */
++#define BATTMGR_HQ_PROPERTY_GET		0x60
++#define BATTMGR_HQ_PROPERTY_SET		0x61
++#define HQ_CHARGING_ENABLE		28
++#define HQ_PROTECTION_SETTING		29
++#define HQ_PROTECTION_SETTING_EU	30
++#define HQ_RECHARGE_SETTING		31
+ #define BATT_STATUS			0
+ #define BATT_HEALTH			1
+ #define BATT_PRESENT			2
+@@ -326,6 +333,7 @@
+ 
+ 	/* Firmware that reports the battery current negative while charging */
+ 	bool invert_current;
++	u32 hq_value;
+ 
+ 	int error;
+ 	struct completion ack;
+@@ -1619,6 +1627,19 @@
+ 			battmgr->error = 0;
+ 		}
+ 		break;
++	case BATTMGR_HQ_PROPERTY_GET:
++	case BATTMGR_HQ_PROPERTY_SET:
++		if (payload_len != sizeof(resp->intval)) {
++			dev_warn(battmgr->dev, "invalid payload length for %#x: %zd\n",
++				 opcode, payload_len);
++			battmgr->error = -ENODATA;
++		} else if (le32_to_cpu(resp->intval.result)) {
++			battmgr->error = -EIO;
++		} else {
++			battmgr->hq_value = le32_to_cpu(resp->intval.value);
++			battmgr->error = 0;
++		}
++		break;
+ 	case BATTMGR_REQUEST_NOTIFICATION:
+ 	case BATTMGR_CHG_CTRL_LIMIT_EN:
+ 		battmgr->error = 0;
+@@ -1632,6 +1653,83 @@
+ 	complete(&battmgr->ack);
+ }
+ 
++struct qcom_battmgr_hq_attr {
++	struct device_attribute attr;
++	u32 prop;
++};
++
++static ssize_t qcom_battmgr_hq_show(struct device *dev,
++				    struct device_attribute *attr, char *buf)
++{
++	struct qcom_battmgr *battmgr = power_supply_get_drvdata(dev_to_psy(dev));
++	struct qcom_battmgr_hq_attr *hq = container_of(attr, struct qcom_battmgr_hq_attr, attr);
++	u32 val;
++	int ret;
++
++	if (!battmgr->service_up)
++		return -EAGAIN;
++
++	mutex_lock(&battmgr->lock);
++	ret = qcom_battmgr_request_property(battmgr, BATTMGR_HQ_PROPERTY_GET, hq->prop, 0);
++	val = battmgr->hq_value;
++	mutex_unlock(&battmgr->lock);
++	if (ret)
++		return ret;
++
++	return sysfs_emit(buf, "%u\n", val);
++}
++
++static ssize_t qcom_battmgr_hq_store(struct device *dev,
++				     struct device_attribute *attr,
++				     const char *buf, size_t count)
++{
++	struct qcom_battmgr *battmgr = power_supply_get_drvdata(dev_to_psy(dev));
++	struct qcom_battmgr_hq_attr *hq = container_of(attr, struct qcom_battmgr_hq_attr, attr);
++	u32 val;
++	int ret;
++
++	if (!battmgr->service_up)
++		return -EAGAIN;
++
++	ret = kstrtou32(buf, 0, &val);
++	if (ret)
++		return ret;
++
++	mutex_lock(&battmgr->lock);
++	ret = qcom_battmgr_request_property(battmgr, BATTMGR_HQ_PROPERTY_SET, hq->prop, val);
++	mutex_unlock(&battmgr->lock);
++
++	return ret ? ret : count;
++}
++
++#define QCOM_BATTMGR_HQ_ATTR(_name, _prop)					\
++	static struct qcom_battmgr_hq_attr qcom_battmgr_hq_##_name = {		\
++		.attr = __ATTR(_name, 0644, qcom_battmgr_hq_show, qcom_battmgr_hq_store), \
++		.prop = _prop,							\
++	}
++
++QCOM_BATTMGR_HQ_ATTR(lenovo_charging_enable, HQ_CHARGING_ENABLE);
++QCOM_BATTMGR_HQ_ATTR(lenovo_protection_setting, HQ_PROTECTION_SETTING);
++QCOM_BATTMGR_HQ_ATTR(lenovo_protection_setting_eu, HQ_PROTECTION_SETTING_EU);
++QCOM_BATTMGR_HQ_ATTR(lenovo_recharge_setting, HQ_RECHARGE_SETTING);
++
++static struct attribute *qcom_battmgr_hq_attrs[] = {
++	&qcom_battmgr_hq_lenovo_charging_enable.attr.attr,
++	&qcom_battmgr_hq_lenovo_protection_setting.attr.attr,
++	&qcom_battmgr_hq_lenovo_protection_setting_eu.attr.attr,
++	&qcom_battmgr_hq_lenovo_recharge_setting.attr.attr,
++	NULL
++};
++
++static const struct attribute_group qcom_battmgr_hq_group = {
++	.attrs = qcom_battmgr_hq_attrs,
++};
++
++static const struct attribute_group *qcom_battmgr_hq_groups[] = {
++	&qcom_battmgr_hq_group,
++	NULL
++};
++
+ static void qcom_battmgr_callback(const void *data, size_t len, void *priv)
+ {
+ 	const struct pmic_glink_hdr *hdr = data;
+@@ -1772,6 +1870,8 @@
+ 		else
+ 			psy_desc = &sm8350_bat_psy_desc;
+ 
++		if (of_machine_is_compatible("lenovo,tb321fu"))
++			psy_cfg.attr_grp = qcom_battmgr_hq_groups;
+ 		battmgr->bat_psy = devm_power_supply_register(dev, psy_desc, &psy_cfg);
+ 		if (IS_ERR(battmgr->bat_psy))
+ 			return dev_err_probe(dev, PTR_ERR(battmgr->bat_psy),

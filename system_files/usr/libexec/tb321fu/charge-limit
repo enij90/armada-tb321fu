@@ -4,6 +4,15 @@
 # battery shows up. Charge to full instead: keep writing until it holds twice.
 # UPower starts after this, so its charge threshold still applies when on.
 B=/sys/class/power_supply/battery
+# Lenovo battery protection (the Android setting, start*1000+end, e.g. 70080)
+# is a separate charger firmware property that also survives flashing:
+# put it back to the 95/100 it has when never enabled.
+for p in lenovo_protection_setting lenovo_protection_setting_eu; do
+    v=$(cat $B/$p 2>/dev/null) || continue
+    [ "$v" = 95100 ] && continue
+    echo "$p was $v, resetting to 95100"
+    echo 95100 > $B/$p || echo "$p: reset failed" >&2
+done
 held=0
 for _ in $(seq 60); do
     if [ "$(cat $B/charge_control_end_threshold 2>/dev/null)" = 100 ] &&
