@@ -1,0 +1,13 @@
+#!/usr/bin/python3
+# Ask armada-control to apply a pending Flip Screen to touch and gyro.
+import socket
+import sys
+
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(15)
+        sock.connect("/run/armada/session.sock")
+        sock.sendall(b"{\"action\": \"apply_screen_flip\"}\n")
+        sock.recv(4096)
+except OSError as exc:
+    print(f"apply-screen-flip: armada-control unavailable: {exc}", file=sys.stderr)

@@ -22,6 +22,8 @@ export const setSshEnabled = (enabled: boolean) => call<[boolean], boolean>("set
 export const setGyroEnabled = (enabled: boolean) => call<[boolean], boolean>("set_gyro_enabled", enabled);
 export const setGyroOrientation = (orientation: GyroOrientation) =>
   call<[GyroOrientation], GyroOrientation>("set_gyro_orientation", orientation);
+export const setScreenFlip = (flipped: boolean) =>
+  call<[boolean], { flipped: boolean; gyro: Config["gyro"] }>("set_screen_flip", flipped);
 export const setMtpEnabled = (enabled: boolean) => call<[boolean], boolean>("set_mtp_enabled", enabled);
 export const getPanelCalibration = () => call<[], PanelCalibration>("get_panel_calibration");
 export const getPanelRate = () => call<[], PanelRate>("get_panel_rate");

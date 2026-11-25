@@ -1,5 +1,5 @@
 import { toaster } from "@decky/api";
-import { Field, PanelSection } from "@decky/ui";
+import { Field, PanelSection, showModal } from "@decky/ui";
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
@@ -14,6 +14,8 @@ import {
   setDesktopMode as applyDesktopMode,
   setGyroEnabled as applyGyroEnabled,
   setGyroOrientation as applyGyroOrientation,
+  restartGameMode,
+  setScreenFlip as applyScreenFlip,
   setSleepMode as applySleepMode,
   setSleepLogsEnabled as applySleepLogsEnabled,
   setSshEnabled as applySshEnabled,
@@ -21,6 +23,7 @@ import {
 } from "../backend";
 import { openCalibration } from "../components/Calibration";
 import { PanelCalibration } from "../components/PanelCalibration";
+import { ConfirmGameModeRestartModal } from "./Compatibility";
 import { ButtonRow, SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
 import { useDebouncedApply } from "../hooks/useDebouncedApply";
 import { t, translateLabel } from "../i18n";
@@ -42,6 +45,7 @@ export function Settings({ config, setConfig }: {
 }) {
   const [swipeGesturesSaving, setSwipeGesturesSaving] = useState(false);
   const [gyroSaving, setGyroSaving] = useState(false);
+  const [screenFlipSaving, setScreenFlipSaving] = useState(false);
   const [sleepLogsEnabled, setSleepLogsEnabled] = useState<boolean | null>(null);
   const [sleepLogsSaving, setSleepLogsSaving] = useState(false);
   const [lowPowerDownloads, setLowPowerDownloads] = useState(getLowPowerDownloadSettings);
@@ -157,6 +161,21 @@ export function Settings({ config, setConfig }: {
       setGyroSaving(false);
     }
   };
+  const setScreenFlip = async (flipped: boolean) => {
+    if (screenFlipSaving || flipped === config.screenFlip?.flipped) return;
+    setScreenFlipSaving(true);
+    try {
+      const applied = await applyScreenFlip(flipped);
+      setConfig((current) => (current
+        ? { ...current, screenFlip: { supported: true, flipped: applied.flipped }, gyro: applied.gyro }
+        : current));
+      showModal(<ConfirmGameModeRestartModal onRestart={() => { void restartGameMode(); }} />);
+    } catch (error) {
+      toaster.toast({ title: t("settings.screenFlipError"), body: String(error) });
+    } finally {
+      setScreenFlipSaving(false);
+    }
+  };
   const setGyroOrientation = async (orientation: GyroOrientation) => {
     if (gyroSaving || orientation === config.gyro?.orientation) return;
     setGyroSaving(true);
@@ -254,6 +273,15 @@ export function Settings({ config, setConfig }: {
         )}
       </PanelSection>
       <PanelSection title={t("settings.system")}>
+        {config.screenFlip?.supported && (
+          <ToggleRow
+            label={t("settings.screenFlip")}
+            description={t("settings.screenFlipDescription")}
+            value={config.screenFlip.flipped}
+            disabled={screenFlipSaving}
+            onChange={setScreenFlip}
+          />
+        )}
         <ToggleRow label={t("settings.enableSsh")} value={!!config.sshEnabled} onChange={setSshEnabled} />
         <ToggleRow
           label={t("settings.swipeGestures")}

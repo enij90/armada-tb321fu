@@ -145,7 +145,7 @@ function ConfirmResetGameModal({
   );
 }
 
-function ConfirmGameModeRestartModal({
+export function ConfirmGameModeRestartModal({
   closeModal,
   onRestart,
 }: {

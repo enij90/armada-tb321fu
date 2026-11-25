@@ -182,6 +182,7 @@ export interface Config {
   swipeGesturesEnabled: boolean;
   nativeResolution?: [number, number] | null;
   gyro: { supported: boolean; enabled: boolean; orientation: GyroOrientation };
+  screenFlip?: { supported: boolean; flipped: boolean };
   mtpEnabled: boolean;
   desktopMode: string;
   desktopModes: DropdownChoice[];

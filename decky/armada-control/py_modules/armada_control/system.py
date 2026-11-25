@@ -144,6 +144,27 @@ def gyro_state():
         return {"supported": False, "enabled": False, "orientation": "default"}
 
 
+def screen_flip_state():
+    try:
+        state = call("get_screen_flip")
+        return {"supported": bool(state["supported"]), "flipped": bool(state["flipped"])}
+    except Exception:
+        return {"supported": False, "flipped": False}
+
+
+def set_screen_flip(flipped):
+    state = call("set_screen_flip", flipped=bool(flipped))
+    gyro = state["gyro"]
+    return {
+        "flipped": bool(state["flipped"]),
+        "gyro": {
+            "supported": bool(gyro["supported"]),
+            "enabled": bool(gyro["enabled"]),
+            "orientation": gyro["orientation"],
+        },
+    }
+
+
 def set_gyro_enabled(enabled):
     return bool(call("set_gyro_enabled", enabled=enabled)["enabled"])
 
