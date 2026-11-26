@@ -83,6 +83,9 @@ FROM ${EXTEST_REF} AS extest
 ARG STEAM_V4L2_SHIM_REF
 FROM ${STEAM_V4L2_SHIM_REF} AS steam-v4l2-shim
 
+ARG QCOM_VA_DRIVER_REF
+FROM ${QCOM_VA_DRIVER_REF} AS qcom-va-driver
+
 ARG ARMADA_AURORA_REF
 FROM ${ARMADA_AURORA_REF} AS armada-aurora
 
@@ -161,6 +164,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=mesa-x86,source=/,target=/packages/mesa-x86 \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
     --mount=type=bind,from=steam-v4l2-shim,source=/,target=/packages/steam-v4l2-shim \
+    --mount=type=bind,from=qcom-va-driver,source=/rpms,target=/packages/qcom-va-driver \
     --mount=type=bind,from=armada-splash,source=/rpms,target=/packages/armada-splash \
     --mount=type=bind,from=armada-logos,source=/rpms,target=/packages/armada-logos \
     --mount=type=bind,from=armada-rgb,source=/rpms,target=/packages/armada-rgb \
