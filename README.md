@@ -68,31 +68,20 @@ It is not supported by the Armada project: please report problems here, not upst
 
 This update:
 
-- **USB 3:** the long-side port now runs at USB 3 speed. Until now every device ran at
-  USB 2.0 speed. This covers devices plugged in directly and through a hub, in both plug
-  orientations, also with a display on the same hub. Tested at 5 Gbps; 10 Gbps devices
-  have not been tested yet. The short-side port is USB 2.0 by design.
-- **USB-C display output:**
-  - HDR on external displays: turn it on in Steam's display settings. The monitor gets
-    10-bit RGB with HDR10 metadata. Through a USB-C dock with an HDMI 2.0 output this fits
-    up to 1440p at 60 Hz or 1080p at 144 Hz;
-  - high refresh rates at high resolutions (for example 1440p at 144 Hz) through docks that
-    support DSC compression. These modes are SDR;
-  - HBR3 link rate (8.1 Gbps per lane) on docks that support it;
-  - modes the connection cannot carry are no longer offered. Before, some monitors showed
-    no picture or a shaking one in those modes (for example 1440p at 120 Hz or 3840×1600).
-- **Armada upstream updates up to November 17:**
-  - Mesa 26.3.0; GL games respect Steam's frame limiter;
-  - KDE Plasma 6.8.3 in Desktop Mode;
-  - gyro orientation setting in Armada Control;
-  - Steam's brightness slider no longer lags;
-  - power profiles also apply CPU governor tunables;
-  - Flatpak apps use Armada's Mesa drivers;
-  - FEX loads x86 thunk libraries from the Arch guest and the Steam runtime.
+- **Flip Screen** in Armada Control: turns Game Mode upside down, for controllers that hold
+  the tablet the other way round. Touch, pen and gyro turn with it when Game Mode restarts.
+- **USB-C displays:** a picture scaled up to the monitor (for example the 1080p UI on a
+  1440p monitor) no longer shows a broken column in the middle.
+- **Armada upstream updates up to November 25:**
+  - hardware video decoding through VA-API, also in Flatpak apps;
+  - the Steam overlay works in Vulkan and Proton games in Desktop Mode;
+  - the default login mode (Game Mode or Desktop) is respected at boot;
+  - WireGuard VPN support;
+  - Decky Loader bundles only stable releases;
+  - FEX 2611.1.
 
-Previous update (November 3): the microphones no longer stay silent after some boots, a
-charger plugged in during sleep no longer resets the tablet, Steam's tray icon is back in
-Desktop Mode, Mesa 26.2.6, and Decky Loader runs natively. Older changes are listed in the
+Previous update (November 18): the long-side USB-C port runs at USB 3 speed, HDR, DSC and
+HBR3 on USB-C displays, Mesa 26.3.0 and KDE Plasma 6.8.3. Older changes are listed in the
 [releases](https://github.com/enij90/armada-tb321fu/releases).
 
 ## Known issues
